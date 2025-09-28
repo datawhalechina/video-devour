@@ -93,6 +93,12 @@ VideoDevour 的核心在于将视频内容完全"消化"，就像吃掉视频一
 
 ### 后端安装
 
+
+cd ./VideoDevour/whisperX
+    source .venv/bin/activate
+cd ..
+python ./backend/devour/asr_engine_paraformer.py 
+
 ```bash
 # 克隆项目
 git clone https://github.com/your-username/video2report.git
