@@ -1,0 +1,7 @@
+backend/camel/
+whisperX/
+*venv
+models/
+*.mp4
+config.yaml
+config.py
