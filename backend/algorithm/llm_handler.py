@@ -40,7 +40,14 @@ class LLMHandler:
             "重要提示：\n"
             "- 以下文本是自动语音识别（ASR）的结果，可能包含口语化表达、重复、错误或不通顺的句子。请在理解和总结时，智能地识别并忽略这些潜在的瑕疵。\n"
             "- 你的任务是梳理文本的逻辑结构，提炼核心议题和关键点，而不是简单地复述原文。\n"
-            "- 大纲应采用Markdown的层级标题格式（例如，使用 #, ##, ###）。\n\n"
+            "- 大纲应采用Markdown的层级标题格式，且要求只到二级大纲（一级大纲的起始使用 #,二级使用 ##）。\n\n"
+            "- 切记不要增加文本意外的内容大纲，不要自主补全后续大纲。\n"
+            "- 输出样例如下：\n"
+            """# 系统架构组成\n
+            ## 用户对话输入接口\n
+            ## 微调模块与Prompt优化模块\n
+            ## 知识融合与风格化处理\n
+            ## 语音合成与数字人输出\n"""
             "会议记录文本如下：\n"
             "-------------------\n\n"
         )
@@ -74,3 +81,64 @@ class LLMHandler:
         except Exception as e:
             logging.error(f"调用 LLM 时发生错误: {e}", exc_info=True)
             return f"错误：调用 LLM 失败: {e}"
+
+    def match_chunk_to_headings(self, chunk, headings):
+        """
+        Matches a single dialogue chunk to the best heading from a list.
+
+        Args:
+            chunk (dict): A dictionary representing a single text chunk.
+            headings (list): A list of strings, each being a candidate heading.
+
+        Returns:
+            str: The best matching heading from the list.
+        """
+        logging.info(f"正在为文本块匹配最合适的标题: '{chunk['text'][:30]}...'")
+        
+        # Format the dialogue chunk
+        start_time_str = f"{int(chunk['start'] // 60):02d}:{int(chunk['start'] % 60):02d}"
+        end_time_str = f"{int(chunk['end'] // 60):02d}:{int(chunk['end'] % 60):02d}"
+        chunk_text = f"[{start_time_str} - {end_time_str}] {chunk['speaker']}: {chunk['text']}"
+
+        # Format the headings
+        headings_text = "\n".join(f"- {h}" for h in headings)
+
+        # Create the prompt
+        prompt = (
+            "你是一个智能文本分析助手。你的任务是将一个给定的文本块，与一个列表中最合适的标题进行匹配。\n\n"
+            f"**待匹配文本块:**\n```\n{chunk_text}\n```\n\n"
+            f"**可用标题列表:**\n{headings_text}\n\n"
+            "**任务要求:**\n"
+            "1. 请仔细阅读文本块，理解其核心内容。\n"
+            "2. 从上方的标题列表中，选择一个最能总结或归类该文本块的标题。\n"
+            "3. **重要提示**: 你的回答必须 **只包含** 所选标题的完整文本，不要添加任何额外的词语、编号、解释或格式。例如，如果选择了第一个标题，你的输出就应该是该标题的文本本身。\n"
+        )
+
+        try:
+            assistant_sys_msg = "你是一个智能文本分析助手，精准地将文本匹配到最合适的标题。"
+            agent = ChatAgent(assistant_sys_msg, model=self.model)
+            assistant_response = agent.step(prompt)
+            matched_heading = assistant_response.msg.content.strip()
+            
+            # Clean up the response to ensure it's just the heading
+            # Sometimes the model might still add extra characters like hyphens or quotes
+            cleaned_heading = matched_heading.lstrip('- ').strip().strip('"`')
+
+            # Ensure the returned heading is one of the candidates
+            if cleaned_heading in headings:
+                logging.info(f"匹配成功: '{cleaned_heading}'")
+                return cleaned_heading
+            else:
+                logging.warning(f"LLM返回了不在候选列表中的标题: '{cleaned_heading}'。将尝试在返回结果中查找最相似的候选标题。")
+                # Fallback: find the most similar heading in the response
+                for h in headings:
+                    if h in cleaned_heading:
+                        logging.info(f"回退匹配成功: '{h}'")
+                        return h
+                logging.error("回退匹配失败，将返回第一个候选标题作为默认值。")
+                return headings[0] # Default to the first heading if matching fails
+
+        except Exception as e:
+            logging.error(f"调用 LLM 进行匹配时发生错误: {e}", exc_info=True)
+            # In case of error, return the first candidate as a fallback
+            return headings[0]

@@ -5,3 +5,4 @@ models/
 *.mp4
 config.yaml
 config.py
+*.jpg

@@ -94,9 +94,8 @@ VideoDevour 的核心在于将视频内容完全"消化"，就像吃掉视频一
 ### 后端安装
 
 
-cd ./VideoDevour/whisperX
+cd ./whisperX
     source .venv/bin/activate
-cd ..
 python ./backend/devour/asr_engine_paraformer.py 
 
 ```bash
