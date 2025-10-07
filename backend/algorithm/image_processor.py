@@ -71,23 +71,41 @@ def _process_single_directory(directory, similarity_threshold=0.8):
     
     logging.info(f"目录 {directory} 处理完成")
 
-def process_all_frames():
+def process_all_frames(output_dir=None):
     """
-    Main function to process all extracted frames, checking for dependencies first.
+    处理所有提取的帧，检查依赖并进行去重
+    
+    Args:
+        output_dir (str, optional): 输出目录路径（大文件夹）。如果未提供，使用默认输出目录
     """
     if not IMAGE_LIBS_AVAILABLE:
         logging.warning("跳过帧处理。请安装必要的库: pip install opencv-python-headless scikit-image numpy")
         print("跳过帧处理。请安装必要的库: pip install opencv-python-headless scikit-image numpy")
         return
 
-    base_dir = config.IMAGE_OUTPUT_DIR
+    # 确定基础目录
+    if output_dir is None:
+        base_dir = config.OUTPUT_DIR
+    else:
+        base_dir = output_dir
+    
     if not os.path.isdir(base_dir):
         logging.error(f"帧目录 '{base_dir}' 不存在。跳过帧处理。")
         return
         
     logging.info(f"--- 步骤 8: 开始处理和筛选帧 ---")
+    logging.info(f"搜索帧目录: {base_dir}")
+    
+    # 查找所有 frames_ 开头的子目录
+    processed_count = 0
     for dir_name in os.listdir(base_dir):
-        full_path = os.path.join(base_dir, dir_name)
-        if os.path.isdir(full_path):
-            _process_single_directory(full_path)
-    logging.info("--- 图像处理和筛选完成 ---")
+        if dir_name.startswith('frames_'):
+            full_path = os.path.join(base_dir, dir_name)
+            if os.path.isdir(full_path):
+                _process_single_directory(full_path)
+                processed_count += 1
+    
+    if processed_count > 0:
+        logging.info(f"--- 图像处理和筛选完成，共处理 {processed_count} 个帧目录 ---")
+    else:
+        logging.warning("--- 未找到任何帧目录 ---")

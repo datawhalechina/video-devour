@@ -10,6 +10,7 @@ import json
 from datetime import datetime
 from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
+import soundfile as sf  # 用于读取和裁剪音频文件
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,60 +23,71 @@ class VideoDevourASRFunasr:
         with open(config_file, 'r') as f:
             self.config = yaml.safe_load(f)
 
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # SenseVoice 推荐使用 "cuda:0" 格式
+        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         logging.info(f"使用设备: {self.device}")
         self._diarization_pipeline = None 
         self._asr_model = None
+        self._vad_model = None  # VAD 模型单独加载
         
     @property
+    def vad_model(self):
+        """加载 VAD 模型（用于音频分段）"""
+        if self._vad_model is None:
+            logging.info("正在加载 VAD 模型...")
+            try:
+                self._vad_model = AutoModel(
+                    model="fsmn-vad",
+                    trust_remote_code=True,
+                    device=self.device,
+                    disable_update=True,
+                )
+                logging.info(f"VAD 模型加载完成（设备: {self.device}）")
+            except Exception as e:
+                logging.error(f"VAD 模型加载失败: {str(e)}")
+                raise
+        return self._vad_model
+    
+    @property
     def asr_model(self):
+        """加载 SenseVoice 模型（不包含 VAD）"""
         if self._asr_model is None:
-            logging.info("正在加载本地Paraformer模型...")
+            logging.info("正在加载本地 SenseVoice 模型...")
             # 动态构建模型的本地路径，增强代码可移植性
             project_root = Path(__file__).resolve().parent.parent.parent
-            model_path = project_root / "models/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
-            vad_model_path = project_root / "models/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
-            punc_model_path = project_root / "models/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large"
-            paraformer_model_path = project_root / "models/models/iic/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn"
+            model_path = project_root / "models/models/iic/SenseVoiceSmall"
+            
             if not model_path.exists():
-                logging.error(f"ASR模型路径不存在: {model_path}")
-                raise FileNotFoundError(f"指定的ASR模型路径不存在: {model_path}")
-            if not vad_model_path.exists():
-                logging.error(f"VAD模型路径不存在: {vad_model_path}")
-                raise FileNotFoundError(f"指定的VAD模型路径不存在: {vad_model_path}")
-            if not punc_model_path.exists():
-                logging.error(f"PUNC模型路径不存在: {punc_model_path}")
-                raise FileNotFoundError(f"指定的PUNC模型路径不存在: {punc_model_path}")
+                logging.warning(f"本地SenseVoice模型路径不存在: {model_path}，将从远程加载")
+                # 如果本地模型不存在，使用远程模型
+                model_dir = "iic/SenseVoiceSmall"
+            else:
+                model_dir = str(model_path)
 
-            # 加载Paraformer模型
+            # 加载SenseVoice模型（不包含 VAD，因为 VAD 单独处理）
             self._asr_model = AutoModel(
-                model=str(model_path),
-                vad_model=str(vad_model_path),
-                vad_kwargs={"max_single_segment_time": 30000},
-                punc_model=str(punc_model_path),
+                model=model_dir,
+                trust_remote_code=True,
                 device=self.device,
                 disable_update=True,
+                # spk_model="cam++",
             )
-            logging.info(f"Paraformer模型加载完成（设备: {self.device}）")
+            logging.info(f"SenseVoice 模型加载完成（设备: {self.device}）")
         return self._asr_model
         
     @property
     def diarization_pipeline(self):
+        """说话人识别管道（可选）"""
+        project_root = Path(__file__).resolve().parent.parent.parent
         vad_model_path = project_root / "models/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
         paraformer_model_path = project_root / "models/models/iic/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn"
         punc_model_path = project_root / "models/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large"
         if self._diarization_pipeline is None:
-            # 优先从配置文件读取HF_TOKEN，其次从环境变量读取
-            hf_token = self.config.get('HF_TOKEN') or os.environ.get('HF_TOKEN')
-            if not hf_token:
-                logging.warning("HF_TOKEN未设置，跳过说话人识别")
-                return None
-                
             try:
                 logging.info("正在加载说话人识别模型...")
                 # 配置说话人识别参数以优化性能
                 self._diarization_pipeline = AutoModel(
-                    model=str(paraformer_model_path),
+                    model="cam++",
                     vad_model=str(vad_model_path),
                     vad_kwargs={"max_single_segment_time": 30000},
                     punc_model=str(punc_model_path),
@@ -103,55 +115,110 @@ class VideoDevourASRFunasr:
         except Exception as e:
             logging.error(f"音频提取失败: {str(e)}")
             raise
+    
+    def crop_audio(self, audio_data, start_time, end_time, sample_rate):
+        """
+        裁剪音频片段
+        
+        Args:
+            audio_data: 音频数据数组
+            start_time: 开始时间（毫秒）
+            end_time: 结束时间（毫秒）
+            sample_rate: 采样率
+            
+        Returns:
+            裁剪后的音频数据
+        """
+        start_sample = int(start_time * sample_rate / 1000)  # 转换为样本数
+        end_sample = int(end_time * sample_rate / 1000)  # 转换为样本数
+        return audio_data[start_sample:end_sample]
 
     def devour_video(self, video_path: str) -> dict:
-        """核心吞噬方法 - 处理单个视频"""
+        """核心吞噬方法 - 使用两阶段识别（VAD分段 + SenseVoice识别）"""
         logging.info(f"开始处理视频: {video_path}")
         
         try:
             # 音频提取
             wav_path = self.extract_audio(video_path)
             
-            # 语音转写
-            logging.info("开始语音转写...")
-            
-            # 使用Paraformer进行语音识别
-            res = self.asr_model.generate(
+            # 第一阶段：使用 VAD 模型进行音频分段
+            logging.info("第一阶段：使用 VAD 模型进行音频分段...")
+            vad_res = self.vad_model.generate(
                 input=wav_path,
-                batch_size_s=60,
-                batch_size_threshold_s=60,
-                merge_vad=True,
-                merge_length_s=15,
+                cache={},
+                max_single_segment_time=30000,  # 最大单个片段时长（毫秒）
             )
             
-            # 处理结果
-            if isinstance(res, list) and len(res) > 0:
-                text = rich_transcription_postprocess(res[0]["text"])
-                segments = []
-                # 如果结果包含时间戳信息
-                if "timestamp" in res[0]:
-                    for i, (start, end) in enumerate(res[0]["timestamp"]):
+            # 从 VAD 模型的输出中提取每个语音片段的开始和结束时间
+            if not vad_res or len(vad_res) == 0:
+                logging.error("VAD 模型未返回有效结果")
+                raise ValueError("VAD 分段失败")
+            
+            segments_vad = vad_res[0].get('value', [])
+            logging.info(f"VAD 检测到 {len(segments_vad)} 个语音片段")
+            
+            # 加载原始音频数据
+            audio_data, sample_rate = sf.read(wav_path)
+            logging.info(f"音频采样率: {sample_rate} Hz")
+            
+            # 第二阶段：对每个 VAD 片段使用 SenseVoice 进行识别
+            logging.info("第二阶段：使用 SenseVoice 对每个片段进行识别...")
+            segments = []
+            temp_audio_file = None
+            
+            for i, segment in enumerate(segments_vad):
+                start_time, end_time = segment  # 获取开始和结束时间（毫秒）
+                
+                # 裁剪音频
+                cropped_audio = self.crop_audio(audio_data, start_time, end_time, sample_rate)
+                
+                # 将裁剪后的音频保存为临时文件
+                temp_audio_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+                sf.write(temp_audio_file, cropped_audio, sample_rate)
+                
+                try:
+                    # 使用 SenseVoice 进行语音识别
+                    res = self.asr_model.generate(
+                        input=temp_audio_file,
+                        cache={},
+                        language="auto",  # "zh", "en", "yue", "ja", "ko", "nospeech"
+                        use_itn=True,  # 使用逆文本规范化
+                        batch_size_s=60,
+                    )
+                    
+                    # 处理识别结果
+                    if isinstance(res, list) and len(res) > 0 and "text" in res[0]:
+                        text = rich_transcription_postprocess(res[0]["text"])
+                        print(res)
+                        # 添加时间戳（转换为秒）
                         segments.append({
                             "id": i,
-                            "start": start / 1000.0,  # 转换为秒
-                            "end": end / 1000.0,      # 转换为秒
-                            "text": res[0]["text"].split()[i] if i < len(res[0]["text"].split()) else ""
+                            "start": start_time / 1000.0,  # 毫秒转秒
+                            "end": end_time / 1000.0,      # 毫秒转秒
+                            "text": text.strip()
                         })
-                else:
-                    # 如果没有时间戳信息，创建一个简单的段落
-                    segments.append({
-                        "id": 0,
-                        "start": 0.0,
-                        "end": 0.0,
-                        "text": text
-                    })
-            else:
-                text = ""
-                segments = []
+                        
+                        logging.info(f"  片段 {i+1}/{len(segments_vad)}: {start_time/1000:.1f}s - {end_time/1000:.1f}s, 文本长度: {len(text)}")
+                    else:
+                        logging.warning(f"  片段 {i+1} 识别结果为空")
+                        
+                except Exception as e:
+                    logging.warning(f"  片段 {i+1} 识别失败: {str(e)}")
+                    continue
+                finally:
+                    # 清理临时文件
+                    if temp_audio_file and os.path.exists(temp_audio_file):
+                        try:
+                            os.unlink(temp_audio_file)
+                        except:
+                            pass
             
-            language = "zh"  # Paraformer-zh是中文模型
-            logging.info(f"转写完成，检测到语言: {language}")
-            logging.info(f"转录段落数: {len(segments)}")
+            # 检测语言（从第一个有效结果中获取）
+            language = "auto"
+            if segments:
+                logging.info(f"转写完成，共识别 {len(segments)} 个有效片段")
+            else:
+                logging.warning("未识别到任何有效片段")
             
             # 说话人识别（可选）
             diarization = None
@@ -301,7 +368,7 @@ if __name__ == "__main__":
         results = asr.process_videos(str(video_dir))
         
         # 保存结果
-        output_file = project_root / "output" / "asr_results_paraformer.json"
+        output_file = project_root / "output" / "asr_results_sensevoice.json"
         output_file.parent.mkdir(parents=True, exist_ok=True)
         asr.save_results(results, str(output_file))
         

@@ -1,23 +1,40 @@
 # backend/algorithm/outline_handler.py
 import logging
 import re
+import os
+from datetime import datetime
 import config
 
-def save_outline(outline):
+def save_outline(outline, output_dir=None):
     """
-    Saves the initial Markdown outline to a file.
+    保存初始 Markdown 大纲到文件
+    
+    文件名：outline.md（保存在指定的输出目录下）
     
     Args:
-        outline (str): The Markdown content of the outline.
+        outline (str): 大纲的 Markdown 内容
+        output_dir (str, optional): 输出目录路径。如果未提供，使用默认输出目录
+        
+    Returns:
+        str: 保存的文件路径
     """
-    logging.info(f"--- 步骤 3: 正在将大纲保存到 {config.OUTLINE_MD_PATH} ---")
+    # 确定输出目录
+    if output_dir is None:
+        output_dir = config.OUTPUT_DIR
+    
+    # 构建文件路径
+    outline_filename = "outline.md"
+    outline_path = os.path.join(output_dir, outline_filename)
+    
+    logging.info(f"--- 步骤 3: 正在将大纲保存到 {outline_path} ---")
     try:
-        with open(config.OUTLINE_MD_PATH, 'w', encoding='utf-8') as f:
+        with open(outline_path, 'w', encoding='utf-8') as f:
             f.write(outline)
         logging.info("--- 大纲保存成功 ---")
-        print(f"处理成功完成！大纲已保存至: {config.OUTLINE_MD_PATH}")
+        print(f"处理成功完成！大纲已保存至: {outline_path}")
+        return outline_path
     except IOError as e:
-        logging.error(f"无法将大纲写入文件 {config.OUTLINE_MD_PATH}: {e}")
+        logging.error(f"无法将大纲写入文件 {outline_path}: {e}")
         raise
 
 def parse_headings_from_outline(outline_content):
@@ -38,19 +55,73 @@ def parse_headings_from_outline(outline_content):
         logging.info(f"成功从大綱中提取 {len(headings)} 个二级标题。")
     return headings
 
-def generate_detailed_outline(outline_content, headings, matched_data):
+def parse_headings_with_content(outline_content):
     """
-    Generates and saves the detailed outline with matched text chunks.
+    解析大纲，提取每个二级标题及其下面的内容
     
     Args:
-        outline_content (str): The original Markdown outline content.
-        headings (list): The list of heading titles.
-        matched_data (dict): A dictionary mapping headings to their matched text chunks.
+        outline_content (str): Markdown 大纲内容
+        
+    Returns:
+        dict: 字典，键为二级标题，值为该标题下的文本内容
     """
-    logging.info(f"--- 步骤 5: 正在生成详细大纲文件到 {config.DETAILED_OUTLINE_MD_PATH} ---")
+    logging.info("正在从大纲中解析二级标题及其内容...")
+    
+    headings_with_content = {}
+    lines = outline_content.split('\n')
+    
+    current_heading = None
+    current_content = []
+    
+    for line in lines:
+        # 检查是否是二级标题
+        heading_match = re.match(r'##\s+(.+)', line.strip())
+        if heading_match:
+            # 保存上一个标题的内容
+            if current_heading:
+                headings_with_content[current_heading] = '\n'.join(current_content).strip()
+            
+            # 开始新标题
+            current_heading = heading_match.group(1).strip()
+            current_content = []
+        elif current_heading and line.strip() and not line.strip().startswith('#'):
+            # 收集当前标题下的内容（非标题行）
+            current_content.append(line.strip())
+    
+    # 保存最后一个标题的内容
+    if current_heading:
+        headings_with_content[current_heading] = '\n'.join(current_content).strip()
+    
+    logging.info(f"成功解析 {len(headings_with_content)} 个二级标题及其内容")
+    return headings_with_content
+
+def generate_detailed_outline(outline_content, headings, matched_data, output_dir=None):
+    """
+    生成并保存包含匹配文本块的详细大纲
+    
+    文件名：detailed_outline.md（保存在指定的输出目录下）
+    
+    Args:
+        outline_content (str): 原始 Markdown 大纲内容
+        headings (list): 标题列表
+        matched_data (dict): 标题到匹配文本块的映射字典
+        output_dir (str, optional): 输出目录路径。如果未提供，使用默认输出目录
+        
+    Returns:
+        str: 保存的文件路径
+    """
+    # 确定输出目录
+    if output_dir is None:
+        output_dir = config.OUTPUT_DIR
+    
+    # 构建文件路径
+    detailed_outline_filename = "detailed_outline.md"
+    detailed_outline_path = os.path.join(output_dir, detailed_outline_filename)
+    
+    logging.info(f"--- 步骤 5: 正在生成详细大纲文件到 {detailed_outline_path} ---")
     try:
-        with open(config.DETAILED_OUTLINE_MD_PATH, 'w', encoding='utf-8') as f:
-            # We iterate through the original outline to preserve the structure
+        with open(detailed_outline_path, 'w', encoding='utf-8') as f:
+            # 遍历原始大纲以保留结构
             for line in outline_content.splitlines():
                 f.write(line + '\\n')
                 match = re.match(r"##\s*(.*)", line)
@@ -61,12 +132,13 @@ def generate_detailed_outline(outline_content, headings, matched_data):
                         for chunk in matched_data[heading]:
                             start_str = f"{int(chunk['start'] // 60):02d}:{int(chunk['start'] % 60):02d}"
                             end_str = f"{int(chunk['end'] // 60):02d}:{int(chunk['end'] % 60):02d}"
-                            # Format as a blockquote
+                            # 格式化为引用块
                             f.write(f"> - **[{start_str} - {end_str}] {chunk['speaker']}:** {chunk['text']}\\n")
                         f.write('\\n')
             
         logging.info("--- 详细大纲生成成功 ---")
-        print(f"处理成功完成！详细大纲已保存至: {config.DETAILED_OUTLINE_MD_PATH}")
+        print(f"处理成功完成！详细大纲已保存至: {detailed_outline_path}")
+        return detailed_outline_path
     except IOError as e:
-        logging.error(f"无法将详细大纲写入文件 {config.DETAILED_OUTLINE_MD_PATH}: {e}")
+        logging.error(f"无法将详细大纲写入文件 {detailed_outline_path}: {e}")
         raise

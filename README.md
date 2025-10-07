@@ -96,6 +96,7 @@ VideoDevour 的核心在于将视频内容完全"消化"，就像吃掉视频一
 
 cd ./whisperX
     source .venv/bin/activate
+    cd ..
 python ./backend/devour/asr_engine_paraformer.py 
 
 ```bash
@@ -283,4 +284,4 @@ videodevour/
 
 Made with ❤️ by the VideoDevour Team
 
-</div>
+</div># self-n8n
