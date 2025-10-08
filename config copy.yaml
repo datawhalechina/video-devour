@@ -1,5 +1,0 @@
-: hf_——————
-auto_mem:
-  guard_mb: 2048
-  max_retries: 3
-  batch_decay: 0.7

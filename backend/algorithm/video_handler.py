@@ -6,7 +6,7 @@ import subprocess
 from datetime import datetime
 import config
 
-def cut_videos_by_headings(headings, matched_data, output_dir=None):
+def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, output_dir=None):
     """
     根据匹配块的时间戳将源视频切分为片段
     
@@ -19,6 +19,7 @@ def cut_videos_by_headings(headings, matched_data, output_dir=None):
     Args:
         headings (list): 标题列表
         matched_data (dict): 标题到匹配文本块的映射字典
+        input_video_path (str): 输入视频文件的路径。
         output_dir (str, optional): 输出目录路径。如果未提供，使用默认输出目录
         
     Returns:
@@ -38,7 +39,12 @@ def cut_videos_by_headings(headings, matched_data, output_dir=None):
     logging.info(f"视频片段将保存到: {videocut_path}")
     
     video_cut_count = 0
-    for i, heading in enumerate(headings):
+    for i, (level, heading) in enumerate(headings_with_level):
+        # 只为二级标题创建视频剪辑
+        if level != 2:
+            logging.info(f"跳过非二级标题 '{heading}' (级别: {level})")
+            continue
+            
         if heading in matched_data and matched_data[heading]:
             chunks = matched_data[heading]
             
@@ -74,7 +80,7 @@ def cut_videos_by_headings(headings, matched_data, output_dir=None):
             # -c:a aac: 使用 AAC 编码音频
             # -avoid_negative_ts make_zero: 避免负时间戳问题
             ffmpeg_command = [
-                'ffmpeg', '-i', config.INPUT_VIDEO_PATH,
+                'ffmpeg', '-i', input_video_path,
                 '-ss', str(start_time), '-to', str(end_time),
                 '-c:v', 'libx264', '-c:a', 'aac',
                 '-avoid_negative_ts', 'make_zero',

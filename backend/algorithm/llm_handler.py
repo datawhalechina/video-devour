@@ -87,109 +87,24 @@ class LLMHandler:
             logging.error(f"调用 LLM 时发生错误: {e}", exc_info=True)
             return f"错误：调用 LLM 失败: {e}"
 
-    def match_chunk_to_headings(self, chunk, headings, chunk_index=None, all_chunks=None, context_window=3):
+    def get_response(self, prompt: str, system_message: str = "你是一个能力强大的人工智能助手。") -> str:
         """
-        Matches a single dialogue chunk to the best heading from a list.
+        向LLM发送一个通用的prompt并获取响应。
 
         Args:
-            chunk (dict): A dictionary representing a single text chunk.
-            headings (list): A list of strings, each being a candidate heading.
-            chunk_index (int, optional): The index of the current chunk in all_chunks.
-            all_chunks (list, optional): Complete list of all dialogue chunks for context reference.
-            context_window (int): Number of chunks before and after to include as context (default: 3).
+            prompt (str): 发送给LLM的完整prompt。
+            system_message (str): 代理的系统消息。
 
         Returns:
-            str: The best matching heading from the list.
+            str: LLM返回的文本内容。
         """
-        logging.info(f"正在为文本块匹配最合适的标题: '{chunk['text'][:30]}...'")
-        
-        # Format the dialogue chunk
-        start_time_str = f"{int(chunk['start'] // 60):02d}:{int(chunk['start'] % 60):02d}"
-        end_time_str = f"{int(chunk['end'] // 60):02d}:{int(chunk['end'] % 60):02d}"
-        chunk_text = f"[{start_time_str} - {end_time_str}] {chunk['speaker']}: {chunk['text']}"
-
-        # Format the headings
-        headings_text = "\n".join(f"- {h}" for h in headings)
-
-        # Build context reference if available
-        context_text = ""
-        if all_chunks and chunk_index is not None:
-            context_chunks = []
-            
-            # Get previous context
-            start_idx = max(0, chunk_index - context_window)
-            for i in range(start_idx, chunk_index):
-                c = all_chunks[i]
-                s_time = f"{int(c['start'] // 60):02d}:{int(c['start'] % 60):02d}"
-                e_time = f"{int(c['end'] // 60):02d}:{int(c['end'] % 60):02d}"
-                context_chunks.append(f"[{s_time} - {e_time}] {c['speaker']}: {c['text']}")
-            
-            # Mark current chunk
-            context_chunks.append(f">>> {chunk_text} <<<  [当前待匹配文本块]")
-            
-            # Get following context
-            end_idx = min(len(all_chunks), chunk_index + context_window + 1)
-            for i in range(chunk_index + 1, end_idx):
-                c = all_chunks[i]
-                s_time = f"{int(c['start'] // 60):02d}:{int(c['start'] % 60):02d}"
-                e_time = f"{int(c['end'] // 60):02d}:{int(c['end'] % 60):02d}"
-                context_chunks.append(f"[{s_time} - {e_time}] {c['speaker']}: {c['text']}")
-            
-            context_text = "\n".join(context_chunks)
-            logging.info(f"为匹配任务添加了上下文参考（前 {chunk_index - start_idx} 个块，后 {end_idx - chunk_index - 1} 个块）")
-        
-        # Create the prompt with or without context
-        if context_text:
-            prompt = (
-                "你是一个智能文本分析助手。你的任务是将一个给定的文本块，与一个列表中最合适的标题进行匹配。\n\n"
-                "**原文参考（带上下文）:**\n"
-                "以下是包含当前待匹配文本块及其前后上下文的原始对话记录，用于帮助你更好地理解文本的语境和主题。\n"
-                "当前待匹配的文本块已用 >>> ... <<< 标记。\n\n"
-                f"```\n{context_text}\n```\n\n"
-                f"**可用标题列表:**\n{headings_text}\n\n"
-                "**任务要求:**\n"
-                "1. 请仔细阅读标记的文本块，并结合其上下文，理解其核心内容和所属主题。\n"
-                "2. 从上方的标题列表中，选择一个最能总结或归类该文本块的标题。\n"
-                "3. **重要提示**: 你的回答必须 **只包含** 所选标题的完整文本，不要添加任何额外的词语、编号、解释或格式。例如，如果选择了第一个标题，你的输出就应该是该标题的文本本身。\n"
-            )
-        else:
-            # Fallback to simple prompt without context
-            prompt = (
-                "你是一个智能文本分析助手。你的任务是将一个给定的文本块，与一个列表中最合适的标题进行匹配。\n\n"
-                f"**待匹配文本块:**\n```\n{chunk_text}\n```\n\n"
-                f"**可用标题列表:**\n{headings_text}\n\n"
-                "**任务要求:**\n"
-                "1. 请仔细阅读文本块，理解其核心内容。\n"
-                "2. 从上方的标题列表中，选择一个最能总结或归类该文本块的标题。\n"
-                "3. **重要提示**: 你的回答必须 **只包含** 所选标题的完整文本，不要添加任何额外的词语、编号、解释或格式。例如，如果选择了第一个标题，你的输出就应该是该标题的文本本身。\n"
-            )
-
+        logging.info("正在向 LLM 发送通用请求...")
         try:
-            assistant_sys_msg = "你是一个智能文本分析助手，精准地将文本匹配到最合适的标题。"
-            agent = ChatAgent(assistant_sys_msg, model=self.model)
-            assistant_response = agent.step(prompt)
-            logging.info(prompt,assistant_response)
-            matched_heading = assistant_response.msg.content.strip()
-            
-            # Clean up the response to ensure it's just the heading
-            # Sometimes the model might still add extra characters like hyphens or quotes
-            cleaned_heading = matched_heading.lstrip('- ').strip().strip('"`')
-
-            # Ensure the returned heading is one of the candidates
-            if cleaned_heading in headings:
-                logging.info(f"匹配成功: '{cleaned_heading}'")
-                return cleaned_heading
-            else:
-                logging.warning(f"LLM返回了不在候选列表中的标题: '{cleaned_heading}'。将尝试在返回结果中查找最相似的候选标题。")
-                # Fallback: find the most similar heading in the response
-                for h in headings:
-                    if h in cleaned_heading:
-                        logging.info(f"回退匹配成功: '{h}'")
-                        return h
-                logging.error("回退匹配失败，将返回 None。")
-                return None # Default to the first heading if matching fails
-
+            agent = ChatAgent(system_message, model=self.model, token_limit=999999999)
+            response = agent.step(prompt)
+            content = response.msg.content
+            logging.info("已成功从 LLM 获取响应。")
+            return content
         except Exception as e:
-            logging.error(f"调用 LLM 进行匹配时发生错误: {e}", exc_info=True)
-            # In case of error, return None as a fallback
-            return None
+            logging.error(f"调用 LLM 时发生错误: {e}", exc_info=True)
+            return f"错误: 调用 LLM 失败: {e}"

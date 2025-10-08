@@ -1,12 +1,10 @@
-# 🍽️ VideoDevour | 吃掉视频 - 智能视频笔记生成器
+# 🍽️ VideoDevour | 智能视频到报告生成器
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
-[![Next.js](https://img.shields.io/badge/Next.js-13+-black.svg)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> 🎯 **核心理念**：吃掉视频，输出一份报告！  
-> 🚀 基于 ASR + VLM 技术的智能视频笔记工具，能够将任何视频"吞噬"并生成包含图文内容和视频剪影的结构化笔记报告
+> 🎯 **核心理念**：吃掉视频，输出一份图文并茂的报告！  
+> 🚀 基于 ASR + VLM 技术的智能视频分析工具，能够将任何视频"吞噬"并生成包含关键帧图片、内容摘要和视频剪辑的结构化报告。
 
 ## 📋 目录
 
@@ -15,240 +13,119 @@
 - [🔧 技术架构](#-技术架构)
 - [📦 安装指南](#-安装指南)
 - [🚀 快速开始](#-快速开始)
-- [📖 使用示例](#-使用示例)
 - [🏗️ 项目结构](#️-项目结构)
 - [🤝 贡献指南](#-贡献指南)
 - [📄 许可证](#-许可证)
 
 ## 🎯 项目简介
 
-**VideoDevour（吃掉视频）** 是一个专注于视频笔记生成的智能工具，我们的使命是：
+**VideoDevour（吃掉视频）** 是一个专注于从视频中提取和生成结构化报告的智能工具。我们的目标是自动完成从原始视频到高质量图文报告的转换过程。
 
-### 💡 核心价值观
-> **"吃掉视频，突出一份报告"**  
-> 将任何视频内容完全"消化"，提取精华，生成包含图文内容和视频剪影的高质量笔记报告
+### 💡 核心价值
+> **"吃掉视频，输出一份报告"**  
+> 将任何视频内容完全"消化"，提取其核心语音和视觉信息，生成一份包含文本大纲、关键帧图片和视频剪辑的高质量报告。
 
-### 🎯 产品定位
-VideoDevour 是你的**智能视频笔记助手**，通过先进的 ASR（自动语音识别）和 VLM（视觉语言模型）技术，能够：
-
-- 📚 **学习笔记生成**：将教学视频转化为结构化学习笔记
-- 📝 **会议记录整理**：自动生成会议要点和行动项
-- 🎬 **内容摘要提取**：从长视频中提取关键信息点
-- 📊 **多媒体报告**：生成包含时间轴、对话内容和视觉描述的完整报告
-- ⏱️ **精准定位**：提供精确到单词级别的时间戳，便于回溯查找
+### 🎯 应用场景
+- 📚 **学习笔记生成**：将线上课程或教学视频，自动整理成带章节、配图和文字记录的笔记。
+- 📝 **会议记录整理**：快速将会议录像转化为带章节摘要、发言记录和关键画面的会议纪要。
+- 🎬 **内容创作素材**：从长视频中自动提取关键片段和图片，为二次创作提供素材。
 
 ## ✨ 核心功能
 
-### 🍽️ 视频"吞噬"能力
-VideoDevour 的核心在于将视频内容完全"消化"，就像吃掉视频一样，提取出有价值的笔记内容：
+### 🎙️ 语音识别 (ASR)
+- **精准语音转写**：集成 **FunASR Paraformer V2** 模型，提供高准确度的语音识别，并自动添加标点。
+- **说话人分离**：能够识别并区分视频中的不同说话人。
+- **精确时间戳**：为每一句对话提供毫秒级精度的开始和结束时间戳。
 
-### 🎙️ 语音"消化" (ASR)
-- **快速吞噬**：基于 WhisperX，以高达 70x 实时速度"吃掉"视频中的语音内容
-- **说话人识别**：智能区分不同说话人，为每段对话打上身份标签
-- **精准时间戳**：通过 wav2vec2.0 技术提供单词级精确定位，便于快速回溯
-- **多语言消化**：支持多种语言的语音内容"消化"
+### 📝 大纲生成与内容匹配
+- **智能生成大纲**：利用大语言模型（LLM）分析语音转写内容，自动生成符合视频逻辑结构的Markdown层级大纲。
+- **内容精准匹配**：通过文本相似度算法，将每一段对话文本块，精确地匹配到对应的大纲章节下。
 
-### 🖼️ 视觉"提取" (VLM)
-- **关键帧捕获**：每秒智能提取 12 张关键视觉信息
-- **场景分割**：通过相似度算法（阈值 70%）自动识别场景切换点
-- **内容理解**：使用 GLM-4.1 模型深度理解视觉内容，生成描述性笔记
-- **视频剪影**：提取视频精华片段，形成可视化笔记摘要
+### 🎬 视频与图像处理
+- **自动视频切片**：根据生成的大纲章节，使用 **FFmpeg** 自动将原始视频分割成多个独立的片段。
+- **关键帧提取**：从每个视频片段中，按固定速率（如1fps）提取所有帧图片。
+- **图像去重**：通过图像相似度对比，去除冗余和高度相似的帧，保留有效视觉信息。
+- **VLM智能筛选**：利用视觉语言模型（VLM）对去重后的候选帧进行评分，为每个章节挑选出最匹配、最具代表性的一张关键帧。
 
-### 📝 笔记"输出"
-- **结构化笔记**：生成包含时间轴、对话内容、视觉描述的完整学习笔记
-- **多格式导出**：支持导出为 PDF、HTML、Markdown 等格式的笔记文档
-- **智能摘要**：自动提取关键信息点，生成视频内容摘要
-- **可搜索索引**：为笔记内容建立索引，支持关键词快速检索
+### 📜 报告生成
+- **图文报告**：整合文本大纲和VLM筛选出的关键帧，生成一份图文并茂的 `detailed_outline.md`。
+- **最终精加工**：再次调用LLM，对图文大纲进行最终的润色和扩写，生成一份语言更流畅、内容更丰富的 `final_report.md`。
 
 ## 🔧 技术架构
 
-### 核心技术栈
-
 | 组件 | 技术选型 | 说明 |
 |------|----------|------|
-| **视频处理** | FFmpeg | 视频剪辑和格式转换 |
-| **语音识别** | WhisperX | 高性能 ASR 引擎 |
-| **视觉理解** | GLM-4.1 | 多模态大语言模型 |
-| **Agent框架** | AgentScope | 智能代理编排 |
-| **大模型** | Kimi V2 | 对话和推理能力 |
-| **后端API** | FastAPI | 高性能异步 Web 框架 |
-| **前端界面** | Next.js | 现代化 React 框架 |
-
-### WhisperX 核心优势
-
-- 🚀 **快速转录**：使用 faster-whisper 后端，支持批量推理
-- 🎯 **精确对齐**：wav2vec2.0 技术实现单词级时间戳
-- 👥 **说话人分离**：集成 pyannote-audio 进行说话人识别
-- 🔇 **噪声抑制**：VAD 预处理减少幻听现象
-- 🌍 **多语言**：支持 99+ 种语言识别
+| **核心流程** | Python | 项目的主要编程语言。 |
+| **语音识别** | FunASR (Paraformer V2) | 阿里巴巴开源的高性能语音识别模型。 |
+| **大模型交互** | Camel-AI | 一个用于与大语言模型（LLM）和视觉语言模型（VLM）交互的轻量级框架。 |
+| **视频/图像处理** | FFmpeg, OpenCV | 用于视频切分、帧提取和图像处理。 |
+| **文本匹配**| Sentence Transformers | 用于计算文本语义相似度。 |
 
 ## 📦 安装指南
 
 ### 环境要求
-
 - Python 3.8+
-- Node.js 16+
 - FFmpeg
-- CUDA 11.8+ (可选，用于 GPU 加速)
+- CUDA (可选, 用于GPU加速)
 
-### 后端安装
-
-
-cd ./whisperX
-    source .venv/bin/activate
-    cd ..
-python ./backend/devour/asr_engine_paraformer.py 
+### 安装步骤
 
 ```bash
-# 克隆项目
-git clone https://github.com/your-username/video2report.git
-cd video2report
+# 1. 克隆项目
+git clone https://github.com/your-username/VideoDevour.git
+cd VideoDevour
 
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# 2. 创建并激活Python虚拟环境
+python -m venv .venv
+source .venv/bin/activate  # On Windows, use: .venv\Scripts\activate
 
-# 安装依赖
+# 3. 安装所有依赖项
 pip install -r requirements.txt
-
-# 安装 WhisperX
-pip install whisperx
-
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env 文件，填入必要的 API 密钥
 ```
-
-### 前端安装
-
-```bash
-cd frontend
-npm install
-# 或使用 yarn
-yarn install
-```
+*注意：`requirements.txt` 应包含 `funasr`, `torch`, `camel-ai`, `opencv-python-headless` 等所有必需的库。*
 
 ## 🚀 快速开始
 
-### 启动后端服务
+项目现在通过命令行启动，所有处理步骤都已自动化。不过需要提前到backend\algorithm\config copy.py配置llm和vlm的apikey。
+
+### 执行处理流程
+
+在项目根目录下，运行以下命令：
 
 ```bash
-# 进入项目根目录
-cd video2report
-
-# 启动 FastAPI 服务
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python backend/algorithm/main.py "path/to/your/video.mp4"
 ```
 
-### 启动前端服务
-
+**示例：**
+处理位于 `input_video` 文件夹下的 `minvideo.mp4`：
 ```bash
-cd frontend
-npm run dev
-# 或
-yarn dev
+python backend/algorithm/main.py "input_video/minvideo.mp4"
 ```
 
-访问 `http://localhost:3000` 开始使用！
-
-## 📖 使用示例
-
-### 🍽️ 典型"吃掉视频"场景
-
-#### 场景1：学习笔记生成
-```python
-import requests
-
-# 上传一个教学视频（比如：Python编程教程）
-with open('python_tutorial.mp4', 'rb') as f:
-    response = requests.post(
-        'http://localhost:8000/api/devour',  # "吃掉"视频
-        files={'file': f},
-        data={'note_type': 'learning', 'subject': 'Python编程'}
-    )
-
-video_id = response.json()['video_id']
-
-# VideoDevour 开始"消化"视频
-devour_response = requests.post(
-    f'http://localhost:8000/api/digest/{video_id}'
-)
-
-# 获取生成的学习笔记
-notes = requests.get(
-    f'http://localhost:8000/api/notes/{video_id}'
-)
-
-print("📚 学习笔记已生成：")
-print(f"- 知识点总数：{notes.json()['key_points_count']}")
-print(f"- 代码示例：{notes.json()['code_examples_count']}")
-print(f"- 重要时间点：{notes.json()['important_timestamps']}")
-```
-
-#### 场景2：会议记录整理
-```python
-# 上传会议录像
-with open('team_meeting.mp4', 'rb') as f:
-    response = requests.post(
-        'http://localhost:8000/api/devour',
-        files={'file': f},
-        data={'note_type': 'meeting', 'participants': ['Alice', 'Bob', 'Charlie']}
-    )
-
-# 获取会议笔记
-meeting_notes = requests.get(f'http://localhost:8000/api/notes/{video_id}')
-print("📝 会议纪要：")
-print(f"- 讨论议题：{meeting_notes.json()['topics']}")
-print(f"- 行动项：{meeting_notes.json()['action_items']}")
-print(f"- 决策点：{meeting_notes.json()['decisions']}")
-```
-
-### 🖥️ 命令行"吞噬"模式
-
-```bash
-# 吃掉单个视频，生成笔记
-python videodevour.py devour --input lecture.mp4 --output-format markdown --note-type learning
-
-# 批量"吞噬"视频文件夹
-python videodevour.py batch-devour --input-dir ./course_videos --output-dir ./course_notes
-
-# 生成特定主题的笔记摘要
-python videodevour.py summarize --input conference.mp4 --focus-keywords "AI,机器学习,深度学习"
-```
-
-### 📱 Web界面快速体验
-
-1. **上传视频** → 拖拽视频文件到"吞噬区域"
-2. **选择笔记类型** → 学习笔记 | 会议记录 | 内容摘要
-3. **一键吞噬** → VideoDevour 开始"消化"你的视频
-4. **获取笔记** → 下载生成的结构化笔记文档
+程序执行完毕后，所有输出文件，包括日志、ASR结果、视频切片、关键帧图片和最终报告，都将保存在 `output` 目录下，一个以视频名和时间戳命名的新文件夹中。
 
 ## 🏗️ 项目结构
 
 ```
 videodevour/
-├── 📁 backend/              # 后端 FastAPI 应用
-│   ├── 📁 api/             # API 路由（devour, digest, notes）
-│   ├── 📁 core/            # 核心"吞噬"逻辑
-│   ├── 📁 devour/          # 视频消化引擎
-│   │   ├── asr_engine.py   # 语音"消化"模块
-│   │   ├── vlm_engine.py   # 视觉"提取"模块
-│   │   └── note_generator.py # 笔记生成器
-│   ├── 📁 models/          # 数据模型
-│   └── 📁 services/        # 服务层
-├── 📁 frontend/            # Next.js 前端应用
-│   ├── 📁 components/      # React 组件
-│   │   ├── DevourZone.tsx  # 视频上传"吞噬区域"
-│   │   ├── NoteViewer.tsx  # 笔记查看器
-│   │   └── DigestProgress.tsx # 消化进度显示
-│   ├── 📁 pages/          # 页面路由
-│   └── 📁 styles/         # 样式文件
-├── 📁 scripts/            # 工具脚本
-├── 📁 tests/              # 测试文件
-├── 📄 requirements.txt    # Python 依赖
-├── 📄 package.json       # Node.js 依赖
-├── 📄 videodevour.py     # 命令行工具
-└── 📄 README.md          # 项目文档
+├── 📁 backend/
+│   ├── 📁 algorithm/         # 核心处理算法和流程
+│   │   ├── pipeline.py       # 封装了从头到尾的完整处理流程
+│   │   ├── main.py           # 命令行启动入口
+│   │   ├── config.py         # 配置文件
+│   │   ├── data_processor.py   # ASR数据后处理
+│   │   ├── llm_handler.py      # LLM交互处理器
+│   │   ├── vlm_handler.py      # VLM交互处理器
+│   │   ├── image_processor.py  # 图像处理与筛选
+│   │   ├── video_handler.py    # 视频处理
+│   │   └── outline_handler.py  # 大纲处理与报告生成
+│   └── 📁 devour/
+│       └── asr_engine_paraformer_v2.py # ASR引擎实现
+├── 📁 input_video/            # 存放待处理的视频文件
+├── 📁 output/                 # 存放所有处理结果
+├── 📁 models/                 # (可选) 存放本地ASR/VLM模型文件
+├── 📄 requirements.txt       # Python 依赖
+└── 📄 README.md             # 项目文档
 ```
 
 ## 🤝 贡献指南
@@ -261,27 +138,6 @@ videodevour/
 4. 📤 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 🔄 创建 Pull Request
 
-### 开发规范
-
-- 遵循 PEP 8 代码风格
-- 添加适当的测试用例
-- 更新相关文档
-- 确保所有测试通过
-
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 详情请参阅 [LICENSE](LICENSE) 文件。
-
----
-
-<div align="center">
-
-**🍽️ VideoDevour - 让每个视频都成为有价值的笔记 🍽️**
-
-**⭐ 如果 VideoDevour 帮你"吃掉"了有用的视频，请给个 Star！⭐**
-
-> *"不要让好的视频内容白白流逝，让 VideoDevour 帮你把它们都'吃掉'变成笔记！"*
-
-Made with ❤️ by the VideoDevour Team
-
-</div># self-n8n
