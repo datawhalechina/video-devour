@@ -6,3 +6,18 @@ models/
 config.yaml
 config.py
 *.jpg
+
+# Node.js 依赖
+node_modules/
+frontend/node_modules/
+
+# 构建产物
+frontend/dist/
+frontend/.vite/
+
+# 编辑器历史记录
+.history/
+
+# 其他前端临时文件
+frontend/.DS_Store
+frontend/*.log
