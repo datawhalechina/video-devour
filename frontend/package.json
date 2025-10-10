@@ -1,0 +1,53 @@
+{
+  "name": "video-devour-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@floating-ui/react": "^0.27.16",
+    "axios": "^1.7.2",
+    "framer-motion": "^11.3.0",
+    "is-hotkey": "^0.2.0",
+    "katex": "^0.16.23",
+    "lucide-react": "^0.400.0",
+    "prismjs": "^1.30.0",
+    "react": "^18.3.1",
+    "react-colorful": "^5.6.1",
+    "react-dom": "^18.3.1",
+    "react-icons": "^5.5.0",
+    "react-katex": "^3.1.0",
+    "react-markdown": "^9.0.1",
+    "react-router-dom": "^7.9.4",
+    "react-syntax-highlighter": "^15.6.6",
+    "remark-gfm": "^4.0.0",
+    "slate": "^0.118.1",
+    "slate-history": "^0.113.1",
+    "slate-hyperscript": "^0.100.0",
+    "slate-react": "^0.117.4",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.19",
+    "@types/hast": "^3.0.4",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.34.3",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "eslint-plugin-react-refresh": "^0.4.7",
+    "postcss": "^8.4.39",
+    "tailwindcss": "^3.4.4",
+    "vite": "^5.3.4"
+  }
+}
