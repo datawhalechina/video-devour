@@ -8,6 +8,7 @@ opencv_python_headless==4.12.0.88
 Pillow==11.3.0
 PyYAML==6.0.3
 sentence_transformers==5.1.0
-skimage==0.0
+skimage
 soundfile==0.13.1
 torch==2.6.0
+
