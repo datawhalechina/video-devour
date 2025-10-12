@@ -5,6 +5,9 @@ models/
 config.yaml
 config.py
 *.jpg
+.lock
+uv.lock
+pyproject.toml
 
 # Node.js 依赖
 node_modules/
