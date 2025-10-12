@@ -8,14 +8,26 @@
 
 ## 📋 目录
 
-- [🎯 项目简介](#-项目简介)
-- [✨ 核心功能](#-核心功能)
-- [🔧 技术架构](#-技术架构)
-- [📦 安装指南](#-安装指南)
-- [🚀 快速开始](#-快速开始)
-- [🏗️ 项目结构](#️-项目结构)
-- [🤝 贡献指南](#-贡献指南)
-- [📄 许可证](#-许可证)
+- [🍽️ VideoDevour | 智能视频到报告生成器](#️-videodevour--智能视频到报告生成器)
+  - [📋 目录](#-目录)
+  - [🎯 项目简介](#-项目简介)
+    - [💡 核心价值](#-核心价值)
+    - [🎯 应用场景](#-应用场景)
+  - [✨ 核心功能](#-核心功能)
+    - [🎙️ 语音识别 (ASR)](#️-语音识别-asr)
+    - [📝 大纲生成与内容匹配](#-大纲生成与内容匹配)
+    - [🎬 视频与图像处理](#-视频与图像处理)
+    - [📜 报告生成](#-报告生成)
+  - [🔧 技术架构](#-技术架构)
+  - [📦 安装指南](#-安装指南)
+    - [环境要求](#环境要求)
+    - [安装步骤](#安装步骤)
+  - [🎛️ 模型概览与配置](#️-模型概览与配置)
+  - [🚀 快速开始](#-快速开始)
+    - [执行处理流程](#执行处理流程)
+  - [🏗️ 项目结构](#️-项目结构)
+  - [🤝 贡献指南](#-贡献指南)
+  - [📄 许可证](#-许可证)
 
 ## 🎯 项目简介
 
@@ -84,13 +96,67 @@ pip install -r requirements.txt
 ```
 *注意：`requirements.txt` 应包含 `funasr`, `torch`, `camel-ai`, `opencv-python-headless` 等所有必需的库。*
 
+## 🎛️ 模型概览与配置
+```
+# config.py
+
+# LLM 配置
+LLM_MODEL_TYPE = "deepseek-chat"
+LLM_API_URL = "https://api.deepseek.com"
+LLM_TEMPERATURE = 0.4
+LLM_TOKEN_COUNTER = 128000
+
+# VLM 配置
+VLM_MODEL_TYPE = "doubao-seed-1-6-flash-250828"
+VLM_API_URL = "https://ark.cn-beijing.volces.com/api/v3"
+```
+
 ## 🚀 快速开始
 
-项目现在通过命令行启动，所有处理步骤都已自动化。不过需要提前到backend\algorithm\config copy.py配置llm和vlm的apikey。
+项目现在提供了完整的Web界面，包括前端和后端服务。出于安全保护，需要提前将**API_KEY**注入环境变量，而不是直接在代码中硬编码。
 
-### 执行处理流程
+### 环境变量配置
+```bash
+echo "export LLM_API_KEY=your-llm-api-key" >> ~/.bashrc
+echo "export VLM_API_KEY=your-vlm-api-key" >> ~/.bashrc
+source ~/.bashrc
+```
 
-在项目根目录下，运行以下命令：
+### 启动服务
+
+#### 1. 启动后端服务
+在项目根目录下，使用 `uv` 激活虚拟环境并启动后端：
+```bash
+# 激活虚拟环境
+uv sync
+source .venv/bin/activate
+
+# 启动后端服务
+cd backend
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+后端服务将在 `http://localhost:8000` 启动。
+
+#### 2. 启动前端服务
+在新的终端窗口中，启动前端开发服务器：
+```bash
+cd frontend
+npm run dev
+```
+
+前端服务将在 `http://localhost:3000` 启动。
+
+### Web界面使用
+
+1. **上传视频**：在主页面选择或拖拽视频文件进行上传
+2. **处理监控**：上传后自动跳转到处理页面，实时显示处理进度和耗时
+3. **查看报告**：处理完成后自动跳转到报告页面，查看生成的图文报告
+4. **历史记录**：在历史记录页面管理所有已处理的视频任务
+
+### 命令行使用（可选）
+
+如果需要直接通过命令行处理视频：
 
 ```bash
 python backend/algorithm/main.py "path/to/your/video.mp4"
@@ -119,12 +185,24 @@ videodevour/
 │   │   ├── image_processor.py  # 图像处理与筛选
 │   │   ├── video_handler.py    # 视频处理
 │   │   └── outline_handler.py  # 大纲处理与报告生成
+│   ├── 📁 api/               # Web API 接口
+│   │   ├── main.py           # FastAPI 主应用
+│   │   ├── routes/           # API 路由
+│   │   └── models/           # 数据模型
 │   └── 📁 devour/
 │       └── asr_engine_paraformer_v2.py # ASR引擎实现
+├── 📁 frontend/              # React 前端应用
+│   ├── 📁 src/
+│   │   ├── 📁 components/    # React 组件
+│   │   ├── 📁 api/           # API 调用
+│   │   └── 📁 utils/         # 工具函数
+│   ├── package.json          # 前端依赖配置
+│   └── vite.config.js        # Vite 构建配置
 ├── 📁 input_video/            # 存放待处理的视频文件
 ├── 📁 output/                 # 存放所有处理结果
 ├── 📁 models/                 # (可选) 存放本地ASR/VLM模型文件
 ├── 📄 requirements.txt       # Python 依赖
+├── 📄 pyproject.toml         # uv 项目配置
 └── 📄 README.md             # 项目文档
 ```
 

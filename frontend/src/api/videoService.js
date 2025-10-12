@@ -40,7 +40,7 @@ api.interceptors.response.use(
  */
 export const uploadVideo = async (file, onProgress) => {
   const formData = new FormData();
-  formData.append("video", file);
+  formData.append("file", file);  // 修改字段名从 "video" 到 "file"
 
   try {
     const response = await api.post("/video/upload", formData, {
@@ -82,7 +82,14 @@ export const getTaskStatus = async (taskId) => {
 export const getHistory = async () => {
   try {
     const response = await api.get("/history");
-    return response;
+    // 确保返回的数据包含正确的字段映射
+    return response.map(item => ({
+      id: item.task_id,
+      videoName: item.filename,
+      status: item.status,
+      createdAt: item.created_at,
+      progress: item.progress || 0
+    }));
   } catch (error) {
     throw error;
   }
@@ -95,7 +102,7 @@ export const getHistory = async () => {
  */
 export const deleteReport = async (reportId) => {
   try {
-    const response = await api.delete(`/report/${reportId}`);
+    const response = await api.delete(`/task/${reportId}`);
     return response;
   } catch (error) {
     throw error;
@@ -115,6 +122,16 @@ export const downloadFile = async (reportId, type) => {
     });
     return response;
   } catch (error) {
+    throw error;
+  }
+};
+
+export const getTaskReport = async (taskId) => {
+  try {
+    const response = await api.get(`/task/${taskId}/report`);
+    return response;
+  } catch (error) {
+    console.error('获取报告详情失败:', error);
     throw error;
   }
 };

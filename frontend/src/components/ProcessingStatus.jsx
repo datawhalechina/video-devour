@@ -24,13 +24,28 @@ function ProcessingStatus({ taskId, onComplete, onCancel }) {
   const [elapsedTime, setElapsedTime] = useState(0)
 
   useEffect(() => {
-    const startTime = Date.now()
+    // 从localStorage获取任务开始时间
+    const getTaskStartTime = () => {
+      try {
+        const stored = localStorage.getItem('videodevour_current_task');
+        if (stored) {
+          const taskData = JSON.parse(stored);
+          return taskData.startTime || Date.now();
+        }
+      } catch (error) {
+        console.error('获取任务开始时间失败:', error);
+      }
+      return Date.now();
+    };
+
+    const startTime = getTaskStartTime();
+    
     const timer = setInterval(() => {
       setElapsedTime(Math.floor((Date.now() - startTime) / 1000))
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [])
+  }, [taskId])
 
   useEffect(() => {
     if (!taskId) return
@@ -46,6 +61,13 @@ function ProcessingStatus({ taskId, onComplete, onCancel }) {
           // 错误处理已在 status 中
         }
       } catch (err) {
+        // 检查是否是404错误（任务被删除）
+        if (err.message && err.message.includes('404')) {
+          console.log('任务已被删除，返回上传页面')
+          onCancel() // 返回上传页面
+          return
+        }
+        
         setStatus({
           stage: 'error',
           progress: 0,
@@ -62,7 +84,7 @@ function ProcessingStatus({ taskId, onComplete, onCancel }) {
     const interval = setInterval(pollStatus, 2000)
 
     return () => clearInterval(interval)
-  }, [taskId, onComplete])
+  }, [taskId, onComplete, onCancel])
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60)

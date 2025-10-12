@@ -1,0 +1,32 @@
+{
+  "27f46251-6ca2-427c-87d5-f223c99134e5": {
+    "task_id": "27f46251-6ca2-427c-87d5-f223c99134e5",
+    "status": "processing",
+    "stage": "asr",
+    "progress": 20,
+    "message": "开始语音识别...",
+    "filename": "9c7e095800b3290226fb345fad3f27b0.mp4",
+    "file_path": "/home/hesper/project/video-devour/uploads/27f46251-6ca2-427c-87d5-f223c99134e5.mp4",
+    "created_at": "2025-10-12T03:03:06.246810"
+  },
+  "57d48d11-3f21-4276-9e7e-19c7989dccfb": {
+    "task_id": "57d48d11-3f21-4276-9e7e-19c7989dccfb",
+    "status": "completed",
+    "stage": "completed",
+    "progress": 100,
+    "message": "处理完成",
+    "filename": "电扇.mp4",
+    "file_path": "/home/hesper/project/video-devour/uploads/57d48d11-3f21-4276-9e7e-19c7989dccfb.mp4",
+    "created_at": "2025-10-12T12:29:37.206757"
+  },
+  "9c1eb95d-5e43-4007-a48f-fa3f6d48e11f": {
+    "task_id": "9c1eb95d-5e43-4007-a48f-fa3f6d48e11f",
+    "status": "completed",
+    "stage": "completed",
+    "progress": 100,
+    "message": "处理完成",
+    "filename": "电扇(2).mp4",
+    "file_path": "/home/hesper/project/video-devour/uploads/9c1eb95d-5e43-4007-a48f-fa3f6d48e11f.mp4",
+    "created_at": "2025-10-12T12:35:47.585606"
+  }
+}

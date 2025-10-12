@@ -7,6 +7,18 @@
 import logging
 import numpy as np
 
+def install_sentence_transformers():
+    """自动安装 sentence-transformers 库"""
+    try:
+        logging.info("正在自动安装 sentence-transformers 库...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "sentence-transformers"])
+        logging.info("sentence-transformers 库安装成功！")
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.error(f"安装 sentence-transformers 失败: {e}")
+        return False
+
+
 try:
     from sentence_transformers import SentenceTransformer
     SENTENCE_TRANSFORMERS_AVAILABLE = True

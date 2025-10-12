@@ -10,11 +10,15 @@ import tempfile
 import logging
 import os
 from pathlib import Path
-import yaml
 import json
 from datetime import datetime
 from funasr import AutoModel
 from typing import List, Dict, Optional
+import sys
+
+# 添加算法模块路径
+sys.path.append(str(Path(__file__).parent.parent / "algorithm"))
+from modelscope_manager import ModelScopeManager
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -37,15 +41,7 @@ class VideoDevourASRParaformerV2:
         初始化 ASR 引擎
         
         加载配置文件并设置设备
-        """
-        # 加载配置文件
-        config_file = Path(__file__).parent.parent.parent / 'config.yaml'
-        if not config_file.exists():
-            raise FileNotFoundError(f"配置文件未找到: {config_file}")
-        
-        with open(config_file, 'r', encoding='utf-8') as f:
-            self.config = yaml.safe_load(f)
-        
+        """        
         # 设置设备
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         logging.info(f"使用设备: {self.device}")
@@ -55,6 +51,40 @@ class VideoDevourASRParaformerV2:
         
         # 获取项目根目录
         self.project_root = Path(__file__).resolve().parent.parent.parent
+        
+        # 初始化 ModelScope 管理器
+        self.model_manager = ModelScopeManager(str(self.project_root))
+        
+        # 自动检查和下载缺失的模型
+        self._ensure_models_available()
+    
+    def _ensure_models_available(self):
+        """
+        确保所需的模型都可用，如果缺失则自动下载
+        """
+        try:
+            missing_models = self.model_manager.get_missing_models()
+            
+            if missing_models:
+                logging.info(f"检测到缺失模型: {missing_models}")
+                logging.info("正在自动下载缺失的模型...")
+                
+                # 下载缺失的模型
+                results = self.model_manager.download_all_missing_models()
+                
+                # 检查下载结果
+                failed_models = [model for model, success in results.items() if not success]
+                if failed_models:
+                    logging.warning(f"以下模型下载失败: {failed_models}")
+                    logging.warning("将使用远程模型作为备选方案")
+                else:
+                    logging.info("所有缺失模型下载完成")
+            else:
+                logging.info("所有必需模型都已存在")
+                
+        except Exception as e:
+            logging.warning(f"模型检查过程中出现错误: {str(e)}")
+            logging.warning("将使用远程模型作为备选方案")
     
     @property
     def asr_model(self) -> AutoModel:
@@ -68,10 +98,10 @@ class VideoDevourASRParaformerV2:
             logging.info("正在加载 Paraformer 模型（含 VAD / 标点 / 说话人分离）...")
             
             # 构建本地模型路径
-            paraformer_path = self.project_root / "models/models/iic/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn"
-            vad_path = self.project_root / "models/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
-            punc_path = self.project_root / "models/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large"
-            cam_path = self.project_root / "models/models/iic/speech_campplus_sv_zh-cn_16k-common"
+            paraformer_path = self.project_root / "models/iic/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn"
+            vad_path = self.project_root / "models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
+            punc_path = self.project_root / "models/iic/punc_ct-transformer_cn-en-common-vocab471067-large"
+            cam_path = self.project_root / "models/iic/speech_campplus_sv_zh-cn_16k-common"
             
             # 检查模型是否存在
             if not paraformer_path.exists():

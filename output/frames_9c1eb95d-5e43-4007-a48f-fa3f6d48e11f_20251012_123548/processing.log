@@ -1,0 +1,164 @@
+2025-10-12 12:35:48,589 - INFO - ============================================================
+2025-10-12 12:35:48,589 - INFO - 开始处理流程 - 时间戳: 20251012_123548
+2025-10-12 12:35:48,589 - INFO - 视频文件: /home/hesper/project/video-devour/uploads/9c1eb95d-5e43-4007-a48f-fa3f6d48e11f.mp4
+2025-10-12 12:35:48,589 - INFO - 输出目录: /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548
+2025-10-12 12:35:48,589 - INFO - ============================================================
+2025-10-12 12:35:48,589 - INFO - --- 步骤 0 & 1: 语音识别与数据处理 ---
+2025-10-12 12:35:48,590 - INFO - 使用设备: cuda:0
+2025-10-12 12:35:48,590 - INFO - ModelScope 管理器初始化完成
+2025-10-12 12:35:48,590 - INFO - 项目根目录: /home/hesper/project/video-devour
+2025-10-12 12:35:48,590 - INFO - 模型存储目录: /home/hesper/project/video-devour/models
+2025-10-12 12:35:48,590 - INFO - 所有必需模型都已存在
+2025-10-12 12:35:48,590 - INFO - 开始处理视频: /home/hesper/project/video-devour/uploads/9c1eb95d-5e43-4007-a48f-fa3f6d48e11f.mp4
+2025-10-12 12:35:48,590 - INFO - 正在提取音频: /home/hesper/project/video-devour/uploads/9c1eb95d-5e43-4007-a48f-fa3f6d48e11f.mp4
+2025-10-12 12:35:48,716 - INFO - 音频提取完成: /tmp/tmpq6sma1zk.wav
+2025-10-12 12:35:48,741 - INFO - 正在进行语音识别...
+2025-10-12 12:35:48,741 - INFO - 正在加载 Paraformer 模型（含 VAD / 标点 / 说话人分离）...
+2025-10-12 12:35:48,741 - WARNING - 本地 Paraformer 模型不存在: /home/hesper/project/video-devour/models/iic/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn
+2025-10-12 12:35:48,741 - INFO - 将使用远程模型 'paraformer-zh'
+2025-10-12 12:35:48,741 - INFO - 使用本地 VAD 模型: /home/hesper/project/video-devour/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch
+2025-10-12 12:35:48,741 - INFO - 使用本地标点模型: /home/hesper/project/video-devour/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large
+2025-10-12 12:35:48,741 - INFO - 使用本地说话人模型: /home/hesper/project/video-devour/models/iic/speech_campplus_sv_zh-cn_16k-common
+2025-10-12 12:35:48,741 - INFO - download models from model hub: ms
+2025-10-12 12:35:49,443 - WARNING - trust_remote_code: False
+2025-10-12 12:35:50,491 - INFO - Loading pretrained params from /mnt/d/WSLCache/modelscope/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
+2025-10-12 12:35:50,495 - INFO - ckpt: /mnt/d/WSLCache/modelscope/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt
+2025-10-12 12:35:54,933 - INFO - scope_map: ['module.', 'None']
+2025-10-12 12:35:54,933 - INFO - excludes: None
+2025-10-12 12:35:55,022 - INFO - Loading ckpt: /mnt/d/WSLCache/modelscope/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/model.pt, status: <All keys matched successfully>
+2025-10-12 12:35:55,291 - INFO - Building VAD model.
+2025-10-12 12:35:55,291 - INFO - download models from model hub: ms
+2025-10-12 12:35:55,296 - WARNING - trust_remote_code: False
+2025-10-12 12:35:55,299 - INFO - Loading pretrained params from /home/hesper/project/video-devour/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
+2025-10-12 12:35:55,299 - INFO - ckpt: /home/hesper/project/video-devour/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt
+2025-10-12 12:35:55,301 - INFO - scope_map: ['module.', 'None']
+2025-10-12 12:35:55,301 - INFO - excludes: None
+2025-10-12 12:35:55,301 - INFO - Loading ckpt: /home/hesper/project/video-devour/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/model.pt, status: <All keys matched successfully>
+2025-10-12 12:35:55,304 - INFO - Building punc model.
+2025-10-12 12:35:55,304 - INFO - download models from model hub: ms
+2025-10-12 12:35:55,308 - WARNING - trust_remote_code: False
+2025-10-12 12:36:07,966 - INFO - Loading pretrained params from /home/hesper/project/video-devour/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
+2025-10-12 12:36:07,967 - INFO - ckpt: /home/hesper/project/video-devour/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt
+2025-10-12 12:36:08,620 - INFO - scope_map: ['module.', 'None']
+2025-10-12 12:36:08,620 - INFO - excludes: None
+2025-10-12 12:36:08,708 - INFO - Loading ckpt: /home/hesper/project/video-devour/models/iic/punc_ct-transformer_cn-en-common-vocab471067-large/model.pt, status: <All keys matched successfully>
+2025-10-12 12:36:08,986 - INFO - Building SPK model.
+2025-10-12 12:36:08,987 - INFO - download models from model hub: ms
+2025-10-12 12:36:08,989 - WARNING - trust_remote_code: False
+2025-10-12 12:36:09,040 - INFO - Loading pretrained params from /home/hesper/project/video-devour/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
+2025-10-12 12:36:09,489 - INFO - ckpt: /home/hesper/project/video-devour/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin
+2025-10-12 12:36:09,539 - INFO - scope_map: ['module.', 'None']
+2025-10-12 12:36:09,539 - INFO - excludes: None
+2025-10-12 12:36:09,552 - INFO - Loading ckpt: /home/hesper/project/video-devour/models/iic/speech_campplus_sv_zh-cn_16k-common/campplus_cn_common.bin, status: <All keys matched successfully>
+2025-10-12 12:36:09,658 - INFO - Paraformer 模型加载完成（设备: cuda:0）
+2025-10-12 12:36:09,694 - INFO - Attempting to parse hotwords as str...
+2025-10-12 12:36:09,695 - INFO - Hotword list: ['魔搭', '<s>'].
+2025-10-12 12:36:10,011 - INFO - 规范化完成，共 9 个句子
+2025-10-12 12:36:10,011 - INFO - ASR结果已保存到: /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_asr_result.json
+2025-10-12 12:36:10,012 - INFO - 正在从 /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_asr_result.json 加载 ASR 数据...
+2025-10-12 12:36:10,012 - INFO - 检测到新格式（Paraformer V2），共 9 个句子
+2025-10-12 12:36:10,012 - INFO - 开始处理 ASR 数据（格式版本: v2）...
+2025-10-12 12:36:10,012 - INFO - 正在从新格式 transcript 生成对话列表...
+2025-10-12 12:36:10,012 - INFO - 成功生成 9 个对话条目
+2025-10-12 12:36:10,012 - INFO - 正在将对话分块...
+2025-10-12 12:36:10,012 - INFO - 分块完成，共生成 1 个块
+2025-10-12 12:36:10,012 - INFO - ASR 数据处理完成，共 1 个分块
+2025-10-12 12:36:10,012 - INFO - --- ASR数据处理完成 ---
+2025-10-12 12:36:10,031 - INFO - --- 步骤 2, 3, 4: 生成大纲并匹配文本块 ---
+2025-10-12 12:36:10,054 - INFO - 正在调用 LLM 生成大纲...
+2025-10-12 12:36:10,054 - INFO - 正在生成LLM大纲任务的prompt...
+2025-10-12 12:36:10,054 - INFO - LLM prompt生成完毕。
+2025-10-12 12:36:10,242 - INFO - HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2025-10-12 12:36:14,173 - INFO - Model deepseek-chat [0]: [{'role': 'system', 'content': '你是一个专业的会议记录分析师。你的任务是根据提供的带有说话人和时间戳的会议文本，生成一份结构清晰、逻辑严谨的Markdown格式文档大纲。'}, {'role': 'user', 'content': '请根据以下会议记录文本，生成一份详细的Markdown格式的文档大纲。\n\n重要提示：\n- 以下文本是自动语音识别（ASR）的结果，可能包含口语化表达、重复、错误或不通顺的句子。请在理解和总结时，智能地识别并忽略这些潜在的瑕疵。\n- 你的任务是梳理文本的逻辑结构，提炼核心议题和关键点，而不是简单地复述原文。\n- 大纲应采用Markdown的层级标题格式，且要求只到二级大纲（一级大纲的起始使用 #,二级使用 ##）。\n\n- 每个二级大纲下给出匹配的asr内容- 切记不要增加文本以外的内容大纲，不要自主补全后续大纲。\n- 输出样例如下：\n# 系统架构组成\n\n            ## 用户对话输入接口\n\n            我们使用对话输入接口……\n\n            ## 微调模块与Prompt优化模块\n\n            微调部分我们采用了…\n\n            ## 知识融合与风格化处理\n\n            我们将原文小说融合进知识与风格化……\n会议记录文本如下：\n-------------------\n\n[00:00 - 00:10] SPEAKER_0: 这个风扇也太绝了吧，小小一个三档，风力燃的刚刚好，还能当充电宝，手机随时续航，出门热了就打开，风大还不吵，折叠收纳包里一点不占地，现在下单到手只，'}]
+2025-10-12 12:36:14,174 - INFO - LLM 大纲生成成功。
+2025-10-12 12:36:14,174 - INFO - --- 步骤 3: 正在将大纲保存到 /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/outline.md ---
+2025-10-12 12:36:14,174 - INFO - --- 大纲保存成功 ---
+2025-10-12 12:36:14,174 - INFO - 正在从大纲中解析所有级别的标题...
+2025-10-12 12:36:14,174 - INFO - 成功从大綱中提取 3 个标题。
+2025-10-12 12:36:14,174 - INFO - 正在从大纲中解析二级标题及其内容...
+2025-10-12 12:36:14,174 - INFO - 成功解析 2 个二级标题及其内容
+2025-10-12 12:36:14,175 - INFO - 正在加载轻量级语义模型...
+2025-10-12 12:36:14,176 - INFO - Use pytorch device_name: cuda:0
+2025-10-12 12:36:14,176 - INFO - Load pretrained SentenceTransformer: paraphrase-multilingual-MiniLM-L12-v2
+2025-10-12 12:36:34,562 - INFO - 语义模型加载成功
+2025-10-12 12:36:34,563 - INFO - 已加载 2 个标题的内容
+2025-10-12 12:36:34,563 - INFO - 正在预计算大纲内容的向量表示...
+2025-10-12 12:36:34,577 - INFO - 成功预计算 2 个标题的向量
+2025-10-12 12:36:34,592 - INFO - 找到高相似度匹配: '风扇性能特点' (相似度: 99.40%)
+2025-10-12 12:36:34,592 - INFO - --- 文本块匹配完成 ---
+2025-10-12 12:36:34,593 - INFO - --- 步骤 5: 生成详细大纲 ---
+2025-10-12 12:36:34,593 - INFO - --- 步骤 5: 正在生成详细大纲文件到 /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/detailed_outline.md ---
+2025-10-12 12:36:34,593 - INFO - --- 详细大纲生成成功 ---
+2025-10-12 12:36:34,593 - INFO - --- 步骤 6: 根据大纲切分视频 ---
+2025-10-12 12:36:34,593 - INFO - --- 步骤 6: 开始根据大纲切分视频 ---
+2025-10-12 12:36:34,594 - INFO - 视频片段将保存到: /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/videocut
+2025-10-12 12:36:34,594 - INFO - 跳过非二级标题 '产品功能介绍' (级别: 1)
+2025-10-12 12:36:34,594 - INFO - 标题 '风扇性能特点' 匹配了 1 个文本块
+2025-10-12 12:36:34,594 - INFO - 正在切分视频片段: '风扇性能特点' (0.11s 到 10.02s, 时长: 9.91s)
+2025-10-12 12:36:35,392 - INFO - 成功保存视频片段到: /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/videocut/02_风扇性能特点.mp4
+2025-10-12 12:36:35,393 - INFO - --- 视频切分完成，共生成 1 个视频片段 ---
+2025-10-12 12:36:35,393 - INFO - --- 步骤 7: 从视频片段中提取帧 ---
+2025-10-12 12:36:35,393 - INFO - --- 步骤 7: 开始从视频片段中提取帧 ---
+2025-10-12 12:36:35,393 - INFO - 从目录读取视频文件: /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/videocut
+2025-10-12 12:36:35,393 - INFO - 找到 1 个视频文件
+2025-10-12 12:36:35,393 - INFO - 正在从 '02_风扇性能特点.mp4' 提取帧到 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点'...
+2025-10-12 12:36:35,511 - INFO - 成功从 '02_风扇性能特点.mp4' 提取了 10 帧。
+2025-10-12 12:36:35,512 - INFO - 帧已保存到: /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点
+2025-10-12 12:36:35,512 - INFO - --- 帧提取完成，总共提取了 10 帧 ---
+2025-10-12 12:36:35,512 - INFO - --- 步骤 8: 处理并筛选帧 ---
+2025-10-12 12:36:35,512 - INFO - --- 步骤 8: 开始处理和筛选帧 ---
+2025-10-12 12:36:35,512 - INFO - 搜索帧目录: /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548
+2025-10-12 12:36:35,512 - INFO - 开始处理目录: /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点
+2025-10-12 12:36:35,552 - INFO - 删除冗余图片: frame_0004.jpg (与 frame_0003.jpg 相似度: 0.89)
+2025-10-12 12:36:35,577 - INFO - 删除冗余图片: frame_0008.jpg (与 frame_0007.jpg 相似度: 0.88)
+2025-10-12 12:36:35,583 - INFO - 删除冗余图片: frame_0009.jpg (与 frame_0007.jpg 相似度: 0.87)
+2025-10-12 12:36:35,589 - INFO - 删除冗余图片: frame_0010.jpg (与 frame_0007.jpg 相似度: 0.86)
+2025-10-12 12:36:35,590 - INFO - 目录 /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点 处理完成
+2025-10-12 12:36:35,590 - INFO - --- 图像处理和筛选完成，共处理 1 个帧目录 ---
+2025-10-12 12:36:35,590 - INFO - --- 步骤 9: 使用VLM选择关键帧 ---
+2025-10-12 12:36:35,590 - INFO - --- 步骤 9: 开始使用 VLM 选择关键帧 ---
+2025-10-12 12:36:35,612 - WARNING - Invalid or missing `max_tokens` in `model_config_dict`. Defaulting to 999_999_999 tokens.
+2025-10-12 12:36:35,612 - INFO - VLM 处理器初始化成功。
+2025-10-12 12:36:35,613 - INFO - 选定的关键帧将被复制到: /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/keyframes
+2025-10-12 12:36:35,613 - INFO - 为标题 '风扇性能特点' 的 6 帧进行VLM评分...
+2025-10-12 12:36:35,613 - INFO - 正在使用 VLM 评估图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0001.jpg'，主题为 '风扇性能特点'...
+2025-10-12 12:36:40,712 - INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/chat/completions "HTTP/1.1 200 OK"
+2025-10-12 12:36:40,712 - INFO - Model doubao-seed-1-6-flash-250828 [0]: [{'role': 'system', 'content': '\nRegardless of the input language, you must output text in 中文.'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}]
+2025-10-12 12:36:40,715 - INFO - 图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0001.jpg' 评估完成。得分: 2, 描述: 图片展示了一位穿着浅色上衣的女性坐在室内（背景有木质架子及绿植），她左手持一杯带绿色吸管的冰咖啡（透...
+2025-10-12 12:36:40,715 - INFO - 正在使用 VLM 评估图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0002.jpg'，主题为 '风扇性能特点'...
+2025-10-12 12:36:52,589 - INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/chat/completions "HTTP/1.1 200 OK"
+2025-10-12 12:36:52,590 - INFO - Model doubao-seed-1-6-flash-250828 [0]: [{'role': 'system', 'content': '\nRegardless of the input language, you must output text in 中文.'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片展示了一位穿着浅色上衣的女性坐在室内（背景有木质架子及绿植），她左手持一杯带绿色吸管的冰咖啡（透明塑料杯装棕色液体），右手握一个绿色手持小风扇；桌上有银色笔记本电脑及绿色挂绳（疑似风扇挂绳）。画面上方有黄色带黑边文字“这个风扇也太绝了吧！”，整体环境明亮清新，营造出日常使用场景氛围。", "相关性打分": 2}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}]
+2025-10-12 12:36:52,594 - INFO - 图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0002.jpg' 评估完成。得分: 8, 描述: 图片为特写镜头，展示一只手握着一台浅绿色的手持小风扇。风扇扇叶呈圆形，手柄部分带有黑色小功能区域（疑...
+2025-10-12 12:36:52,594 - INFO - 正在使用 VLM 评估图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0003.jpg'，主题为 '风扇性能特点'...
+2025-10-12 12:37:05,779 - INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/chat/completions "HTTP/1.1 200 OK"
+2025-10-12 12:37:05,780 - INFO - Model doubao-seed-1-6-flash-250828 [0]: [{'role': 'system', 'content': '\nRegardless of the input language, you must output text in 中文.'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片展示了一位穿着浅色上衣的女性坐在室内（背景有木质架子及绿植），她左手持一杯带绿色吸管的冰咖啡（透明塑料杯装棕色液体），右手握一个绿色手持小风扇；桌上有银色笔记本电脑及绿色挂绳（疑似风扇挂绳）。画面上方有黄色带黑边文字“这个风扇也太绝了吧！”，整体环境明亮清新，营造出日常使用场景氛围。", "相关性打分": 2}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片为特写镜头，展示一只手握着一台浅绿色的手持小风扇。风扇扇叶呈圆形，手柄部分带有黑色小功能区域（疑似开关或显示）及侧面通风设计，手的握持姿势清晰可见。图片右上角有黄色加粗黑边文字“三档风力”，左上角有白色背景的“88 Sora”标识，背景为模糊的浅色物体，整体聚焦于风扇的细节及“三档风力”的性能说明。", "相关性打分": 8}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}]
+2025-10-12 12:37:05,785 - INFO - 图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0003.jpg' 评估完成。得分: 2, 描述: 图片展示一只手握着一部正在充电的智能手机（屏幕显示“72%”电量，带有充电标识），手机放置在一台浅绿...
+2025-10-12 12:37:05,785 - INFO - 正在使用 VLM 评估图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0005.jpg'，主题为 '风扇性能特点'...
+2025-10-12 12:37:12,843 - INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/chat/completions "HTTP/1.1 200 OK"
+2025-10-12 12:37:12,844 - INFO - Model doubao-seed-1-6-flash-250828 [0]: [{'role': 'system', 'content': '\nRegardless of the input language, you must output text in 中文.'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片展示了一位穿着浅色上衣的女性坐在室内（背景有木质架子及绿植），她左手持一杯带绿色吸管的冰咖啡（透明塑料杯装棕色液体），右手握一个绿色手持小风扇；桌上有银色笔记本电脑及绿色挂绳（疑似风扇挂绳）。画面上方有黄色带黑边文字“这个风扇也太绝了吧！”，整体环境明亮清新，营造出日常使用场景氛围。", "相关性打分": 2}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片为特写镜头，展示一只手握着一台浅绿色的手持小风扇。风扇扇叶呈圆形，手柄部分带有黑色小功能区域（疑似开关或显示）及侧面通风设计，手的握持姿势清晰可见。图片右上角有黄色加粗黑边文字“三档风力”，左上角有白色背景的“88 Sora”标识，背景为模糊的浅色物体，整体聚焦于风扇的细节及“三档风力”的性能说明。", "相关性打分": 8}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片展示一只手握着一部正在充电的智能手机（屏幕显示“72%”电量，带有充电标识），手机放置在一台浅绿色的小型便携风扇上。风扇底部有USB接口，插着一根白色充电线，扇叶部分可见；背景是木质桌面，桌上还隐约可见带绿色吸管的冰咖啡和银色笔记本电脑。图片上方有绿色带黑边文字“还是充电宝”，右上角有白色背景的“Sora”标识。整体聚焦手机充电场景，突出风扇兼具充电宝功能。", "相关性打分": 2}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}]
+2025-10-12 12:37:12,851 - INFO - 图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0005.jpg' 评估完成。得分: 7, 描述: 图片展示一位女性在户外（背景为绿色草地和树木，天气晴朗），她身着浅米色上衣，头发扎成马尾，右手持浅绿...
+2025-10-12 12:37:12,851 - INFO - 正在使用 VLM 评估图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0006.jpg'，主题为 '风扇性能特点'...
+2025-10-12 12:37:18,973 - INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/chat/completions "HTTP/1.1 200 OK"
+2025-10-12 12:37:18,974 - INFO - Model doubao-seed-1-6-flash-250828 [0]: [{'role': 'system', 'content': '\nRegardless of the input language, you must output text in 中文.'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片展示了一位穿着浅色上衣的女性坐在室内（背景有木质架子及绿植），她左手持一杯带绿色吸管的冰咖啡（透明塑料杯装棕色液体），右手握一个绿色手持小风扇；桌上有银色笔记本电脑及绿色挂绳（疑似风扇挂绳）。画面上方有黄色带黑边文字“这个风扇也太绝了吧！”，整体环境明亮清新，营造出日常使用场景氛围。", "相关性打分": 2}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片为特写镜头，展示一只手握着一台浅绿色的手持小风扇。风扇扇叶呈圆形，手柄部分带有黑色小功能区域（疑似开关或显示）及侧面通风设计，手的握持姿势清晰可见。图片右上角有黄色加粗黑边文字“三档风力”，左上角有白色背景的“88 Sora”标识，背景为模糊的浅色物体，整体聚焦于风扇的细节及“三档风力”的性能说明。", "相关性打分": 8}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片展示一只手握着一部正在充电的智能手机（屏幕显示“72%”电量，带有充电标识），手机放置在一台浅绿色的小型便携风扇上。风扇底部有USB接口，插着一根白色充电线，扇叶部分可见；背景是木质桌面，桌上还隐约可见带绿色吸管的冰咖啡和银色笔记本电脑。图片上方有绿色带黑边文字“还是充电宝”，右上角有白色背景的“Sora”标识。整体聚焦手机充电场景，突出风扇兼具充电宝功能。", "相关性打分": 2}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片展示一位女性在户外（背景为绿色草地和树木，天气晴朗），她身着浅米色上衣，头发扎成马尾，右手持浅绿色手持小风扇（风扇带有长挂绳），左手提白色手提包。图片左侧有黄色底黑字的“出门不怕热”文字，旁配绿色箭头指向其头部；右上角有白色背景的“Sora”标识。整体场景强调风扇在户外出行中的使用场景，暗示其降温功能。", "相关性打分": 7}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}]
+2025-10-12 12:37:18,982 - INFO - 图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0006.jpg' 评估完成。得分: 8, 描述: 图片背景为模糊的绿色户外环境（可能是草地或植物），前景是一个白色帆布包（带有白色提手），包内放置着一...
+2025-10-12 12:37:18,983 - INFO - 正在使用 VLM 评估图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0007.jpg'，主题为 '风扇性能特点'...
+2025-10-12 12:37:23,834 - INFO - HTTP Request: POST https://ark.cn-beijing.volces.com/api/v3/chat/completions "HTTP/1.1 200 OK"
+2025-10-12 12:37:23,835 - INFO - Model doubao-seed-1-6-flash-250828 [0]: [{'role': 'system', 'content': '\nRegardless of the input language, you must output text in 中文.'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片展示了一位穿着浅色上衣的女性坐在室内（背景有木质架子及绿植），她左手持一杯带绿色吸管的冰咖啡（透明塑料杯装棕色液体），右手握一个绿色手持小风扇；桌上有银色笔记本电脑及绿色挂绳（疑似风扇挂绳）。画面上方有黄色带黑边文字“这个风扇也太绝了吧！”，整体环境明亮清新，营造出日常使用场景氛围。", "相关性打分": 2}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片为特写镜头，展示一只手握着一台浅绿色的手持小风扇。风扇扇叶呈圆形，手柄部分带有黑色小功能区域（疑似开关或显示）及侧面通风设计，手的握持姿势清晰可见。图片右上角有黄色加粗黑边文字“三档风力”，左上角有白色背景的“88 Sora”标识，背景为模糊的浅色物体，整体聚焦于风扇的细节及“三档风力”的性能说明。", "相关性打分": 8}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片展示一只手握着一部正在充电的智能手机（屏幕显示“72%”电量，带有充电标识），手机放置在一台浅绿色的小型便携风扇上。风扇底部有USB接口，插着一根白色充电线，扇叶部分可见；背景是木质桌面，桌上还隐约可见带绿色吸管的冰咖啡和银色笔记本电脑。图片上方有绿色带黑边文字“还是充电宝”，右上角有白色背景的“Sora”标识。整体聚焦手机充电场景，突出风扇兼具充电宝功能。", "相关性打分": 2}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片展示一位女性在户外（背景为绿色草地和树木，天气晴朗），她身着浅米色上衣，头发扎成马尾，右手持浅绿色手持小风扇（风扇带有长挂绳），左手提白色手提包。图片左侧有黄色底黑字的“出门不怕热”文字，旁配绿色箭头指向其头部；右上角有白色背景的“Sora”标识。整体场景强调风扇在户外出行中的使用场景，暗示其降温功能。", "相关性打分": 7}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}, {'role': 'assistant', 'content': '{"图片内容": "图片背景为模糊的绿色户外环境（可能是草地或植物），前景是一个白色帆布包（带有白色提手），包内放置着一个浅绿色的手持小风扇（扇叶呈圆形，手柄部分带有黑色功能区域或接口）。图片上方有蓝色带白色边框的文字“小巧不占地”，并配有黄色星星装饰；左下角有带有“Sora”字样的标识。整体展示了风扇放置在帆布包内的状态，突出其体积小巧、便于收纳携带的特点。", "相关性打分": 8}'}, {'role': 'user', 'content': [{'type': 'text', 'text': '你是一个图片理解专家，你需要根据我的要求回答图片相关的问题。\n1. 你需要描述图片的内容，具体有什么。描述要完整清晰有条理。\n2. 你需要判断图片的内容是否符合【风扇性能特点】的主题。满分10分，最低分0分。你需要认真判断主题和画面内容的关系并给出合理的评分。\n3. 你需要结构化的回复，并且使用json结构。\n回复样例：{"图片内容": "描述图片中的内容即可", "相关性打分": 10}'}, {'type': 'image_url', 'image_url': {'url': 'file:///tmp/image_ddbe594cf2.jpeg', 'detail': 'auto'}}]}]
+2025-10-12 12:37:23,845 - INFO - 图片 '/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/frames_02_风扇性能特点/frame_0007.jpg' 评估完成。得分: 2, 描述: 图片展示一位身着浅米色上衣的女性坐在室内（背景可见木质架子与绿植），左手持透明塑料杯装的带绿色吸管冰...
+2025-10-12 12:37:23,845 - INFO - 为标题 '风扇性能特点' 选定的最佳帧是 'frame_0002.jpg' (得分: 8)
+2025-10-12 12:37:23,845 - WARNING - 未找到标题 '促销活动信息' 对应的帧目录，跳过。
+2025-10-12 12:37:23,845 - INFO - --- VLM 关键帧选择完成，共选定并复制 1 帧 ---
+2025-10-12 12:37:23,846 - INFO - --- 步骤 10: 更新大纲，添加关键帧 ---
+2025-10-12 12:37:23,846 - INFO - --- 步骤 10: 正在向详细大纲中添加关键帧链接 ---
+2025-10-12 12:37:23,846 - INFO - 成功将 1 个关键帧链接添加到详细大纲中。存在：/home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/detailed_outline.md
+2025-10-12 12:37:23,846 - INFO - --- 步骤 11: 生成最终报告 ---
+2025-10-12 12:37:23,846 - INFO - --- 步骤 11: 开始生成最终的图文报告 ---
+2025-10-12 12:37:23,872 - INFO - 正在向 LLM 发送通用请求...
+2025-10-12 12:37:24,066 - INFO - HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2025-10-12 12:37:38,167 - INFO - Model deepseek-chat [0]: [{'role': 'system', 'content': '你是一个能力强大的人工智能助手。'}, {'role': 'user', 'content': '你是一位专业的报告撰写员。你的任务是根据下面提供的Markdown大纲（其中包含了章节标题、文本摘要和关键帧图片），将其优化和扩写成一份内容更丰富、图文并茂的综合性报告。\\n\\n**重要指令：**\\n1. **保留原始结构：** 必须完整保留所有原始的一级和二级标题（`#` 和 `##`）。\\n2. **保留所有图片：** 必须保留大纲中提供的所有图片，并且维持它们原来的Markdown链接格式 (`![...](...)`)。\\n3. **维持图片位置：** 确保每张图片都紧跟在它所属的二级标题下方，作为该章节的配图。\\n4. **润色和扩写：** 在保留上述结构和图片的基础上，对每个章节下的文本内容进行语言润色、逻辑梳理和内容补充，使其更加流畅、专业和易于理解。\\n5. **输出格式：** 最终输出仍为完整的Markdown格式文档。\\n\\n原始大纲内容如下：\\n-------------------\\n# 产品功能介绍\n\n## 风扇性能特点\n\n![关键帧: 风扇性能特点](keyframes/01_风扇性能特点.jpg)\n\n\n> **匹配的文本片段:**\n>\n> - **[00:00 - 00:10] SPEAKER_0:** 这个风扇也太绝了吧，小小一个三档，风力燃的刚刚好，还能当充电宝，手机随时续航，出门热了就打开，风大还不吵，折叠收纳包里一点不占地，现在下单到手只，\n\n这个风扇也太绝了吧，小小一个三档，风力燃的刚刚好，还能当充电宝，手机随时续航，出门热了就打开，风大还不吵，折叠收纳包里一点不占地\n\n## 促销活动信息\n现在下单到手只\n'}]
+2025-10-12 12:37:38,168 - INFO - 已成功从 LLM 获取响应。
+2025-10-12 12:37:38,168 - INFO - 最终报告已成功生成并保存到: /home/hesper/project/video-devour/output/frames_9c1eb95d-5e43-4007-a48f-fa3f6d48e11f_20251012_123548/final_report.md
+2025-10-12 12:37:38,168 - INFO - 
+============================================================
+2025-10-12 12:37:38,168 - INFO - 处理流程成功完成 - 时间戳: 20251012_123548
+2025-10-12 12:37:38,168 - INFO - ============================================================

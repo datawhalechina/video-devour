@@ -133,7 +133,35 @@ function SplitViewEditor({ initialMarkdown, onSave, onCancel }) {
             >
               <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-12">
                 <div className="prose prose-lg max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown 
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      img: ({ src, alt, ...props }) => {
+                        // 如果是相对路径，转换为静态文件路径
+                        let imageSrc = src;
+                        
+                        // 如果是相对路径，需要构建正确的静态文件路径
+                        if (!src.startsWith('http') && !src.startsWith('/')) {
+                          // 分离路径和文件名，只对文件名进行编码
+                          const pathParts = src.split('/');
+                          const fileName = pathParts.pop();
+                          const pathPrefix = pathParts.length > 0 ? pathParts.join('/') + '/' : '';
+                          const encodedFileName = encodeURIComponent(fileName);
+                          imageSrc = `/static/${pathPrefix}${encodedFileName}`;
+                        }
+                        
+                        return (
+                          <img 
+                            src={imageSrc} 
+                            alt={alt} 
+                            {...props}
+                            className="max-w-full h-auto rounded-lg shadow-sm"
+                            loading="lazy"
+                          />
+                        );
+                      }
+                    }}
+                  >
                     {markdownPreview}
                   </ReactMarkdown>
                 </div>
