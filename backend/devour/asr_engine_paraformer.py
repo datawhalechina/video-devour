@@ -11,6 +11,11 @@ from datetime import datetime
 from funasr import AutoModel
 from funasr.utils.postprocess_utils import rich_transcription_postprocess
 import soundfile as sf  # 用于读取和裁剪音频文件
+import sys
+
+# 添加算法模块路径
+sys.path.append(str(Path(__file__).parent.parent / "algorithm"))
+from modelscope_manager import ModelScopeManager
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -29,6 +34,43 @@ class VideoDevourASRFunasr:
         self._diarization_pipeline = None 
         self._asr_model = None
         self._vad_model = None  # VAD 模型单独加载
+        
+        # 获取项目根目录
+        self.project_root = Path(__file__).resolve().parent.parent.parent
+        
+        # 初始化 ModelScope 管理器
+        self.model_manager = ModelScopeManager(str(self.project_root))
+        
+        # 自动检查和下载缺失的模型
+        self._ensure_models_available()
+    
+    def _ensure_models_available(self):
+        """
+        确保所需的模型都可用，如果缺失则自动下载
+        """
+        try:
+            missing_models = self.model_manager.get_missing_models()
+            
+            if missing_models:
+                logging.info(f"检测到缺失模型: {missing_models}")
+                logging.info("正在自动下载缺失的模型...")
+                
+                # 下载缺失的模型
+                results = self.model_manager.download_all_missing_models()
+                
+                # 检查下载结果
+                failed_models = [model for model, success in results.items() if not success]
+                if failed_models:
+                    logging.warning(f"以下模型下载失败: {failed_models}")
+                    logging.warning("将使用远程模型作为备选方案")
+                else:
+                    logging.info("所有缺失模型下载完成")
+            else:
+                logging.info("所有必需模型都已存在")
+                
+        except Exception as e:
+            logging.warning(f"模型检查过程中出现错误: {str(e)}")
+            logging.warning("将使用远程模型作为备选方案")
         
     @property
     def vad_model(self):

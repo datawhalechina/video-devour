@@ -21,11 +21,10 @@ class LLMHandler:
         """
         Initializes the LLM handler by setting up the model configuration.
         """
-        self.api_key = config.get_api_key()
         self.model = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI_COMPATIBLE_MODEL,
             model_type=config.LLM_MODEL_TYPE,
-            api_key=self.api_key,
+            api_key=config.LLM_API_KEY,
             url=config.LLM_API_URL,
             model_config_dict={"temperature": config.LLM_TEMPERATURE},
             # token_counter=config.LLM_TOKEN_COUNTER

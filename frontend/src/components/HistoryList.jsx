@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { getHistory, deleteReport } from '../api/videoService'
 
-function HistoryList({ onViewReport, onBack }) {
+function HistoryList({ onViewReport, onBack, onBackToProcessing, currentTask }) {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -24,36 +24,62 @@ function HistoryList({ onViewReport, onBack }) {
   const loadHistory = async () => {
     try {
       setLoading(true)
-      setError(null)
       const data = await getHistory()
       setHistory(data)
     } catch (err) {
-      setError(err.message || '加载历史记录失败')
+      setError(err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDelete = async (id) => {
-    if (!confirm('确定要删除这份报告吗？')) return
-
+  const handleDelete = async (taskId) => {
+    // 乐观删除：先从UI中移除
+    const originalHistory = [...history];
+    const updatedHistory = history.filter(item => item.id !== taskId);
+    setHistory(updatedHistory);
+    
     try {
-      await deleteReport(id)
-      setHistory(history.filter(item => item.id !== id))
-    } catch (err) {
-      alert('删除失败：' + err.message)
+      // 异步删除后端数据
+      await deleteReport(taskId);
+      
+      // 如果删除的是当前正在处理的任务，需要通知父组件清理状态
+      if (currentTask === taskId) {
+        // 清理localStorage中的任务状态
+        localStorage.removeItem('videodevour_current_task');
+        // 如果有回调函数，调用它来清理状态
+        if (onBackToProcessing) {
+          onBackToProcessing();
+        }
+      }
+    } catch (error) {
+      console.error('删除失败:', error);
+      // 删除失败，恢复原始数据
+      setHistory(originalHistory);
+      alert('删除失败，请重试');
     }
-  }
+  };
 
   const formatDate = (dateString) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+    if (!dateString) return '未知时间';
+    
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return '未知时间';
+      }
+      
+      return date.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      console.error('日期格式化错误:', error);
+      return '未知时间';
+    }
   }
 
   return (
@@ -65,11 +91,18 @@ function HistoryList({ onViewReport, onBack }) {
         className="flex items-center justify-between mb-6"
       >
         <button
-          onClick={onBack}
+          onClick={() => {
+            if (currentTask) {
+              // 直接跳转到处理页面URL
+              window.location.href = `/processing/${currentTask}`;
+            } else {
+              onBack();
+            }
+          }}
           className="flex items-center space-x-2 text-gray-600 hover:text-gray-800 transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
-          <span>返回</span>
+          <span>{currentTask ? '返回处理' : '返回'}</span>
         </button>
 
         <h2 className="text-2xl font-bold text-gray-800">历史记录</h2>

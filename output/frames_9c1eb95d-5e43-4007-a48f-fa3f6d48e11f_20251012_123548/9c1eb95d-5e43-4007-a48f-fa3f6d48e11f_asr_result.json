@@ -1,0 +1,77 @@
+[
+  {
+    "transcript": [
+      {
+        "index": 1,
+        "spk_id": "0",
+        "sentence": "这个风扇也太绝了吧，",
+        "start_time": 0.11,
+        "end_time": 1.43
+      },
+      {
+        "index": 2,
+        "spk_id": "0",
+        "sentence": "小小一个三档，",
+        "start_time": 1.49,
+        "end_time": 2.57
+      },
+      {
+        "index": 3,
+        "spk_id": "0",
+        "sentence": "风力燃的刚刚好，",
+        "start_time": 2.57,
+        "end_time": 3.79
+      },
+      {
+        "index": 4,
+        "spk_id": "0",
+        "sentence": "还能当充电宝，",
+        "start_time": 3.79,
+        "end_time": 4.75
+      },
+      {
+        "index": 5,
+        "spk_id": "0",
+        "sentence": "手机随时续航，",
+        "start_time": 4.77,
+        "end_time": 5.79
+      },
+      {
+        "index": 6,
+        "spk_id": "0",
+        "sentence": "出门热了就打开，",
+        "start_time": 5.79,
+        "end_time": 6.71
+      },
+      {
+        "index": 7,
+        "spk_id": "0",
+        "sentence": "风大还不吵，",
+        "start_time": 6.75,
+        "end_time": 7.51
+      },
+      {
+        "index": 8,
+        "spk_id": "0",
+        "sentence": "折叠收纳包里一点不占地，",
+        "start_time": 7.51,
+        "end_time": 9.03
+      },
+      {
+        "index": 9,
+        "spk_id": "0",
+        "sentence": "现在下单到手只，",
+        "start_time": 9.03,
+        "end_time": 10.015
+      }
+    ],
+    "video_path": "/home/hesper/project/video-devour/uploads/9c1eb95d-5e43-4007-a48f-fa3f6d48e11f.mp4",
+    "processed_at": "2025-10-12T12:36:10.011722",
+    "text_stats": {
+      "total_segments": 9,
+      "total_words": 9,
+      "total_chars": 81,
+      "avg_segment_duration": 1.0872222222222223
+    }
+  }
+]

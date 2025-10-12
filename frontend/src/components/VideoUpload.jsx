@@ -1,10 +1,10 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, ArrowLeft } from 'lucide-react'
+import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, ArrowLeft, Play } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { uploadVideo } from '../api/videoService'
 
-function VideoUpload({ onUploadSuccess, onViewHistory }) {
+function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProcessing }) {
   const navigate = useNavigate()
   const [selectedFiles, setSelectedFiles] = useState([])
   const [uploading, setUploading] = useState(false)
@@ -85,12 +85,12 @@ function VideoUpload({ onUploadSuccess, onViewHistory }) {
 
         // 更新状态为成功
         setSelectedFiles(prev => 
-          prev.map(f => f.id === fileItem.id ? { ...f, status: 'success', taskId: result.taskId } : f)
+          prev.map(f => f.id === fileItem.id ? { ...f, status: 'success', taskId: result.task_id } : f)
         )
         
         // 如果只有一个文件，直接跳转到处理页面
         if (selectedFiles.length === 1) {
-          onUploadSuccess(result.taskId)
+          onUploadSuccess(result.task_id)
           return
         }
       } catch (err) {
@@ -150,6 +150,40 @@ function VideoUpload({ onUploadSuccess, onViewHistory }) {
           上传视频，使用 AI 技术自动提取语音内容、生成大纲、筛选关键帧，并输出一份图文并茂的分析报告
         </p>
       </motion.div>
+
+      {/* 正在处理任务提示 */}
+      {currentTask && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="p-3 bg-blue-100 rounded-xl">
+                  <Play className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-blue-900 mb-1">
+                    有任务正在处理中
+                  </h3>
+                  <p className="text-blue-700 text-sm">
+                    任务ID: {currentTask}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={onBackToProcessing}
+                className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium flex items-center space-x-2"
+              >
+                <Clock className="w-4 h-4" />
+                <span>查看进度</span>
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* 上传区域 */}
       <motion.div

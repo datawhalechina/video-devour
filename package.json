@@ -1,0 +1,14 @@
+{
+  "name": "video-devour",
+  "version": "1.0.0",
+  "description": "Video processing and analysis tool",
+  "main": "videodevour.py",
+  "scripts": {
+    "start": "python videodevour.py",
+    "frontend": "cd frontend && npm run dev",
+    "backend": "python videodevour.py"
+  },
+  "keywords": ["video", "processing", "analysis", "asr"],
+  "author": "",
+  "license": "MIT"
+}
