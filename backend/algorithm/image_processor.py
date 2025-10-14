@@ -8,9 +8,18 @@ import re
 try:
     import cv2
     from skimage.metrics import structural_similarity as ssim
+    import numpy as np
+
     IMAGE_LIBS_AVAILABLE = True
 except ImportError:
     IMAGE_LIBS_AVAILABLE = False
+def cv2_imread(filepath, flags=cv2.IMREAD_COLOR):
+    """opencv中文路径读取"""
+    try:
+        return cv2.imdecode(np.fromfile(filepath, dtype=np.uint8), flags)
+    except Exception as e:
+        logging.error(f"读取图片失败 {filepath}: {e}")
+        return None
 
 def _process_single_directory(directory, similarity_threshold=0.8):
     """
@@ -28,7 +37,7 @@ def _process_single_directory(directory, similarity_threshold=0.8):
     for filename in image_files:
         filepath = os.path.join(directory, filename)
         try:
-            img = cv2.imread(filepath)
+            img = cv2_imread(filepath)
             if img is None: continue
             resized_img = cv2.resize(img, (img.shape[1] // 2, img.shape[0] // 2), interpolation=cv2.INTER_AREA)
             cv2.imwrite(filepath, resized_img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
@@ -42,8 +51,8 @@ def _process_single_directory(directory, similarity_threshold=0.8):
         img2_path = os.path.join(directory, image_files[i+1])
 
         try:
-            img1 = cv2.imread(img1_path, cv2.IMREAD_GRAYSCALE)
-            img2 = cv2.imread(img2_path, cv2.IMREAD_GRAYSCALE)
+            img1 = cv2_imread(img1_path, cv2.IMREAD_GRAYSCALE)
+            img2 = cv2_imread(img2_path, cv2.IMREAD_GRAYSCALE)
             
             if img1 is None or img2 is None:
                 i += 1
@@ -168,15 +177,19 @@ def select_keyframes_with_vlm(headings_with_level, output_dir):
             best_frame = image_files[0]
             logging.info(f"标题 '{heading}' 只有一帧，直接选定: {best_frame}")
         else:
-            # 如果有多帧，使用VLM进行评分
+            # 如果有多帧，使用VLM进行批量评分
             best_score = -1
             best_frame = None
             logging.info(f"为标题 '{heading}' 的 {len(image_files)} 帧进行VLM评分...")
 
-            for image_file in image_files:
-                image_path = os.path.join(frame_dir, image_file)
-                score, description = vlm_handler.score_frame(image_path, heading)
-                
+            # 准备所有图片路径
+            image_paths = [os.path.join(frame_dir, img) for img in image_files]
+            
+            # 使用批量评分
+            results = vlm_handler.score_frames_batch(image_paths, heading)
+            
+            # 找出最佳帧
+            for image_file, (score, description) in zip(image_files, results):
                 if score > best_score:
                     best_score = score
                     best_frame = image_file

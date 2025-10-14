@@ -5,8 +5,6 @@ VideoDevour ASR Engine - Paraformer V2
 """
 
 import torch
-from moviepy import VideoFileClip
-import tempfile
 import logging
 import os
 from pathlib import Path
@@ -153,28 +151,6 @@ class VideoDevourASRParaformerV2:
         
         return self._asr_model
     
-    def extract_audio(self, video_path: str) -> str:
-        """
-        从视频文件中提取音频
-        
-        Args:
-            video_path: 视频文件路径
-            
-        Returns:
-            str: 临时音频文件路径（WAV 格式，16kHz）
-        """
-        logging.info(f"正在提取音频: {video_path}")
-        try:
-            with VideoFileClip(video_path) as video:
-                audio = video.audio
-                temp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-                audio.write_audiofile(temp_wav.name, codec="pcm_s16le", fps=16000)
-                logging.info(f"音频提取完成: {temp_wav.name}")
-                return temp_wav.name
-        except Exception as e:
-            logging.error(f"音频提取失败: {str(e)}")
-            raise
-    
     def normalize_result(self, res: List[Dict]) -> List[Dict]:
         """
         将 FunASR 的推理结果规范化为标准格式
@@ -263,25 +239,15 @@ class VideoDevourASRParaformerV2:
         logging.info(f"开始处理视频: {video_path}")
         
         try:
-            # 提取音频
-            wav_path = self.extract_audio(video_path)
-            
             # 使用 Paraformer 进行识别
             logging.info("正在进行语音识别...")
             res = self.asr_model.generate(
-                input=wav_path,
-                batch_size_s=300,  # 批处理大小（秒）
-                hotword="魔搭",     # 热词（可选）
+                input=video_path,
+                batch_size_s=300
             )
             
             # 规范化结果
             transcript = self.normalize_result(res)
-            
-            # 清理临时文件
-            try:
-                os.unlink(wav_path)
-            except:
-                pass
             
             # 计算统计信息
             text_stats = {}
@@ -306,12 +272,6 @@ class VideoDevourASRParaformerV2:
             
         except Exception as e:
             logging.error(f"ASR 处理失败: {str(e)}")
-            # 尝试清理临时文件
-            try:
-                if 'wav_path' in locals():
-                    os.unlink(wav_path)
-            except:
-                pass
             raise
     
     def process_videos(self, video_dir: str) -> List[Dict]:
