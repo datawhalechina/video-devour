@@ -75,23 +75,18 @@ const LandingPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      {/* 导航栏 */}
       <nav
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
           scrollY > 50 ? "bg-white/95 backdrop-blur-lg shadow-lg" : "bg-white/80 backdrop-blur-md"
         }`}
       >
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-6 py-5 flex justify-between items-center">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{
-              backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 47%, #46aef7 100%)'
-            }}>
-              <Video className="w-6 h-6 text-white" />
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-primary-500 to-purple-600">
+              <Video className="w-7 h-7 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold bg-clip-text text-transparent" style={{
-                backgroundImage: 'linear-gradient(90deg, #16d9e3 0%, #30c7ec 50%, #46aef7 100%)'
-              }}>
+              <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-brand-horizontal">
                 VideoDevour
               </h1>
               <p className="text-xs text-gray-500">AI 视频智能分析</p>
@@ -113,45 +108,34 @@ const LandingPage = () => {
               <Github className="w-5 h-5" />
               <span className="hidden md:inline">GitHub</span>
             </a>
-            <button
-              onClick={() => navigate("/upload")}
-              className="px-6 py-2.5 text-white rounded-lg transition-all text-sm font-medium shadow-lg hover:shadow-xl hover:scale-105"
-              style={{
-                backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 47%, #46aef7 100%)'
-              }}
-            >
-              开始使用
-            </button>
+              <button
+                onClick={() => navigate("/upload")}
+                className="px-6 py-2.5 text-white rounded-lg transition-all text-sm font-medium shadow-lg hover:shadow-xl hover:scale-105 bg-gradient-brand"
+              >
+                开始使用
+              </button>
           </div>
         </div>
       </nav>
 
       {/* 英雄区 */}
       <section className="pt-32 pb-24 px-6 relative overflow-hidden">
-        {/* 装饰性背景 */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-20 left-10 w-72 h-72 rounded-full opacity-20 blur-3xl" style={{
-            backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 50%, #46aef7 100%)'
-          }}></div>
-          <div className="absolute bottom-20 right-10 w-96 h-96 rounded-full opacity-20 blur-3xl" style={{
-            backgroundImage: 'linear-gradient(225deg, #46aef7 0%, #30c7ec 50%, #16d9e3 100%)'
-          }}></div>
-        </div>
+          {/* 装饰性背景 */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute top-20 left-10 w-72 h-72 rounded-full opacity-20 blur-3xl bg-gradient-brand"></div>
+            <div className="absolute bottom-20 right-10 w-96 h-96 rounded-full opacity-20 blur-3xl bg-gradient-brand-reverse"></div>
+          </div>
 
         <div className="max-w-5xl mx-auto text-center relative z-10">
           {/* 徽章 */}
           <div className="inline-flex items-center space-x-2 px-5 py-2.5 bg-white/80 backdrop-blur-sm rounded-full mb-8 shadow-lg border border-cyan-100">
             <Sparkles className="w-4 h-4 text-cyan-500" />
-            <span className="text-sm font-medium bg-clip-text text-transparent" style={{
-              backgroundImage: 'linear-gradient(90deg, #16d9e3 0%, #46aef7 100%)'
-            }}>开源 · 免费 · AI 驱动</span>
+            <span className="text-sm font-medium bg-clip-text text-transparent bg-gradient-brand-horizontal">开源 · 免费 · AI 驱动</span>
           </div>
 
           {/* 主标题 */}
-          <h1 className="text-6xl md:text-7xl font-bold mb-6 leading-tight">
-            <span className="bg-clip-text text-transparent" style={{
-              backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 40%, #46aef7 100%)'
-            }}>
+          <h1 className="text-6xl md:text-7xl font-bold mb-8 leading-relaxed tracking-tight">
+            <span className="bg-clip-text text-transparent bg-gradient-brand">
               AI 视频内容
             </span>
             <br />
@@ -159,7 +143,7 @@ const LandingPage = () => {
           </h1>
 
           {/* 副标题 */}
-          <p className="text-xl md:text-2xl text-gray-600 mb-12 max-w-3xl mx-auto leading-relaxed">
+          <p className="text-xl md:text-2xl text-gray-600 mb-14 max-w-3xl mx-auto leading-loose">
             上传视频，让 AI 为您自动生成结构化笔记和内容摘要
             <br />
             <span className="text-cyan-600 font-medium">让知识提取变得简单高效</span>
@@ -169,10 +153,7 @@ const LandingPage = () => {
           <div className="flex flex-col sm:flex-row gap-5 justify-center items-center mb-12">
             <button
               onClick={() => navigate("/upload")}
-              className="group flex items-center space-x-2 px-10 py-4 text-white rounded-xl transition-all font-semibold shadow-2xl hover:shadow-cyan-500/50 hover:scale-105"
-              style={{
-                backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 47%, #46aef7 100%)'
-              }}
+              className="group flex items-center space-x-2 px-10 py-4 text-white rounded-xl transition-all font-semibold shadow-2xl hover:shadow-cyan-500/50 hover:scale-105 bg-gradient-brand"
             >
               <Upload className="w-5 h-5" />
               <span>立即开始</span>
@@ -208,17 +189,15 @@ const LandingPage = () => {
       </section>
 
       {/* 核心功能 */}
-      <section className="py-24 px-6 bg-white">
+      <section className="py-28 px-6 bg-white">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">
-              <span className="bg-clip-text text-transparent" style={{
-                backgroundImage: 'linear-gradient(90deg, #16d9e3 0%, #30c7ec 50%, #46aef7 100%)'
-              }}>
+          <div className="text-center mb-20">
+            <h2 className="text-4xl md:text-5xl font-bold mb-6 tracking-tight">
+              <span className="bg-clip-text text-transparent bg-gradient-brand-horizontal">
                 核心功能
               </span>
             </h2>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+            <p className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
               从视频上传到报告生成，全程自动化智能处理
             </p>
           </div>
@@ -232,19 +211,12 @@ const LandingPage = () => {
                 {/* 装饰性渐变背景 */}
                 <div className={`absolute inset-0 bg-gradient-to-br ${feature.color} opacity-0 group-hover:opacity-5 transition-opacity duration-300`}></div>
                 
-                <div className="relative z-10">
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 text-white shadow-lg group-hover:scale-110 transition-transform duration-300" style={{
-                    backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 47%, #46aef7 100%)'
-                  }}>
-                    {feature.icon}
-                  </div>
-                  <h3 className="text-xl font-bold mb-3 text-gray-900">{feature.title}</h3>
-                  <p className="text-gray-600 leading-relaxed">{feature.description}</p>
-                </div>
-                
-                {/* 序号装饰 */}
-                <div className="absolute top-4 right-4 w-8 h-8 rounded-full bg-gradient-to-br from-cyan-100 to-blue-100 flex items-center justify-center text-cyan-600 font-bold text-sm">
-                  {index + 1}
+                  <div className="relative z-10">
+                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 text-white shadow-lg group-hover:scale-110 transition-transform duration-300 bg-gradient-brand">
+                      {feature.icon}
+                    </div>
+                  <h3 className="text-xl font-bold mb-4 text-gray-900 leading-snug">{feature.title}</h3>
+                  <p className="text-gray-600 leading-loose text-base">{feature.description}</p>
                 </div>
               </div>
             ))}
@@ -253,11 +225,11 @@ const LandingPage = () => {
       </section>
 
       {/* 技术优势 */}
-      <section className="py-24 px-6 bg-gradient-to-br from-gray-50 to-cyan-50">
+      <section className="py-28 px-6 bg-gradient-to-br from-gray-50 to-cyan-50">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4 text-gray-900">为什么选择我们</h2>
-            <p className="text-lg text-gray-600">专业、安全、高效的视频分析解决方案</p>
+          <div className="text-center mb-20">
+            <h2 className="text-4xl md:text-5xl font-bold mb-6 text-gray-900 tracking-tight">为什么选择我们</h2>
+            <p className="text-lg md:text-xl text-gray-600 leading-relaxed">专业、安全、高效的视频分析解决方案</p>
           </div>
           
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -266,13 +238,11 @@ const LandingPage = () => {
                 key={index}
                 className="bg-white/80 backdrop-blur-sm p-6 rounded-xl shadow-lg hover:shadow-2xl transition-all hover:scale-105 border border-cyan-100"
               >
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 text-white" style={{
-                  backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 47%, #46aef7 100%)'
-                }}>
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-5 text-white bg-gradient-brand">
                   {advantage.icon}
                 </div>
-                <h3 className="text-lg font-bold mb-2 text-gray-900">{advantage.title}</h3>
-                <p className="text-gray-600 text-sm">{advantage.description}</p>
+                <h3 className="text-lg font-bold mb-3 text-gray-900 leading-snug">{advantage.title}</h3>
+                <p className="text-gray-600 text-sm leading-relaxed">{advantage.description}</p>
               </div>
             ))}
           </div>
@@ -280,27 +250,23 @@ const LandingPage = () => {
       </section>
 
       {/* 技术栈说明 */}
-      <section className="py-24 px-6 bg-white">
+      <section className="py-28 px-6 bg-white">
         <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold mb-4">
-              <span className="bg-clip-text text-transparent" style={{
-                backgroundImage: 'linear-gradient(90deg, #16d9e3 0%, #30c7ec 50%, #46aef7 100%)'
-              }}>
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-bold mb-6 tracking-tight">
+              <span className="bg-clip-text text-transparent bg-gradient-brand-horizontal">
                 技术栈
               </span>
             </h2>
-            <p className="text-lg text-gray-600">基于现代化技术构建</p>
+            <p className="text-lg md:text-xl text-gray-600 leading-relaxed">基于现代化技术构建</p>
           </div>
           
           <div className="relative">
             {/* 装饰背景 */}
-            <div className="absolute inset-0 rounded-2xl opacity-5" style={{
-              backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 47%, #46aef7 100%)'
-            }}></div>
+            <div className="absolute inset-0 rounded-2xl opacity-5 bg-gradient-brand"></div>
             
             <div className="relative bg-gray-900 text-white p-10 rounded-2xl shadow-2xl border-2 border-gray-800">
-              <pre className="text-sm md:text-base overflow-x-auto">
+              <pre className="text-sm md:text-base overflow-x-auto leading-loose">
                 <code className="language-json">{`{
   "frontend": {
     "framework": "React 18",
@@ -330,52 +296,46 @@ const LandingPage = () => {
       </section>
 
       {/* 快速开始 */}
-      <section className="py-24 px-6 bg-gradient-to-br from-cyan-50 to-blue-50">
+      <section className="py-28 px-6 bg-gradient-to-br from-cyan-50 to-blue-50">
         <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold mb-4 text-gray-900">快速开始</h2>
-            <p className="text-lg text-gray-600">几行命令即可启动项目</p>
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-bold mb-6 text-gray-900 tracking-tight">快速开始</h2>
+            <p className="text-lg md:text-xl text-gray-600 leading-relaxed">几行命令即可启动项目</p>
           </div>
           
           <div className="bg-white rounded-2xl shadow-2xl p-8 md:p-10 border-2 border-cyan-100">
-            <div className="space-y-6">
+            <div className="space-y-8">
               <div className="flex items-start space-x-4 group">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{
-                  backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 47%, #46aef7 100%)'
-                }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0 bg-gradient-brand">
                   1
                 </div>
-                <div className="flex-1 bg-gray-900 rounded-xl p-4 group-hover:shadow-xl transition-shadow">
-                  <p className="text-cyan-400 text-sm mb-2 font-medium">克隆仓库</p>
-                  <code className="text-green-400 text-sm md:text-base">
+                <div className="flex-1 bg-gray-900 rounded-xl p-5 group-hover:shadow-xl transition-shadow">
+                  <p className="text-cyan-400 text-sm mb-3 font-medium">克隆仓库</p>
+                  <code className="text-green-400 text-sm md:text-base leading-relaxed">
                     git clone https://github.com/datawhalechina/video-devour.git
                   </code>
                 </div>
               </div>
               
               <div className="flex items-start space-x-4 group">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{
-                  backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 47%, #46aef7 100%)'
-                }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0 bg-gradient-brand">
                   2
                 </div>
-                <div className="flex-1 bg-gray-900 rounded-xl p-4 group-hover:shadow-xl transition-shadow">
-                  <p className="text-cyan-400 text-sm mb-2 font-medium">安装依赖</p>
-                  <code className="text-green-400 text-sm md:text-base">
+                <div className="flex-1 bg-gray-900 rounded-xl p-5 group-hover:shadow-xl transition-shadow">
+                  <p className="text-cyan-400 text-sm mb-3 font-medium">安装依赖</p>
+                  <code className="text-green-400 text-sm md:text-base leading-relaxed">
                     cd video-devour && pip install -r requirements.txt && cd frontend && npm install
                   </code>
                 </div>
               </div>
               
               <div className="flex items-start space-x-4 group">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{
-                  backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 47%, #46aef7 100%)'
-                }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0 bg-gradient-brand">
                   3
                 </div>
-                <div className="flex-1 bg-gray-900 rounded-xl p-4 group-hover:shadow-xl transition-shadow">
-                  <p className="text-cyan-400 text-sm mb-2 font-medium">启动服务</p>
-                  <code className="text-green-400 text-sm md:text-base">
+                <div className="flex-1 bg-gray-900 rounded-xl p-5 group-hover:shadow-xl transition-shadow">
+                  <p className="text-cyan-400 text-sm mb-3 font-medium">启动服务</p>
+                  <code className="text-green-400 text-sm md:text-base leading-relaxed">
                     # 后端: python -m uvicorn backend.api.main:app --reload
                     <br />
                     # 前端: cd frontend && npm run dev
@@ -401,30 +361,28 @@ const LandingPage = () => {
       </section>
 
       {/* 开源贡献 */}
-      <section className="py-24 px-6 bg-white">
+      <section className="py-28 px-6 bg-white">
         <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold mb-4">
-              <span className="bg-clip-text text-transparent" style={{
-                backgroundImage: 'linear-gradient(90deg, #16d9e3 0%, #30c7ec 50%, #46aef7 100%)'
-              }}>
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-bold mb-6 tracking-tight">
+              <span className="bg-clip-text text-transparent bg-gradient-brand-horizontal">
                 加入我们
               </span>
             </h2>
-            <p className="text-lg text-gray-600 mb-4">
+            <p className="text-lg md:text-xl text-gray-600 mb-5 leading-relaxed">
               这是一个开源项目，欢迎任何形式的贡献
             </p>
-            <p className="text-gray-500">
+            <p className="text-base text-gray-500 leading-relaxed">
               代码、文档、建议或 Bug 报告都很有价值
             </p>
           </div>
           
           <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-10 border-2 border-cyan-100">
             <div className="grid md:grid-cols-2 gap-6 mb-8">
-              <div className="bg-white p-6 rounded-xl shadow-lg hover:shadow-2xl transition-all">
-                <Github className="w-10 h-10 text-cyan-500 mb-4" />
-                <h3 className="text-xl font-bold mb-2 text-gray-900">提交 Issue</h3>
-                <p className="text-gray-600 mb-4 text-sm">发现 Bug 或有新想法？欢迎提交 Issue 与我们交流</p>
+              <div className="bg-white p-7 rounded-xl shadow-lg hover:shadow-2xl transition-all">
+                <Github className="w-10 h-10 text-cyan-500 mb-5" />
+                <h3 className="text-xl font-bold mb-3 text-gray-900 leading-snug">提交 Issue</h3>
+                <p className="text-gray-600 mb-5 text-sm leading-relaxed">发现 Bug 或有新想法？欢迎提交 Issue 与我们交流</p>
                 <a
                   href="https://github.com/datawhalechina/video-devour/issues"
                   target="_blank"
@@ -436,10 +394,10 @@ const LandingPage = () => {
                 </a>
               </div>
               
-              <div className="bg-white p-6 rounded-xl shadow-lg hover:shadow-2xl transition-all">
-                <Code className="w-10 h-10 text-cyan-500 mb-4" />
-                <h3 className="text-xl font-bold mb-2 text-gray-900">贡献代码</h3>
-                <p className="text-gray-600 mb-4 text-sm">Fork 项目，提交 PR，让这个项目变得更好</p>
+              <div className="bg-white p-7 rounded-xl shadow-lg hover:shadow-2xl transition-all">
+                <Code className="w-10 h-10 text-cyan-500 mb-5" />
+                <h3 className="text-xl font-bold mb-3 text-gray-900 leading-snug">贡献代码</h3>
+                <p className="text-gray-600 mb-5 text-sm leading-relaxed">Fork 项目，提交 PR，让这个项目变得更好</p>
                 <a
                   href="https://github.com/datawhalechina/video-devour/pulls"
                   target="_blank"
@@ -457,10 +415,7 @@ const LandingPage = () => {
                 href="https://github.com/datawhalechina/video-devour"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center space-x-2 px-8 py-4 text-white rounded-xl transition-all font-semibold shadow-lg hover:shadow-2xl hover:scale-105"
-                style={{
-                  backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 47%, #46aef7 100%)'
-                }}
+                className="inline-flex items-center space-x-2 px-8 py-4 text-white rounded-xl transition-all font-semibold shadow-lg hover:shadow-2xl hover:scale-105 bg-gradient-brand"
               >
                 <Github className="w-5 h-5" />
                 <span>访问 GitHub 仓库</span>
@@ -478,22 +433,20 @@ const LandingPage = () => {
             {/* 品牌信息 */}
             <div>
               <div className="flex items-center space-x-3 mb-4">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{
-                  backgroundImage: 'linear-gradient(135deg, #16d9e3 0%, #30c7ec 47%, #46aef7 100%)'
-                }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-brand">
                   <Video className="w-6 h-6 text-white" />
                 </div>
                 <span className="text-xl font-bold">VideoDevour</span>
               </div>
-              <p className="text-gray-400 text-sm leading-relaxed">
+              <p className="text-gray-400 text-sm leading-loose">
                 AI 驱动的视频内容智能分析平台，让知识提取变得简单高效
               </p>
             </div>
             
             {/* 快速链接 */}
             <div>
-              <h3 className="text-lg font-bold mb-4">快速链接</h3>
-              <ul className="space-y-3 text-sm">
+              <h3 className="text-lg font-bold mb-5">快速链接</h3>
+              <ul className="space-y-4 text-sm">
                 <li>
                   <a
                     href="https://github.com/datawhalechina/video-devour"
@@ -532,8 +485,8 @@ const LandingPage = () => {
             
             {/* 开源信息 */}
             <div>
-              <h3 className="text-lg font-bold mb-4">开源协议</h3>
-              <div className="text-gray-400 text-sm space-y-3">
+              <h3 className="text-lg font-bold mb-5">开源协议</h3>
+              <div className="text-gray-400 text-sm space-y-4 leading-relaxed">
                 <p>MIT License © 2024</p>
                 <p>完全开源免费使用</p>
                 <div className="flex items-center space-x-2 pt-2">
