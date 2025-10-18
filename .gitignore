@@ -8,7 +8,8 @@ config.py
 .lock
 uv.lock
 pyproject.toml
-
+frames*
+tasks.json
 # Node.js 依赖
 node_modules/
 frontend/node_modules/
