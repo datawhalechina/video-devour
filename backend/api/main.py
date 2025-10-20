@@ -10,6 +10,7 @@ import uuid
 import shutil
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -25,6 +26,10 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.algorithm.pipeline import run_full_pipeline
+from backend.devour.asr_engine_paraformer_v2 import VideoDevourASRParaformerV2
+
+# 配置日志
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -32,6 +37,7 @@ app = FastAPI(
     description="视频处理和分析服务",
     version="1.0.0"
 )
+asr_engine = None
 
 # 配置CORS
 app.add_middleware(
@@ -79,6 +85,21 @@ def save_tasks():
 
 # 启动时加载任务数据
 load_tasks()
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    预加载 ASR 模型
+    """
+    global asr_engine
+    try:
+        logging.info("正在预加载 ASR 模型...")
+        asr_engine = VideoDevourASRParaformerV2()
+        _ = asr_engine.asr_model
+        logging.info("ASR 模型预加载完成")
+    except Exception as e:
+        logging.error(f"ASR 模型预加载失败: {str(e)}")
+        asr_engine = None
 
 # 数据模型
 class TaskStatus(BaseModel):
@@ -718,7 +739,8 @@ async def run_pipeline_with_progress(video_path: str, task_id: str):
         # 使用线程池执行器运行同步函数
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # 在执行过程中定期更新进度
-            future = executor.submit(run_full_pipeline, video_path)
+            # 预加载模型
+            future = executor.submit(run_full_pipeline, video_path, asr_engine)
             
             # 模拟进度更新
             progress_steps = [
