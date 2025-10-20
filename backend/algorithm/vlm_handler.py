@@ -7,7 +7,7 @@ import base64
 from typing import List, Tuple, Union
 from PIL import Image
 import io
-import backend.algorithm.config as config
+import config
 
 
 class VLMHandler:
