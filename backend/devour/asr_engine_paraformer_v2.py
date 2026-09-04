@@ -40,8 +40,13 @@ class VideoDevourASRParaformerV2:
         
         加载配置文件并设置设备
         """        
-        # 设置设备
-        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        # 设置设备：优先 CUDA，其次 Apple GPU (MPS，实测比 CPU 快约 2 倍)，最后 CPU
+        if torch.cuda.is_available():
+            self.device = "cuda:0"
+        elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
         logging.info(f"使用设备: {self.device}")
 
         # 延迟加载模型
