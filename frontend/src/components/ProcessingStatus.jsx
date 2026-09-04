@@ -4,6 +4,7 @@ import { Loader2, CheckCircle, XCircle, Clock } from 'lucide-react'
 import { getTaskStatus } from '../api/videoService'
 
 const PROCESSING_STAGES = [
+  { key: 'downloading', label: '下载视频', icon: '⬇️' },
   { key: 'uploading', label: '上传视频', icon: '📤' },
   { key: 'extracting_audio', label: '提取音频', icon: '🎵' },
   { key: 'asr', label: '语音识别', icon: '🎙️' },

@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, ArrowLeft, Play, GraduationCap } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, ArrowLeft, Play, GraduationCap, Tv } from 'lucide-react'
+import { useNavigate, Link } from 'react-router-dom'
 import { uploadVideo } from '../api/videoService'
 
 function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProcessing }) {
@@ -217,6 +217,17 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
               </button>
             ))}
           </div>
+        </div>
+
+        {/* 在线链接入口 */}
+        <div className="mb-4 flex justify-end">
+          <Link
+            to="/link"
+            className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:border-primary-400 hover:text-primary-600 transition"
+          >
+            <Tv className="w-4 h-4" />
+            <span>通过 B站 / YouTube 链接处理</span>
+          </Link>
         </div>
 
         {/* 拖拽上传区 */}

@@ -132,6 +132,19 @@ source ~/.bashrc
 
 配置保存在项目根目录的 `settings.json`（已被 gitignore，含密钥请勿提交），并会在每次任务执行时注入运行时配置；`backend/algorithm/config.py` 缺失时后端也可直接启动。`config.template.py` 为手动配置的参考模板（`cp config.template.py config.py`）。
 
+### 在线视频链接处理（B站 / YouTube）
+
+前端「链接处理」页面支持不上传文件、直接通过视频链接生成报告：
+
+- **粘贴链接**：自动识别平台并展示预览窗口（B站用官方播放器嵌入，YouTube 用 embed 播放器），可在线播放预览
+- **关键词搜索**：内置 B站（官方搜索接口）与 YouTube（ytsearch）搜索，结果卡片含封面/时长/UP主，点击即预览
+- **一键下载处理**：yt-dlp 下载（自动合并 mp4）→ 接入标准处理流水线（ASR → 大纲 → 关键帧 → 报告）
+
+说明：
+- B站未登录最高可取 720p 左右画质，高清晰度需自行配置登录态；短时间高频请求可能触发平台风控，服务端已带 cookie 指纹与自动重试
+- YouTube 存在 bot 检查：元数据自动回退 oEmbed 获取；下载需浏览器导出 cookies（Netscape 格式）并设置环境变量 `YTDLP_COOKIES_FILE` 指向该文件
+- 请确保对所处理的视频内容拥有相应权利或已获得授权，仅用于个人学习用途
+
 ### 学习卡片与导出
 
 - 报告页新增「生成学习卡片」：由 LLM 将报告转换为手机尺寸的 Bento Grid 风格 HTML 学习卡片

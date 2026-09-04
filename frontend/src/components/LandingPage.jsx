@@ -16,6 +16,7 @@ import {
   Cpu,
   Download,
   Settings,
+  Tv,
 } from "lucide-react";
 
 const LandingPage = () => {
@@ -94,6 +95,13 @@ const LandingPage = () => {
             </div>
           </div>
           <div className="flex items-center space-x-6">
+            <button
+              onClick={() => navigate("/link")}
+              className="flex items-center space-x-1 text-sm text-gray-600 hover:text-cyan-500 transition-colors font-medium hidden md:block"
+            >
+              <Tv className="w-4 h-4" />
+              <span>链接处理</span>
+            </button>
             <button
               onClick={() => navigate("/settings")}
               className="flex items-center space-x-1 text-sm text-gray-600 hover:text-cyan-500 transition-colors font-medium hidden md:block"

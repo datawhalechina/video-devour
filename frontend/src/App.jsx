@@ -4,6 +4,7 @@ import MainApp from "./components/MainApp";
 import EditorTestPage from "./components/EditorTestPage";
 import EditorPage from "./components/EditorPage";
 import SettingsPage from "./components/SettingsPage";
+import LinkProcess from "./components/LinkProcess";
 
 function App() {
   return (
@@ -11,6 +12,7 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/link" element={<LinkProcess />} />
         <Route path="/upload" element={<MainApp />} />
         <Route path="/processing" element={<MainApp initialView="processing" />} />
         <Route path="/processing/:taskId" element={<MainApp initialView="processing" />} />

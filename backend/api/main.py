@@ -226,6 +226,166 @@ async def test_app_settings(request: SettingsTestRequest):
         results = await loop.run_in_executor(executor, settings_store.run_tests, target)
     return {"results": results}
 
+
+# ---------------------------------------------------------------------------
+# 在线视频链接处理（Bilibili / YouTube，移植自 bilibili/youtube 下载工具）
+# ---------------------------------------------------------------------------
+
+class LinkInfoRequest(BaseModel):
+    url: str
+
+
+class LinkSearchRequest(BaseModel):
+    query: str
+    platform: str = "bilibili"   # bilibili | youtube
+    max_results: int = 8
+
+
+class LinkProcessRequest(BaseModel):
+    url: str
+    education_level: str = "高中"
+
+
+def _run_link_probe(handler, **kwargs):
+    """在线程池中执行 yt-dlp 操作（网络阻塞型）"""
+    import functools
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        return loop.run_in_executor(executor, functools.partial(handler, **kwargs))
+
+
+@app.post("/api/video/link/info")
+async def get_link_info(request: LinkInfoRequest):
+    """获取链接视频的元数据（不下载），用于预览确认"""
+    url = (request.url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="请提供有效的视频链接")
+    try:
+        from backend.devour.video_downloader import probe_video_info
+        return await _run_link_probe(probe_video_info, url=url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logging.error(f"获取链接信息失败: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"获取视频信息失败: {e}")
+
+
+@app.post("/api/video/link/search")
+async def search_link_videos(request: LinkSearchRequest):
+    """按关键词搜索 B站/YouTube 视频，返回预览卡片列表"""
+    try:
+        from backend.devour.video_downloader import search_videos
+        return {"results": await _run_link_probe(
+            search_videos,
+            query=request.query,
+            platform=request.platform,
+            max_results=max(1, min(request.max_results, 15)),
+        )}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logging.error(f"搜索失败: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"搜索失败: {e}")
+
+
+@app.post("/api/video/link", response_model=UploadResponse)
+async def process_link_video(request: LinkProcessRequest):
+    """
+    通过链接一键下载并处理视频（B站/YouTube）。
+
+    流程：yt-dlp 下载到 uploads/{task_id}.mp4 → 复用现有处理 pipeline
+    """
+    url = (request.url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="请提供有效的视频链接")
+    if request.education_level not in settings_store.EDUCATION_LEVELS:
+        raise HTTPException(status_code=400, detail="学习阶段仅支持 小学/初中/高中")
+
+    task_id = str(uuid.uuid4())
+    file_path = UPLOAD_DIR / f"{task_id}.mp4"
+
+    processing_tasks[task_id] = {
+        "task_id": task_id,
+        "status": "pending",
+        "stage": "downloading",
+        "progress": 0,
+        "message": "等待下载视频...",
+        "filename": url,
+        "file_path": str(file_path),
+        "source_url": url,
+        "education_level": request.education_level,
+        "created_at": datetime.now().isoformat(),
+    }
+    save_tasks()
+
+    task = asyncio.create_task(_download_and_process(task_id, url, file_path, request.education_level))
+    running_tasks[task_id] = task
+
+    return UploadResponse(task_id=task_id, message="链接任务已创建，开始下载", filename=url)
+
+
+async def _download_and_process(task_id: str, url: str, file_path: Path, education_level: str):
+    """下载链接视频后接续标准处理流程"""
+    try:
+        def _hook(d):
+            if d.get("status") == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate")
+                done = d.get("downloaded_bytes", 0)
+                if total:
+                    processing_tasks[task_id]["progress"] = min(15, int(15 * done / total))
+                processing_tasks[task_id]["message"] = f"正在下载视频... {done / 1024 / 1024:.1f}MB"
+                save_tasks()
+
+        processing_tasks[task_id].update({"status": "processing", "message": "正在下载视频..."})
+        save_tasks()
+
+        from backend.devour.video_downloader import download_video
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, lambda: download_video(url, str(UPLOAD_DIR), progress_hook=_hook)
+        )
+        downloaded_path = Path(result["file_path"])
+        if downloaded_path.resolve() != file_path.resolve():
+            if downloaded_path.suffix.lower() == ".mp4":
+                downloaded_path.replace(file_path)
+            else:
+                # 非 mp4 容器（如 webm/vp9）转码为 mp4，copy 失败时回退到重编码
+                import subprocess
+                proc = subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(downloaded_path), "-c", "copy", str(file_path)],
+                    capture_output=True,
+                )
+                if proc.returncode != 0:
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-i", str(downloaded_path),
+                         "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", str(file_path)],
+                        check=True, capture_output=True,
+                    )
+                downloaded_path.unlink()
+
+        info = result.get("info", {})
+        processing_tasks[task_id].update({
+            "filename": info.get("title") or url,
+            "message": "下载完成，开始处理",
+        })
+        save_tasks()
+
+        # 清理下载占位文件后接续标准流程
+        await process_video_async(task_id, file_path, education_level)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logging.error(f"链接任务失败: {e}", exc_info=True)
+        processing_tasks[task_id].update({
+            "status": "failed",
+            "stage": "error",
+            "progress": 0,
+            "message": "下载或处理失败",
+            "error": str(e),
+        })
+        save_tasks()
+
 @app.post("/api/video/upload", response_model=UploadResponse)
 async def upload_video(file: UploadFile = File(...), education_level: str = Form("高中")):
     """

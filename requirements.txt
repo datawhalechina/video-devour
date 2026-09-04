@@ -19,3 +19,5 @@ aiofiles>=23.2.1
 
 dashscope>=1.20.0
 openai>=1.40.0
+yt-dlp>=2024.8.6
+requests>=2.31.0

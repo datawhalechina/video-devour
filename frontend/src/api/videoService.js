@@ -139,3 +139,49 @@ export const getTaskReport = async (taskId) => {
 };
 
 export default api;
+
+/**
+ * 获取链接视频元数据（不下载，用于预览）
+ * @param {string} url - 视频链接（B站/YouTube）
+ */
+export const getLinkInfo = async (url) => {
+  try {
+    const response = await api.post("/video/link/info", { url });
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * 按关键词搜索 B站/YouTube 视频
+ * @param {string} query - 搜索关键词
+ * @param {string} platform - bilibili | youtube
+ * @param {number} maxResults - 返回条数
+ */
+export const searchLinkVideos = async (query, platform = "bilibili", maxResults = 8) => {
+  try {
+    const response = await api.post("/video/link/search", {
+      query, platform, max_results: maxResults,
+    }, { timeout: 60000 });
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * 通过链接一键下载并处理视频
+ * @param {string} url - 视频链接
+ * @param {string} educationLevel - 学习阶段
+ */
+export const processLink = async (url, educationLevel = "高中") => {
+  try {
+    const response = await api.post("/video/link", {
+      url, education_level: educationLevel,
+    }, { timeout: 60000 });
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
