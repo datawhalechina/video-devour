@@ -43,46 +43,34 @@ class VideoDevourASRParaformerV2:
         # 设置设备
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         logging.info(f"使用设备: {self.device}")
-        
+
         # 延迟加载模型
         self._asr_model = None
-        
+
         # 获取项目根目录
         self.project_root = Path(__file__).resolve().parent.parent.parent
-        
-        # 初始化 ModelScope 管理器
-        self.model_manager = ModelScopeManager(str(self.project_root))
-        
-        # 自动检查和下载缺失的模型
+
+        # 检查本地模型（不再触发无关模型下载）
         self._ensure_models_available()
     
     def _ensure_models_available(self):
         """
-        确保所需的模型都可用，如果缺失则自动下载
+        检查本引擎所需的本地模型是否就绪，缺失时提示（加载时自动回退远程别名）。
+
+        注意：不要用 modelscope_manager 的通用清单做下载——那份清单包含本引擎
+        用不到的模型（seaco/SenseVoice 约 2GB），且缺本引擎真正的主模型。
         """
-        try:
-            missing_models = self.model_manager.get_missing_models()
-            
-            if missing_models:
-                logging.info(f"检测到缺失模型: {missing_models}")
-                logging.info("正在自动下载缺失的模型...")
-                
-                # 下载缺失的模型
-                results = self.model_manager.download_all_missing_models()
-                
-                # 检查下载结果
-                failed_models = [model for model, success in results.items() if not success]
-                if failed_models:
-                    logging.warning(f"以下模型下载失败: {failed_models}")
-                    logging.warning("将使用远程模型作为备选方案")
-                else:
-                    logging.info("所有缺失模型下载完成")
-            else:
-                logging.info("所有必需模型都已存在")
-                
-        except Exception as e:
-            logging.warning(f"模型检查过程中出现错误: {str(e)}")
-            logging.warning("将使用远程模型作为备选方案")
+        required = {
+            "Paraformer(ASR)": self.project_root / "models/iic/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn",
+            "VAD": self.project_root / "models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+            "标点": self.project_root / "models/iic/punc_ct-transformer_cn-en-common-vocab471067-large",
+            "说话人": self.project_root / "models/iic/speech_campplus_sv_zh-cn_16k-common",
+        }
+        missing = [name for name, path in required.items() if not path.exists()]
+        if missing:
+            logging.warning(f"本地模型缺失: {missing}，对应组件将使用远程模型作备选")
+        else:
+            logging.info("所有本地模型已就绪")
     
     @property
     def asr_model(self) -> AutoModel:
