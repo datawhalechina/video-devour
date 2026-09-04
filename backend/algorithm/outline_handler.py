@@ -180,14 +180,15 @@ def update_detailed_outline_with_keyframes(detailed_outline_path, keyframes):
     except Exception as e:
         logging.error(f"更新详细大纲时出错: {e}", exc_info=True)
 
-def generate_final_report(detailed_outline_path, output_dir):
+def generate_final_report(detailed_outline_path, output_dir, education_level: str = None):
     """
     使用LLM基于包含关键帧的详细大纲生成最终的图文报告。
 
     Args:
         detailed_outline_path (str): 带有关键帧链接的详细大纲文件路径。
         output_dir (str): 保存最终报告的目录。
-    
+        education_level (str): 学习阶段（小学/初中/高中），为空时不注入。
+
     Returns:
         str: 最终报告的文件路径，如果失败则返回 None。
     """
@@ -195,10 +196,10 @@ def generate_final_report(detailed_outline_path, output_dir):
     try:
         with open(detailed_outline_path, 'r', encoding='utf-8') as f:
             content = f.read()
-        
-        from llm_handler import LLMHandler
-        llm = LLMHandler()
-        
+
+        from llm_handler import LLMHandler, get_level_instruction
+        llm = LLMHandler(education_level=education_level)
+
         prompt = (
             "你是一位专业的报告撰写员。你的任务是根据下面提供的Markdown大纲（其中包含了章节标题、文本摘要和关键帧图片），将其优化和扩写成一份内容更丰富、图文并茂的综合性报告。\\n\\n"
             "**重要指令：**\\n"
@@ -207,6 +208,11 @@ def generate_final_report(detailed_outline_path, output_dir):
             "3. **维持图片位置：** 确保每张图片都紧跟在它所属的二级标题下方，作为该章节的配图。\\n"
             "4. **润色和扩写：** 在保留上述结构和图片的基础上，对每个章节下的文本内容进行语言润色、逻辑梳理和内容补充，使其更加流畅、专业和易于理解。\\n"
             "5. **输出格式：** 最终输出仍为完整的Markdown格式文档。\\n\\n"
+        )
+        level_instruction = get_level_instruction(education_level)
+        if level_instruction:
+            prompt += f"【学习阶段】{level_instruction}。请根据学习阶段调整报告的语言深度与表达方式。\\n\\n"
+        prompt += (
             "原始大纲内容如下：\\n"
             "-------------------\\n"
             f"{content}"

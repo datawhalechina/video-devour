@@ -8,7 +8,8 @@ import json
 from datetime import datetime
 
 # Local imports from the project
-from backend.devour.asr_engine_paraformer_v2 import VideoDevourASRParaformerV2
+# settings_store 需最先导入：它负责把 backend/algorithm 加入 sys.path 并引导 config 模块
+from backend.algorithm import settings_store
 from backend.algorithm.data_processor import ASRProcessor
 from backend.algorithm.llm_handler import LLMHandler
 from backend.algorithm.text_similarity_matcher import TextSimilarityMatcher
@@ -55,7 +56,9 @@ def _run_asr_and_process(video_path: str, video_name: str, main_output_path: str
     """Runs ASR on the video and processes the result."""
     logging.info("--- 步骤 0 & 1: 语音识别与数据处理 ---")
     if asr_engine is None:
-        asr_engine = VideoDevourASRParaformerV2()
+        # 按运行时设置创建引擎（offline=本地 Paraformer / online=DashScope 云端）
+        from backend.devour.asr_factory import create_asr_engine
+        asr_engine = create_asr_engine()
     asr_result = asr_engine.devour_video(video_path)
     asr_result_path = os.path.join(main_output_path, f"{video_name}_asr_result.json")
     with open(asr_result_path, 'w', encoding='utf-8') as f:
@@ -69,10 +72,10 @@ def _run_asr_and_process(video_path: str, video_name: str, main_output_path: str
     logging.info("--- ASR数据处理完成 ---")
     return processed_dialogue
 
-def _generate_and_match_outline(processed_dialogue: list, main_output_path: str):
+def _generate_and_match_outline(processed_dialogue: list, main_output_path: str, education_level: str = None):
     """Generates an outline and matches dialogue chunks to its headings."""
     logging.info("--- 步骤 2, 3, 4: 生成大纲并匹配文本块 ---")
-    llm = LLMHandler()
+    llm = LLMHandler(education_level=education_level)
     outline = llm.get_outline(processed_dialogue)
     outline_handler.save_outline(outline, output_dir=main_output_path)
     
@@ -120,17 +123,24 @@ def _generate_and_match_outline(processed_dialogue: list, main_output_path: str)
     logging.info("--- 文本块匹配完成 ---")
     return matched_data, headings_with_level, headings, outline
 
-def run_full_pipeline(video_path: str, asr_engine=None):
+def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = None):
     """Orchestrates the full video processing pipeline."""
     try:
+        # 应用控制台设置（密钥/模型/ASR模式），education_level 缺省取设置中的默认值
+        settings_store.apply_to_config()
+        if education_level is None:
+            education_level = settings_store.load_settings().get("default_education_level", "高中")
+        logging.info(f"本次处理参数: asr_mode={settings_store.load_settings().get('asr_mode')}, "
+                     f"education_level={education_level}")
+
         main_output_path, video_name, timestamp = _setup_environment(video_path)
-        
+
         processed_dialogue = _run_asr_and_process(video_path, video_name, main_output_path, asr_engine)
         if not processed_dialogue:
             raise ValueError("ASR处理后对话为空，流程中止。")
 
         matched_data, headings_with_level, headings, outline = _generate_and_match_outline(
-            processed_dialogue, main_output_path
+            processed_dialogue, main_output_path, education_level
         )
         if not matched_data:
             raise ValueError("文本块与大纲匹配失败，流程中止。")
@@ -166,7 +176,8 @@ def run_full_pipeline(video_path: str, asr_engine=None):
             )
 
         logging.info("--- 步骤 11: 生成最终报告 ---")
-        outline_handler.generate_final_report(detailed_outline_path, main_output_path)
+        outline_handler.generate_final_report(detailed_outline_path, main_output_path,
+                                              education_level=education_level)
         
         logging.info(f"\n" + "="*60)
         logging.info(f"处理流程成功完成 - 时间戳: {timestamp}")

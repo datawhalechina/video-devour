@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, ArrowLeft, Play } from 'lucide-react'
+import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, ArrowLeft, Play, GraduationCap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { uploadVideo } from '../api/videoService'
 
@@ -11,6 +11,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
   const [uploadProgress, setUploadProgress] = useState({})
   const [error, setError] = useState(null)
   const [dragActive, setDragActive] = useState(false)
+  const [educationLevel, setEducationLevel] = useState('高中')
   const fileInputRef = useRef(null)
 
   const handleFileSelect = (files) => {
@@ -81,7 +82,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
         
         const result = await uploadVideo(fileItem.file, (progress) => {
           setUploadProgress(prev => ({ ...prev, [fileItem.id]: progress }))
-        })
+        }, educationLevel)
 
         // 更新状态为成功
         setSelectedFiles(prev => 
@@ -192,6 +193,32 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
         transition={{ delay: 0.1 }}
         className="bg-white rounded-3xl shadow-2xl p-10 border border-gray-100"
       >
+        {/* 学习阶段选择 */}
+        <div className="mb-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <GraduationCap className="w-5 h-5 text-primary-600" />
+            <div>
+              <p className="text-sm font-semibold text-gray-900">学习阶段</p>
+              <p className="text-xs text-gray-500">将影响生成大纲与报告的语言深度</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            {['小学', '初中', '高中'].map((level) => (
+              <button
+                key={level}
+                onClick={() => setEducationLevel(level)}
+                className={`px-5 py-2 rounded-lg border-2 text-sm font-medium transition ${
+                  educationLevel === level
+                    ? 'border-primary-500 bg-primary-50 text-primary-700'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                {level}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* 拖拽上传区 */}
         <div
           className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer group ${

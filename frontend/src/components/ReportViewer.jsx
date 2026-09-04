@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Clock, FileText, Image, Download, Edit3 } from "lucide-react";
+import { ArrowLeft, Clock, FileText, Image, Download, Edit3, LayoutGrid, FileDown } from "lucide-react";
+import { generateCard } from "../api/settingsService";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import SplitViewEditor from './Editor/SplitViewEditor';
@@ -10,6 +11,32 @@ const ReportViewer = ({ report, onBack }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingContent, setEditingContent] = useState("");
   const [editingType, setEditingType] = useState(""); // "outline" or "report"
+  const [cardHtml, setCardHtml] = useState("");
+  const [cardLoading, setCardLoading] = useState(false);
+
+  // 生成学习卡片（移植自 light 版），在新窗口预览
+  const handleGenerateCard = async () => {
+    if (cardLoading) return;
+    setCardLoading(true);
+    try {
+      const result = await generateCard(report.task_id);
+      setCardHtml(result.html);
+      const win = window.open("", "_blank");
+      if (win) {
+        win.document.write(result.html);
+        win.document.close();
+      }
+    } catch (err) {
+      alert(`学习卡片生成失败: ${err.message}`);
+    } finally {
+      setCardLoading(false);
+    }
+  };
+
+  // 导出大纲+报告为单个 Markdown 文件（移植自 light 版）
+  const handleExportMarkdown = () => {
+    window.open(`/api/export/${report.task_id}`, "_blank");
+  };
 
   // 动态更新页面标题
   useEffect(() => {
@@ -225,6 +252,23 @@ const ReportViewer = ({ report, onBack }) => {
                   <span>处理时间: {report.created_at ? new Date(report.created_at).toLocaleString() : "未知"}</span>
                 </div>
               </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleGenerateCard}
+                disabled={cardLoading}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-primary-600 to-purple-600 text-white text-sm font-medium shadow-md hover:shadow-lg transition-shadow disabled:opacity-60"
+              >
+                <LayoutGrid className="w-4 h-4" />
+                {cardLoading ? "生成中..." : "生成学习卡片"}
+              </button>
+              <button
+                onClick={handleExportMarkdown}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
+              >
+                <FileDown className="w-4 h-4" />
+                导出 Markdown
+              </button>
             </div>
           </div>
         </motion.div>

@@ -122,6 +122,23 @@ echo "export VLM_API_KEY=your-vlm-api-key" >> ~/.bashrc
 source ~/.bashrc
 ```
 
+### 设置控制台（推荐）
+
+也可以不修改任何配置文件，启动后在前端页面点击「控制台」（或访问 `/settings`）完成全部配置：
+
+- **语音识别模式**：`离线`（本地 FunASR Paraformer，无需 API）或 `在线`（DashScope 云端识别，零模型下载、启动即用）
+- **LLM / VLM**：填写 API Key、接口地址（任意 OpenAI 兼容服务）与模型名称，并可一键连通性测试
+- **默认学习阶段**：小学 / 初中 / 高中，影响大纲与报告的语言风格
+
+配置保存在项目根目录的 `settings.json`（已被 gitignore，含密钥请勿提交），并会在每次任务执行时注入运行时配置；`backend/algorithm/config.py` 缺失时后端也可直接启动。`config.template.py` 为手动配置的参考模板（`cp config.template.py config.py`）。
+
+### 学习卡片与导出
+
+- 报告页新增「生成学习卡片」：由 LLM 将报告转换为手机尺寸的 Bento Grid 风格 HTML 学习卡片
+- 报告页新增「导出 Markdown」：将大纲与最终报告合并为单个 Markdown 文件下载
+- 上传视频时可选择学习阶段（小学/初中/高中），LLM 生成内容会相应调整深度
+- LLM 调用内置限流自动重试（指数退避 + 随机抖动）
+
 ### 启动服务
 
 #### 1. 启动后端服务

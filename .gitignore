@@ -24,3 +24,9 @@ frontend/.vite/
 # 其他前端临时文件
 frontend/.DS_Store
 frontend/*.log
+# 运行时设置（含密钥，勿提交）
+settings.json
+
+# Python 产物
+__pycache__/
+*.pyc

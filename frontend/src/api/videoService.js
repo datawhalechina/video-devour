@@ -36,11 +36,13 @@ api.interceptors.response.use(
  * 上传视频文件
  * @param {File} file - 视频文件
  * @param {Function} onProgress - 进度回调函数
+ * @param {string} educationLevel - 学习阶段（小学/初中/高中），默认"高中"
  * @returns {Promise} 返回任务ID
  */
-export const uploadVideo = async (file, onProgress) => {
+export const uploadVideo = async (file, onProgress, educationLevel = "高中") => {
   const formData = new FormData();
   formData.append("file", file);  // 修改字段名从 "video" 到 "file"
+  formData.append("education_level", educationLevel);
 
   try {
     const response = await api.post("/video/upload", formData, {

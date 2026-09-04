@@ -15,6 +15,7 @@ import {
   Shield,
   Cpu,
   Download,
+  Settings,
 } from "lucide-react";
 
 const LandingPage = () => {
@@ -93,6 +94,13 @@ const LandingPage = () => {
             </div>
           </div>
           <div className="flex items-center space-x-6">
+            <button
+              onClick={() => navigate("/settings")}
+              className="flex items-center space-x-1 text-sm text-gray-600 hover:text-cyan-500 transition-colors font-medium hidden md:block"
+            >
+              <Settings className="w-4 h-4" />
+              <span>控制台</span>
+            </button>
             <button
               onClick={() => navigate("/editor-test")}
               className="text-sm text-gray-600 hover:text-cyan-500 transition-colors font-medium hidden md:block"

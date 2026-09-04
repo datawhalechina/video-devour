@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -25,8 +25,11 @@ from pydantic import BaseModel
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# settings_store 先于 pipeline 导入：负责引导 config 模块（config.py 缺失时自动构建）
+from backend.algorithm import settings_store
+settings_store.apply_to_config()
+
 from backend.algorithm.pipeline import run_full_pipeline
-from backend.devour.asr_engine_paraformer_v2 import VideoDevourASRParaformerV2
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -89,12 +92,21 @@ load_tasks()
 @app.on_event("startup")
 async def startup_event():
     """
-    预加载 ASR 模型
+    按 ASR 模式初始化引擎：
+    - offline: 预加载本地 Paraformer 模型
+    - online:  无需预加载，启动即用（任务时通过 DashScope 云端调用）
     """
     global asr_engine
+    settings_store.apply_to_config()
+    mode = settings_store.load_settings().get("asr_mode", "offline")
+    if mode == "online":
+        asr_engine = None
+        logging.info("当前为在线 ASR 模式（DashScope），跳过本地模型预加载")
+        return
     try:
         logging.info("正在预加载 ASR 模型...")
-        asr_engine = VideoDevourASRParaformerV2()
+        from backend.devour.asr_factory import create_asr_engine
+        asr_engine = create_asr_engine(mode="offline")
         _ = asr_engine.asr_model
         logging.info("ASR 模型预加载完成")
     except Exception as e:
@@ -131,15 +143,103 @@ async def health_check():
     """健康检查接口"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
+
+# ---------------------------------------------------------------------------
+# 设置控制台 API（离线/在线模式切换、API 配置、连通性测试）
+# ---------------------------------------------------------------------------
+
+class SettingsUpdateRequest(BaseModel):
+    asr_mode: Optional[str] = None            # offline | online
+    dashscope_api_key: Optional[str] = None
+    online_asr_model: Optional[str] = None
+    llm_api_key: Optional[str] = None
+    llm_api_url: Optional[str] = None
+    llm_model_type: Optional[str] = None
+    llm_temperature: Optional[float] = None
+    vlm_api_key: Optional[str] = None
+    vlm_api_url: Optional[str] = None
+    vlm_model_type: Optional[str] = None
+    default_education_level: Optional[str] = None
+
+
+class SettingsTestRequest(BaseModel):
+    target: str = "all"  # asr | llm | vlm | all
+
+
+@app.get("/api/settings")
+async def get_app_settings():
+    """获取当前设置（密钥脱敏）"""
+    settings = settings_store.get_settings(mask=True)
+    settings["education_levels"] = settings_store.EDUCATION_LEVELS
+    return settings
+
+
+@app.put("/api/settings")
+async def update_app_settings(request: SettingsUpdateRequest):
+    """
+    更新设置并立即生效。
+
+    - 设置会注入 config 模块并持久化到 settings.json
+    - 切换到 online 模式时释放已预加载的本地模型
+    - 切换到 offline 模式时后台预加载本地模型
+    """
+    global asr_engine
+    dump = getattr(request, "model_dump", None) or request.dict
+    updates = {k: v for k, v in dump().items() if v is not None}
+    if updates.get("asr_mode") not in (None, "offline", "online"):
+        raise HTTPException(status_code=400, detail="asr_mode 仅支持 offline 或 online")
+    if updates.get("default_education_level") not in (None,) + tuple(settings_store.EDUCATION_LEVELS):
+        raise HTTPException(status_code=400, detail="default_education_level 仅支持 小学/初中/高中")
+
+    old_mode = settings_store.load_settings().get("asr_mode", "offline")
+    settings = settings_store.update_settings(updates)
+    new_mode = settings["asr_mode"]
+
+    if new_mode != old_mode:
+        asr_engine = None
+        if new_mode == "offline":
+            # 后台预加载本地模型，不阻塞请求
+            def _preload():
+                global asr_engine
+                try:
+                    from backend.devour.asr_factory import create_asr_engine
+                    engine = create_asr_engine(mode="offline")
+                    _ = engine.asr_model
+                    asr_engine = engine
+                    logging.info("离线 ASR 模型预加载完成")
+                except Exception as e:
+                    logging.error(f"离线 ASR 模型预加载失败: {e}")
+            asyncio.get_event_loop().run_in_executor(None, _preload)
+        else:
+            logging.info("已切换为在线 ASR 模式，本地模型已释放")
+    settings["education_levels"] = settings_store.EDUCATION_LEVELS
+    return {"message": "设置已保存并生效", "settings": settings}
+
+
+@app.post("/api/settings/test")
+async def test_app_settings(request: SettingsTestRequest):
+    """测试 API 连通性（asr: 在线语音识别 / llm / vlm）"""
+    import concurrent.futures
+    target = request.target if request.target in ("asr", "llm", "vlm", "all") else "all"
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = await loop.run_in_executor(executor, settings_store.run_tests, target)
+    return {"results": results}
+
 @app.post("/api/video/upload", response_model=UploadResponse)
-async def upload_video(file: UploadFile = File(...)):
+async def upload_video(file: UploadFile = File(...), education_level: str = Form("高中")):
     """
     上传视频文件并开始处理
+
+    education_level: 学习阶段（小学/初中/高中），影响大纲与报告的语言风格
     """
     try:
         # 检查文件是否存在
         if not file.filename:
             raise HTTPException(status_code=400, detail="未选择文件")
+
+        if education_level not in settings_store.EDUCATION_LEVELS:
+            raise HTTPException(status_code=400, detail="学习阶段仅支持 小学/初中/高中")
         
         # 检查文件扩展名（更宽松的验证）
         file_extension = Path(file.filename).suffix.lower()
@@ -204,14 +304,15 @@ async def upload_video(file: UploadFile = File(...)):
             "message": "文件上传完成，等待处理",
             "filename": display_filename,  # 使用处理后的显示文件名
             "file_path": str(file_path),
+            "education_level": education_level,
             "created_at": datetime.now().isoformat()
         }
-        
+
         # 保存任务数据
         save_tasks()
-        
+
         # 启动后台处理任务并存储任务引用
-        task = asyncio.create_task(process_video_async(task_id, file_path))
+        task = asyncio.create_task(process_video_async(task_id, file_path, education_level))
         running_tasks[task_id] = task
         
         return UploadResponse(
@@ -480,10 +581,148 @@ async def save_report_file(task_id: str, file_type: str, request: dict):
         content = request.get("content", "")
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(content)
-        
+
         return {"message": "保存成功"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# 学习卡片与 Markdown 导出（移植自 light 版核心功能）
+# ---------------------------------------------------------------------------
+
+def _find_task_output_dir(task_id: str):
+    """查找任务的输出目录（pipeline 生成的 frames_{task_id}_* 目录）"""
+    for dir_path in OUTPUT_DIR.iterdir():
+        if dir_path.is_dir() and dir_path.name.startswith(f"frames_{task_id}"):
+            return dir_path
+    task_output_dir = OUTPUT_DIR / task_id
+    if task_output_dir.exists():
+        return task_output_dir
+    return None
+
+
+def _get_task_education_level(task_id: str, default: str = "高中") -> str:
+    task = processing_tasks.get(task_id, {})
+    return task.get("education_level") or default
+
+
+CARD_SYSTEM_PROMPT = (
+    "你是一位专业的教育科技产品设计师与前端开发专家，擅长设计适合学生学习和复习的交互式学习卡片页面。"
+    "你深谙学习心理学和认知科学原理，能够将复杂的学习内容转化为清晰、易记、视觉友好的学习卡片。"
+    "注意只输出一段完整的HTML代码，不要输出任何其他内容。"
+)
+
+CARD_PROMPT_TEMPLATE = """请根据以下Markdown笔记内容，生成一个适合{level}学生学习的学习卡片HTML页面。
+
+## 设计要求（必须严格遵守）
+1. 页面为手机尺寸设计，卡片宽度写死 393px，提供完整的HTML文件代码，确保可以直接运行
+2. 使用 Bento Grid 风格布局，柔和深色背景（#1a1a2e 或 #16213e），高亮色区分内容类型（#4CAF50重点、#FF9800提醒、#2196F3概念）
+3. 通过 CDN 引入 TailwindCSS 3.0+ 和图标库（Font Awesome 或 Material Icons）
+4. 核心知识点使用超大字体粗体突出，形成清晰的视觉层次
+5. 使用图标或符号标记重点内容，关键概念使用卡片式设计
+6. 【重要】必须完整保留笔记中的所有标题、要点和关键信息，不要遗漏任何内容
+7. 【重要】只输出HTML代码，不要输出多段，不要包含解释文字
+
+## 笔记内容
+---
+{notes}
+---
+"""
+
+@app.post("/api/task/{task_id}/card")
+async def generate_task_card(task_id: str):
+    """
+    根据任务的最终报告生成学习卡片HTML（结果缓存到任务目录）
+    """
+    output_dir = _find_task_output_dir(task_id)
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="任务不存在或尚未完成")
+
+    card_path = output_dir / "learning_card.html"
+    if card_path.exists():
+        return {"html": card_path.read_text(encoding="utf-8"), "cached": True}
+
+    report_path = output_dir / "final_report.md"
+    if not report_path.exists():
+        raise HTTPException(status_code=400, detail="任务尚未生成报告，无法生成学习卡片")
+
+    notes = report_path.read_text(encoding="utf-8")
+    if len(notes) > 24000:
+        notes = notes[:24000] + "\n\n... (内容过长，已截取部分内容)"
+
+    education_level = _get_task_education_level(task_id)
+
+    def _generate():
+        from backend.algorithm.llm_handler import LLMHandler
+        llm = LLMHandler(education_level=education_level)
+        prompt = CARD_PROMPT_TEMPLATE.format(level=education_level, notes=notes)
+        html = llm.get_response(prompt, system_message=CARD_SYSTEM_PROMPT)
+        # 清理 LLM 可能返回的 Markdown 代码块标记
+        import re
+        html = re.sub(r'^```html\s*|```$', '', html.strip(), flags=re.MULTILINE).strip()
+        return html
+
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        html = await loop.run_in_executor(executor, _generate)
+
+    try:
+        card_path.write_text(html, encoding="utf-8")
+    except Exception as e:
+        logging.warning(f"学习卡片缓存写入失败: {e}")
+
+    return {"html": html, "cached": False}
+
+
+@app.get("/api/task/{task_id}/card")
+async def get_task_card(task_id: str):
+    """获取已生成的学习卡片HTML"""
+    output_dir = _find_task_output_dir(task_id)
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    card_path = output_dir / "learning_card.html"
+    if not card_path.exists():
+        raise HTTPException(status_code=404, detail="学习卡片尚未生成")
+    return {"html": card_path.read_text(encoding="utf-8"), "cached": True}
+
+
+@app.get("/api/export/{task_id}")
+async def export_task_markdown(task_id: str):
+    """
+    将任务的大纲与最终报告合并导出为单个 Markdown 文件
+    """
+    output_dir = _find_task_output_dir(task_id)
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    outline_path = output_dir / "detailed_outline.md"
+    if not outline_path.exists():
+        outline_path = output_dir / "outline.md"
+    report_path = output_dir / "final_report.md"
+
+    if not outline_path.exists() and not report_path.exists():
+        raise HTTPException(status_code=400, detail="任务尚未完成，无可导出的内容")
+
+    def _read(path):
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    parts = []
+    outline_content = _read(outline_path)
+    report_content = _read(report_path)
+    if outline_content:
+        parts.append(f"# 内容大纲\n\n{outline_content}")
+    if report_content:
+        parts.append(f"# 详细报告\n\n{report_content}")
+    full_content = "\n\n---\n\n".join(parts)
+
+    filename = f"videodevour_{task_id[:8]}.md"
+    return Response(
+        content=full_content,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 @app.get("/api/history")
 async def get_history():
@@ -650,7 +889,7 @@ async def delete_task(task_id: str):
         print(f"删除任务 {task_id} 时发生未知错误: {e}")
         raise HTTPException(status_code=500, detail=f"删除任务时发生错误: {str(e)}")
 
-async def process_video_async(task_id: str, file_path: Path):
+async def process_video_async(task_id: str, file_path: Path, education_level: str = None):
     """
     异步处理视频文件
     """
@@ -676,7 +915,7 @@ async def process_video_async(task_id: str, file_path: Path):
         
         # 这里调用实际的处理函数
         # 注意：run_full_pipeline 可能需要修改以支持异步和进度回调
-        result = await run_pipeline_with_progress(str(file_path), task_id)
+        result = await run_pipeline_with_progress(str(file_path), task_id, education_level)
         
         # 处理完成
         processing_tasks[task_id].update({
@@ -709,7 +948,7 @@ async def process_video_async(task_id: str, file_path: Path):
         save_tasks()
         raise
 
-async def run_pipeline_with_progress(video_path: str, task_id: str):
+async def run_pipeline_with_progress(video_path: str, task_id: str, education_level: str = None):
     """
     带进度更新的处理流程
     """
@@ -739,8 +978,7 @@ async def run_pipeline_with_progress(video_path: str, task_id: str):
         # 使用线程池执行器运行同步函数
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # 在执行过程中定期更新进度
-            # 预加载模型
-            future = executor.submit(run_full_pipeline, video_path, asr_engine)
+            future = executor.submit(run_full_pipeline, video_path, asr_engine, education_level)
             
             # 模拟进度更新
             progress_steps = [
