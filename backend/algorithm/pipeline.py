@@ -51,10 +51,11 @@ def _setup_environment(video_path: str):
     
     return main_output_path, video_name, timestamp
 
-def _run_asr_and_process(video_path: str, video_name: str, main_output_path: str):
+def _run_asr_and_process(video_path: str, video_name: str, main_output_path: str, asr_engine=None):
     """Runs ASR on the video and processes the result."""
     logging.info("--- 步骤 0 & 1: 语音识别与数据处理 ---")
-    asr_engine = VideoDevourASRParaformerV2()
+    if asr_engine is None:
+        asr_engine = VideoDevourASRParaformerV2()
     asr_result = asr_engine.devour_video(video_path)
     asr_result_path = os.path.join(main_output_path, f"{video_name}_asr_result.json")
     with open(asr_result_path, 'w', encoding='utf-8') as f:
@@ -119,12 +120,12 @@ def _generate_and_match_outline(processed_dialogue: list, main_output_path: str)
     logging.info("--- 文本块匹配完成 ---")
     return matched_data, headings_with_level, headings, outline
 
-def run_full_pipeline(video_path: str):
+def run_full_pipeline(video_path: str, asr_engine=None):
     """Orchestrates the full video processing pipeline."""
     try:
         main_output_path, video_name, timestamp = _setup_environment(video_path)
         
-        processed_dialogue = _run_asr_and_process(video_path, video_name, main_output_path)
+        processed_dialogue = _run_asr_and_process(video_path, video_name, main_output_path, asr_engine)
         if not processed_dialogue:
             raise ValueError("ASR处理后对话为空，流程中止。")
 
