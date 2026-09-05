@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Clock, FileText, Image, Download, Edit3, LayoutGrid, FileDown } from "lucide-react";
-import { generateCard } from "../api/settingsService";
+import { ArrowLeft, Clock, FileText, Image, Download, Edit3, LayoutGrid, FileDown, Share2, Network } from "lucide-react";
+import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import SplitViewEditor from './Editor/SplitViewEditor';
@@ -13,6 +13,26 @@ const ReportViewer = ({ report, onBack }) => {
   const [editingType, setEditingType] = useState(""); // "outline" or "report"
   const [cardHtml, setCardHtml] = useState("");
   const [cardLoading, setCardLoading] = useState(false);
+  const [htmlLoading, setHtmlLoading] = useState({});
+
+  // 通用：调用生成接口并在新窗口打开返回的 HTML（思维导图 / 知识图谱）
+  const handleOpenHtml = async (kind) => {
+    if (htmlLoading[kind]) return;
+    setHtmlLoading(prev => ({ ...prev, [kind]: true }));
+    try {
+      const fn = kind === "mindmap" ? generateMindmap : generateKnowledgeGraph;
+      const result = await fn(report.task_id);
+      const win = window.open("", "_blank");
+      if (win) {
+        win.document.write(result.html);
+        win.document.close();
+      }
+    } catch (err) {
+      alert(`${kind === "mindmap" ? "思维导图" : "知识图谱"}生成失败: ${err.message}`);
+    } finally {
+      setHtmlLoading(prev => ({ ...prev, [kind]: false }));
+    }
+  };
 
   // 生成学习卡片（移植自 light 版），在新窗口预览
   const handleGenerateCard = async () => {
@@ -239,6 +259,22 @@ const ReportViewer = ({ report, onBack }) => {
               >
                 <LayoutGrid className="w-4 h-4" />
                 {cardLoading ? "生成中..." : "生成学习卡片"}
+              </button>
+              <button
+                onClick={() => handleOpenHtml("mindmap")}
+                disabled={htmlLoading.mindmap}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 text-white text-sm font-medium shadow-md hover:shadow-lg transition-shadow disabled:opacity-60"
+              >
+                <Share2 className="w-4 h-4" />
+                {htmlLoading.mindmap ? "生成中..." : "思维导图"}
+              </button>
+              <button
+                onClick={() => handleOpenHtml("graph")}
+                disabled={htmlLoading.graph}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-medium shadow-md hover:shadow-lg transition-shadow disabled:opacity-60"
+              >
+                <Network className="w-4 h-4" />
+                {htmlLoading.graph ? "生成中..." : "知识图谱"}
               </button>
               <button
                 onClick={handleExportMarkdown}

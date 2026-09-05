@@ -53,3 +53,17 @@ export const generateCard = async (taskId) => {
 export const getCard = async (taskId) => {
   return api.get(`/task/${taskId}/card`);
 };
+
+/**
+ * 生成思维导图（markmap HTML）
+ */
+export const generateMindmap = async (taskId) => {
+  return api.post(`/task/${taskId}/mindmap`);
+};
+
+/**
+ * 生成知识图谱（ECharts 力导向图 HTML）
+ */
+export const generateKnowledgeGraph = async (taskId) => {
+  return api.post(`/task/${taskId}/knowledge-graph`);
+};
