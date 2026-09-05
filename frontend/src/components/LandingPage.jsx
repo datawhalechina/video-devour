@@ -32,22 +32,46 @@ const LandingPage = () => {
   // 核心特性
   const features = [
     {
-      icon: <Video className="w-8 h-8" />,
-      title: "智能视频解析",
-      description: "支持多种格式视频上传，自动提取音频和画面关键帧",
+      icon: <Cpu className="w-8 h-8" />,
+      title: "双模式语音识别",
+      description:
+        "离线 FunASR Paraformer（本地 GPU 加速，数据不出本机）与 DashScope 云端识别随时切换，控制台一键配置",
       color: "from-cyan-400 to-blue-500",
     },
     {
-      icon: <Cpu className="w-8 h-8" />,
-      title: "AI 深度分析",
-      description: "利用先进的 AI 技术，自动识别语音、提取关键信息和生成摘要",
+      icon: <Tv className="w-8 h-8" />,
+      title: "B站 / YouTube 链接直处理",
+      description:
+        "粘贴链接即可下载分析，支持关键词搜索与站内预览；也可直接上传本地视频文件",
       color: "from-blue-400 to-indigo-500",
     },
     {
-      icon: <FileText className="w-8 h-8" />,
-      title: "结构化输出",
-      description: "自动生成格式规范的 Markdown 文档，包含时间轴和内容大纲",
+      icon: <Video className="w-8 h-8" />,
+      title: "VLM 关键帧图文报告",
+      description:
+        "视觉语言模型逐帧评分，为每个章节挑选最具代表性的画面，生成图文并茂的中文大纲与报告",
       color: "from-indigo-400 to-purple-500",
+    },
+    {
+      icon: <BarChart3 className="w-8 h-8" />,
+      title: "九档学习阶段",
+      description:
+        "自由学习、小学到博士、深入研究与垂直领域研究——内容深度随阶段智能调整",
+      color: "from-purple-400 to-fuchsia-500",
+    },
+    {
+      icon: <Sparkles className="w-8 h-8" />,
+      title: "AI 学习卡片",
+      description:
+        "一键将报告转换为手机尺寸的 Bento Grid 交互式学习卡片，重点难点一目了然",
+      color: "from-fuchsia-400 to-pink-500",
+    },
+    {
+      icon: <FileText className="w-8 h-8" />,
+      title: "一键导出 Markdown",
+      description:
+        "大纲与报告合并导出，关键帧图片内嵌，单个文件在任意本地查看器中图文完整",
+      color: "from-pink-400 to-rose-500",
     },
   ];
 
@@ -55,23 +79,23 @@ const LandingPage = () => {
   const advantages = [
     {
       icon: <Shield className="w-6 h-6" />,
-      title: "数据安全",
-      description: "本地部署，数据完全掌控",
+      title: "离线优先",
+      description: "本地模型推理，数据不出本机",
     },
     {
       icon: <Zap className="w-6 h-6" />,
-      title: "高效处理",
-      description: "智能算法，快速生成报告",
+      title: "GPU 加速",
+      description: "Apple 芯片 MPS 自动启用，推理翻倍",
     },
     {
-      icon: <Sparkles className="w-6 h-6" />,
-      title: "AI 驱动",
-      description: "先进模型，精准识别内容",
+      icon: <Settings className="w-6 h-6" />,
+      title: "弹性接入",
+      description: "任意 OpenAI 兼容 LLM/VLM 均可配置",
     },
     {
-      icon: <Download className="w-6 h-6" />,
-      title: "开源免费",
-      description: "MIT 协议，完全免费使用",
+      icon: <Terminal className="w-6 h-6" />,
+      title: "Agent Skill",
+      description: "标准 .agents/skills 协议，AI 助手直接调用",
     },
   ];
 
@@ -160,9 +184,11 @@ const LandingPage = () => {
 
           {/* 副标题 */}
           <p className="text-xl md:text-2xl text-gray-600 mb-14 max-w-3xl mx-auto leading-loose">
-            上传视频，让 AI 为您自动生成结构化笔记和内容摘要
+            上传视频或粘贴 B站 / YouTube 链接，AI 自动生成带关键帧画面的中文图文报告
             <br />
-            <span className="text-cyan-600 font-medium">让知识提取变得简单高效</span>
+            <span className="text-cyan-600 font-medium">
+              离线 / 在线双模式语音识别 · 九档学习阶段 · 一键生成学习卡片
+            </span>
           </p>
 
           {/* CTA 按钮组 */}
@@ -175,11 +201,18 @@ const LandingPage = () => {
               <span>立即开始</span>
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </button>
+            <button
+              onClick={() => navigate("/link")}
+              className="flex items-center space-x-2 px-10 py-4 bg-white border-2 border-cyan-300 text-gray-900 rounded-xl hover:border-cyan-400 hover:shadow-xl transition-all font-semibold"
+            >
+              <Tv className="w-5 h-5" />
+              <span>粘贴链接试试</span>
+            </button>
             <a
               href="https://github.com/datawhalechina/video-devour"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center space-x-2 px-10 py-4 bg-white border-2 border-cyan-300 text-gray-900 rounded-xl hover:border-cyan-400 hover:shadow-xl transition-all font-semibold"
+              className="flex items-center space-x-2 px-6 py-4 text-gray-600 hover:text-cyan-600 transition-all font-medium"
             >
               <Github className="w-5 h-5" />
               <span>查看源码</span>
@@ -189,16 +222,20 @@ const LandingPage = () => {
           {/* 特性标签 */}
           <div className="flex flex-wrap justify-center gap-4 text-sm text-gray-600">
             <div className="flex items-center space-x-2 px-4 py-2 bg-white/60 backdrop-blur-sm rounded-lg">
-              <Shield className="w-4 h-4 text-cyan-500" />
-              <span>数据安全</span>
+              <Cpu className="w-4 h-4 text-cyan-500" />
+              <span>离线 / 在线双模式 ASR</span>
+            </div>
+            <div className="flex items-center space-x-2 px-4 py-2 bg-white/60 backdrop-blur-sm rounded-lg">
+              <Tv className="w-4 h-4 text-cyan-500" />
+              <span>B站 / YouTube 链接</span>
             </div>
             <div className="flex items-center space-x-2 px-4 py-2 bg-white/60 backdrop-blur-sm rounded-lg">
               <Zap className="w-4 h-4 text-cyan-500" />
-              <span>快速处理</span>
+              <span>Apple GPU 加速</span>
             </div>
             <div className="flex items-center space-x-2 px-4 py-2 bg-white/60 backdrop-blur-sm rounded-lg">
               <Code className="w-4 h-4 text-cyan-500" />
-              <span>MIT 开源</span>
+              <span>Agent Skill 可调用</span>
             </div>
           </div>
         </div>
@@ -291,20 +328,26 @@ const LandingPage = () => {
     "build": "Vite"
   },
   "backend": {
-    "runtime": "Python",
-    "framework": "FastAPI",
-    "ai": "OpenAI API (可自定义)"
+    "runtime": "Python 3.12 + FastAPI",
+    "llm": "camel-ai（任意 OpenAI 兼容接口）",
+    "vlm": "视觉语言模型关键帧评分"
   },
-  "features": {
-    "asr": "语音识别引擎",
-    "vlm": "视觉语言模型",
-    "output": "Markdown 格式"
+  "asr": {
+    "offline": "FunASR Paraformer V2（MPS / CUDA / CPU 自动加速）",
+    "online": "DashScope 云端识别，免模型下载"
+  },
+  "video": {
+    "download": "yt-dlp（B站 / YouTube，支持搜索与预览）",
+    "pipeline": "ffmpeg 切分抽帧 + 文本相似度匹配"
+  },
+  "extras": {
+    "skill": ".agents/skills 协议，任意 AI 助手可直接调用",
+    "console": "设置控制台在线切换模式与 API 配置"
   },
   "deployment": {
-    "type": "自托管",
-    "docker": "支持"
+    "type": "自托管，数据完全本地掌控"
   }
-}`}</code>
+`}</code>
               </pre>
             </div>
           </div>
@@ -338,9 +381,9 @@ const LandingPage = () => {
                   2
                 </div>
                 <div className="flex-1 bg-gray-900 rounded-xl p-5 group-hover:shadow-xl transition-shadow">
-                  <p className="text-cyan-400 text-sm mb-3 font-medium">安装依赖</p>
+                  <p className="text-cyan-400 text-sm mb-3 font-medium">安装依赖（后端推荐 uv，需 Python 3.12+）</p>
                   <code className="text-green-400 text-sm md:text-base leading-relaxed">
-                    cd video-devour && pip install -r requirements.txt && cd frontend && npm install
+                    cd video-devour && uv sync && cd frontend && npm install
                   </code>
                 </div>
               </div>
@@ -352,9 +395,23 @@ const LandingPage = () => {
                 <div className="flex-1 bg-gray-900 rounded-xl p-5 group-hover:shadow-xl transition-shadow">
                   <p className="text-cyan-400 text-sm mb-3 font-medium">启动服务</p>
                   <code className="text-green-400 text-sm md:text-base leading-relaxed">
-                    # 后端: python -m uvicorn backend.api.main:app --reload
+                    # 后端: ./start_backend.sh（监听 :8000）
                     <br />
-                    # 前端: cd frontend && npm run dev
+                    # 前端: cd frontend && npm run dev（访问 :3000）
+                  </code>
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-4 group">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0 bg-gradient-brand">
+                  4
+                </div>
+                <div className="flex-1 bg-gray-900 rounded-xl p-5 group-hover:shadow-xl transition-shadow">
+                  <p className="text-cyan-400 text-sm mb-3 font-medium">配置并使用</p>
+                  <code className="text-green-400 text-sm md:text-base leading-relaxed">
+                    # 打开 /settings 控制台：选离线/在线模式、填 API Key、测试连通性
+                    <br />
+                    # 上传视频或粘贴 B站 / YouTube 链接，坐等图文报告
                   </code>
                 </div>
               </div>
