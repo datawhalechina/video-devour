@@ -230,14 +230,28 @@ class VideoDevourASRParaformerV2:
                 }
         """
         logging.info(f"开始处理视频: {video_path}")
-        
+
         try:
             # 使用 Paraformer 进行识别
             logging.info("正在进行语音识别...")
-            res = self.asr_model.generate(
-                input=video_path,
-                batch_size_s=300
-            )
+            try:
+                res = self.asr_model.generate(
+                    input=video_path,
+                    batch_size_s=300
+                )
+            except Exception as e:
+                # MPS 偶发算子错误（如空语音段触发 "Dimension specified as -1"），
+                # 自动回退 CPU 重试一次，保证识别可靠性
+                if self.device == "mps":
+                    logging.warning(f"MPS 推理失败（{e}），回退 CPU 重试...")
+                    self.device = "cpu"
+                    self._asr_model = None
+                    res = self.asr_model.generate(
+                        input=video_path,
+                        batch_size_s=300
+                    )
+                else:
+                    raise
             
             # 规范化结果
             transcript = self.normalize_result(res)
