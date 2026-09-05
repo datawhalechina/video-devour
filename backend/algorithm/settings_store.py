@@ -24,10 +24,13 @@ ALGORITHM_DIR = Path(__file__).resolve().parent
 SETTINGS_FILE = PROJECT_ROOT / "settings.json"
 
 DEFAULT_SETTINGS = {
-    # ASR 模式：offline = 本地 FunASR Paraformer（需下载模型）；online = DashScope 云端
+    # ASR 模式：offline = 本地 FunASR Paraformer（需下载模型）；
+    # online = 云端识别，提供商由 online_asr_provider 决定
     "asr_mode": "offline",
     "dashscope_api_key": "",
     "online_asr_model": "fun-asr-realtime",
+    "online_asr_provider": "dashscope",   # dashscope | stepfun
+    "stepfun_api_key": "",
     # LLM（OpenAI 兼容接口）
     "llm_api_key": "",
     "llm_api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -96,7 +99,7 @@ def mask_key(value: str) -> str:
 def get_settings(mask: bool = True) -> dict:
     settings = load_settings()
     if mask:
-        for key in ("dashscope_api_key", "llm_api_key", "vlm_api_key"):
+        for key in ("dashscope_api_key", "llm_api_key", "vlm_api_key", "stepfun_api_key"):
             settings[key] = mask_key(settings.get(key, ""))
     return settings
 
@@ -182,8 +185,11 @@ def _make_silent_wav(duration_seconds: float = 1.0) -> str:
 
 
 def test_asr_online() -> tuple:
-    """测试在线 ASR（DashScope Recognition）连通性，返回 (ok, message)"""
+    """测试在线 ASR 连通性（按提供商分支），返回 (ok, message)"""
     settings = load_settings()
+    provider = settings.get("online_asr_provider", "dashscope")
+    if provider == "stepfun":
+        return _test_asr_stepfun(settings)
     api_key = settings.get("dashscope_api_key")
     if not api_key:
         return False, "未配置 DashScope API Key"
@@ -211,6 +217,55 @@ def test_asr_online() -> tuple:
             os.remove(wav_path)
         except Exception:
             pass
+
+
+def _test_asr_stepfun(settings: dict) -> tuple:
+    """StepFun ASR 连通性测试：上传 1 秒静音 PCM，检查接口是否正常响应"""
+    api_key = settings.get("stepfun_api_key")
+    if not api_key:
+        return False, "未配置 StepFun API Key"
+    try:
+        import base64
+        import io
+        import wave
+
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(b"\x00\x00" * 16000)
+        pcm_b64 = base64.b64encode(buf.getvalue()).decode()
+
+        import requests
+
+        body = {
+            "audio": {
+                "data": pcm_b64,
+                "input": {
+                    "transcription": {
+                        "model": settings.get("online_asr_model", "stepaudio-2.5-asr"),
+                        "language": "zh",
+                        "enable_itn": True,
+                    },
+                    "format": {"type": "pcm", "codec": "pcm_s16le",
+                               "rate": 16000, "bits": 16, "channel": 1},
+                },
+            }
+        }
+        resp = requests.post(
+            "https://api.stepfun.com/step_plan/v1/audio/asr/sse",
+            json=body,
+            headers={"Content-Type": "application/json", "Accept": "text/event-stream",
+                     "Authorization": f"Bearer {api_key}"},
+            stream=True, timeout=30,
+        )
+        if resp.status_code == 200:
+            resp.close()
+            return True, "StepFun 在线 ASR 连通正常"
+        return False, f"StepFun ASR 连接失败: HTTP {resp.status_code} {resp.text[:150]}"
+    except Exception as e:
+        return False, f"StepFun ASR 测试异常: {e}"
 
 
 def _test_openai_compatible(name: str, base_url: str, api_key: str, model: str) -> tuple:

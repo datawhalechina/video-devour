@@ -152,6 +152,8 @@ class SettingsUpdateRequest(BaseModel):
     asr_mode: Optional[str] = None            # offline | online
     dashscope_api_key: Optional[str] = None
     online_asr_model: Optional[str] = None
+    online_asr_provider: Optional[str] = None   # dashscope | stepfun
+    stepfun_api_key: Optional[str] = None
     llm_api_key: Optional[str] = None
     llm_api_url: Optional[str] = None
     llm_model_type: Optional[str] = None
@@ -188,6 +190,8 @@ async def update_app_settings(request: SettingsUpdateRequest):
     updates = {k: v for k, v in dump().items() if v is not None}
     if updates.get("asr_mode") not in (None, "offline", "online"):
         raise HTTPException(status_code=400, detail="asr_mode 仅支持 offline 或 online")
+    if updates.get("online_asr_provider") not in (None, "dashscope", "stepfun"):
+        raise HTTPException(status_code=400, detail="online_asr_provider 仅支持 dashscope 或 stepfun")
     if updates.get("default_education_level") not in (None,) + tuple(settings_store.EDUCATION_LEVELS):
         raise HTTPException(status_code=400, detail="default_education_level 取值非法")
 

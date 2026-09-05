@@ -4,7 +4,8 @@ ASR 引擎工厂
 
 根据运行时设置（settings.json 中的 asr_mode）创建对应的 ASR 引擎：
 - offline: 本地 FunASR Paraformer V2（需要下载模型，依赖 torch/funasr，按需惰性导入）
-- online:  DashScope 云端识别（零本地模型，直接流式上传本地音频，不依赖对象存储）
+- online:  云端识别，提供商可选 DashScope 或 阶跃星辰 StepFun（零本地模型，
+           音频直接流式上传，不依赖对象存储）
 
 两个引擎的 devour_video() 输出格式完全一致，pipeline 无需感知差异。
 """
@@ -35,9 +36,21 @@ def create_asr_engine(mode: str = None):
 
     if mode == "online":
         from backend.algorithm.settings_store import load_settings
+        settings = load_settings()
+        provider = settings.get("online_asr_provider", "dashscope")
+
+        if provider == "stepfun":
+            from backend.devour.asr_engine_stepfun import VideoDevourASRStepFun
+
+            engine = VideoDevourASRStepFun(
+                api_key=settings.get("stepfun_api_key") or None,
+                model=settings.get("online_asr_model", "stepaudio-2.5-asr"),
+            )
+            logging.info("已创建在线 ASR 引擎（StepFun 阶跃星辰）")
+            return engine
+
         from backend.devour.asr_engine_dashscope import VideoDevourASRDashScope
 
-        settings = load_settings()
         engine = VideoDevourASRDashScope(
             api_key=settings.get("dashscope_api_key") or None,
             model=settings.get("online_asr_model", "fun-asr-realtime"),

@@ -26,6 +26,9 @@ function SettingsPage() {
         asr_mode: data.asr_mode,
         dashscope_api_key: data.dashscope_api_key,
         online_asr_model: data.online_asr_model,
+        online_asr_provider: data.online_asr_provider || 'dashscope',
+        stepfun_api_key: data.stepfun_api_key,
+
         llm_api_key: data.llm_api_key,
         llm_api_url: data.llm_api_url,
         llm_model_type: data.llm_model_type,
@@ -157,22 +160,52 @@ function SettingsPage() {
           {form.asr_mode === 'online' && (
             <div className="mt-5 space-y-4">
               <div>
-                <label className={labelClass}>DashScope API Key</label>
-                <input
-                  type="password"
-                  value={form.dashscope_api_key || ''}
-                  onChange={(e) => setField('dashscope_api_key', e.target.value)}
-                  placeholder="sk-..."
-                  className={inputClass}
-                />
+                <label className={labelClass}>云端识别提供商</label>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => { setField('online_asr_provider', 'dashscope'); setField('online_asr_model', 'fun-asr-realtime') }}
+                    className={`px-5 py-2 rounded-lg border-2 text-sm font-medium transition ${form.online_asr_provider === 'dashscope' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                  >
+                    DashScope（阿里云）
+                  </button>
+                  <button
+                    onClick={() => { setField('online_asr_provider', 'stepfun'); setField('online_asr_model', 'stepaudio-2.5-asr') }}
+                    className={`px-5 py-2 rounded-lg border-2 text-sm font-medium transition ${form.online_asr_provider === 'stepfun' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                  >
+                    阶跃星辰 StepFun
+                  </button>
+                </div>
               </div>
+              {form.online_asr_provider === 'stepfun' ? (
+                <div>
+                  <label className={labelClass}>StepFun API Key</label>
+                  <input
+                    type="password"
+                    value={form.stepfun_api_key || ''}
+                    onChange={(e) => setField('stepfun_api_key', e.target.value)}
+                    placeholder="阶跃星辰 API Key"
+                    className={inputClass}
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className={labelClass}>DashScope API Key</label>
+                  <input
+                    type="password"
+                    value={form.dashscope_api_key || ''}
+                    onChange={(e) => setField('dashscope_api_key', e.target.value)}
+                    placeholder="sk-..."
+                    className={inputClass}
+                  />
+                </div>
+              )}
               <div>
                 <label className={labelClass}>在线识别模型</label>
                 <input
                   type="text"
                   value={form.online_asr_model || ''}
                   onChange={(e) => setField('online_asr_model', e.target.value)}
-                  placeholder="fun-asr-realtime"
+                  placeholder={form.online_asr_provider === 'stepfun' ? 'stepaudio-2.5-asr' : 'fun-asr-realtime'}
                   className={inputClass}
                 />
               </div>
