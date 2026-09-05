@@ -81,33 +81,23 @@ const ReportViewer = ({ report, onBack }) => {
   const handleImageError = (e, originalSrc) => {
     const img = e.target;
     const currentAttempt = parseInt(img.dataset.attempt || '0');
-    
-    if (currentAttempt >= 3) {
+
+    // 外部图片（可能是LLM误加的占位链接）加载失败直接隐藏，不做无意义重试
+    if (/^https?:/i.test(originalSrc)) {
       img.style.display = 'none';
       return;
     }
-    
-    img.dataset.attempt = (currentAttempt + 1).toString();
-    
-    let newSrc;
-    if (currentAttempt === 0 && report.output_dir) {
-      // 第一次重试：使用后端提供的output_dir，并进行URL编码
-      const encodedSrc = encodeURIComponent(originalSrc);
-      newSrc = `/static/${report.output_dir}/${encodedSrc}`;
-    } else if (currentAttempt === 1) {
-      // 第二次重试：尝试keyframes路径
-      const imageName = originalSrc.split('/').pop();
-      const encodedImageName = encodeURIComponent(imageName);
-      newSrc = `/static/frames_${report.task_id}_*/keyframes/${encodedImageName}`;
-    } else if (currentAttempt === 2) {
-      // 第三次重试：尝试直接路径
-      const encodedSrc = encodeURIComponent(originalSrc);
-      newSrc = `/static/${encodedSrc}`;
+
+    if (currentAttempt >= 1 || !report.output_dir) {
+      img.style.display = 'none';
+      return;
     }
-    
-    if (newSrc) {
-      img.src = newSrc;
-    }
+
+    img.dataset.attempt = '1';
+    // 唯一正确的本地路径：/static/{输出目录名}/{原始相对路径}（仅文件名需编码）
+    const pathParts = originalSrc.split('/');
+    const fileName = encodeURIComponent(pathParts.pop());
+    img.src = `/static/${report.output_dir}/${pathParts.join('/')}/${fileName}`;
   };
 
   // 渲染Markdown内容

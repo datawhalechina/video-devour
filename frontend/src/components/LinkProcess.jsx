@@ -231,7 +231,7 @@ function LinkProcess() {
                     />
                   ) : (
                     preview.thumbnail && (
-                      <img src={preview.thumbnail} alt={preview.title} className="w-full h-[420px] object-contain" />
+                      <img src={preview.thumbnail} alt={preview.title} referrerPolicy="no-referrer" className="w-full h-[420px] object-contain" />
                     )
                   )}
                 </div>
@@ -267,7 +267,7 @@ function LinkProcess() {
                     onClick={() => { setPreview(item); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
                   >
                     {item.thumbnail ? (
-                      <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover" />
+                      <img src={item.thumbnail} alt={item.title} referrerPolicy="no-referrer" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none' }} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-300">
                         <Play className="w-8 h-8" />

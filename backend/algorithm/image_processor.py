@@ -160,11 +160,17 @@ def select_keyframes_with_vlm(headings_with_level, output_dir):
 
         safe_heading = re.sub(r'[\\/*?:"<>|]', "", heading).replace(" ", "_")
         
-        # 找到对应的帧目录
+        # 找到对应的帧目录；找不到时回退到唯一可用的帧目录
+        # （例如大纲只有一个一级标题、兜底切分出的单一片段，其帧应供所有章节共用）
         frame_dir = frame_dirs.get(safe_heading)
         if not frame_dir or not os.path.isdir(frame_dir):
-            logging.warning(f"未找到标题 '{heading}' 对应的帧目录，跳过。")
-            continue
+            fallback_dirs = list(frame_dirs.values())
+            if len(fallback_dirs) == 1 and os.path.isdir(fallback_dirs[0]):
+                frame_dir = fallback_dirs[0]
+                logging.info(f"标题 '{heading}' 无专属帧目录，回退使用唯一帧目录: {os.path.basename(frame_dir)}")
+            else:
+                logging.warning(f"未找到标题 '{heading}' 对应的帧目录，跳过。")
+                continue
 
         image_files = sorted([f for f in os.listdir(frame_dir) if f.endswith('.jpg')])
 

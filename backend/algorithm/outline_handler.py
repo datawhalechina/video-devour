@@ -207,7 +207,9 @@ def generate_final_report(detailed_outline_path, output_dir, education_level: st
             "2. **保留所有图片：** 必须保留大纲中提供的所有图片，并且维持它们原来的Markdown链接格式 (`![...](...)`)。\\n"
             "3. **维持图片位置：** 确保每张图片都紧跟在它所属的二级标题下方，作为该章节的配图。\\n"
             "4. **润色和扩写：** 在保留上述结构和图片的基础上，对每个章节下的文本内容进行语言润色、逻辑梳理和内容补充，使其更加流畅、专业和易于理解。\\n"
-            "5. **输出格式：** 最终输出仍为完整的Markdown格式文档。\\n\\n"
+            "5. **输出格式：** 最终输出仍为完整的Markdown格式文档。\\n"
+            "6. **禁止编造图片：** 只能使用大纲中真实存在的图片链接，绝对不要自行添加、替换或虚构任何图片地址"
+            "（尤其禁止使用 example.com 之类的占位链接）；如果大纲中没有图片，报告中就不要出现任何图片。\\n\\n"
         )
         level_instruction = get_level_instruction(education_level)
         if level_instruction:
@@ -219,7 +221,15 @@ def generate_final_report(detailed_outline_path, output_dir, education_level: st
         )
         
         final_report_content = llm.get_response(prompt)
-        
+
+        # 后处理：删除LLM编造的外链图片（只保留本地相对路径图片），
+        # 防止报告中出现 example.com 之类无法加载的占位图
+        final_report_content = re.sub(
+            r'!\[[^\]]*\]\(https?://[^)]*\)',
+            '',
+            final_report_content,
+        )
+
         final_report_path = os.path.join(output_dir, "final_report.md")
         with open(final_report_path, 'w', encoding='utf-8') as f:
             f.write(final_report_content)

@@ -31,6 +31,10 @@ EDUCATION_LEVEL_INSTRUCTIONS = {
 }
 
 
+# 全局输出语言要求：无论原视频/文本是什么语言，LLM 产出一律用简体中文
+CHINESE_OUTPUT_RULE = "【输出语言】必须全程使用简体中文输出（专有名词、技术术语可保留英文原文）。"
+
+
 def get_level_instruction(education_level: str = None) -> str:
     """获取学习阶段对应的 prompt 指令片段"""
     if not education_level:
@@ -94,6 +98,7 @@ class LLMHandler:
         """
         logging.info("正在生成LLM大纲任务的prompt...")
         prompt_header = (
+            f"{CHINESE_OUTPUT_RULE}\n\n"
             "请根据以下会议记录文本，生成一份详细的Markdown格式的文档大纲。\n\n"
             "重要提示：\n"
             "- 以下文本是自动语音识别（ASR）的结果，可能包含口语化表达、重复、错误或不通顺的句子。请在理解和总结时，智能地识别并忽略这些潜在的瑕疵。\n"
@@ -136,7 +141,7 @@ class LLMHandler:
         logging.info("正在调用 LLM 生成大纲...")
         prompt = self._generate_llm_prompt(chunked_dialogue)
         try:
-            assistant_sys_msg = "你是一个专业的会议记录分析师。你的任务是根据提供的带有说话人和时间戳的会议文本，生成一份结构清晰、逻辑严谨的Markdown格式文档大纲。"
+            assistant_sys_msg = "你是一个专业的会议记录分析师。你的任务是根据提供的带有说话人和时间戳的会议文本，生成一份结构清晰、逻辑严谨的Markdown格式文档大纲。无论原始文本是什么语言，你都必须使用简体中文输出。"
             if self.education_level:
                 assistant_sys_msg += f"目标读者为{self.education_level}学生。"
             agent = ChatAgent(assistant_sys_msg, model=self.model, token_limit=999999999)
@@ -163,6 +168,7 @@ class LLMHandler:
         """
         logging.info("正在向 LLM 发送通用请求...")
         try:
+            system_message = f"{system_message} {CHINESE_OUTPUT_RULE}"
             agent = ChatAgent(system_message, model=self.model, token_limit=999999999)
             content = self._call_with_retry(agent, prompt, "通用请求")
             logging.info("已成功从 LLM 获取响应。")
