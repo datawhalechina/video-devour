@@ -88,16 +88,14 @@ const ReportViewer = ({ report, onBack }) => {
       return;
     }
 
-    if (currentAttempt >= 1 || !report.output_dir) {
+    if (currentAttempt >= 1 || !report.output_dir || originalSrc.startsWith('/static/')) {
+      // 首选路径已失败，无更多可用候选，直接隐藏
       img.style.display = 'none';
       return;
     }
 
     img.dataset.attempt = '1';
-    // 唯一正确的本地路径：/static/{输出目录名}/{原始相对路径}（仅文件名需编码）
-    const pathParts = originalSrc.split('/');
-    const fileName = encodeURIComponent(pathParts.pop());
-    img.src = `/static/${report.output_dir}/${pathParts.join('/')}/${fileName}`;
+    img.src = `/static/${report.output_dir}/${originalSrc}`;
   };
 
   // 渲染Markdown内容
@@ -110,35 +108,25 @@ const ReportViewer = ({ report, onBack }) => {
         className="prose prose-slate max-w-none"
         components={{
           img: ({ src, alt, ...props }) => {
-            // 如果是相对路径，转换为静态文件路径
+            // 相对路径 -> 后端静态目录。
+            // 注意：react-markdown v9 会对 URL 做一次百分号编码，这里必须先解码还原，
+            // 再交给浏览器自动编码；若手动 encodeURIComponent 会造成双重编码 404。
             let imageSrc = src;
-            
-            // 如果是相对路径，需要构建正确的静态文件路径
-            if (!src.startsWith('http') && !src.startsWith('/')) {
-              // 构建初始图片URL，只对文件名部分进行URL编码
-              if (report.output_dir) {
-                // 分离路径和文件名，只对文件名进行编码
-                const pathParts = src.split('/');
-                const fileName = pathParts.pop();
-                const pathPrefix = pathParts.length > 0 ? pathParts.join('/') + '/' : '';
-                const encodedFileName = encodeURIComponent(fileName);
-                imageSrc = `/static/${report.output_dir}/${pathPrefix}${encodedFileName}`;
-              } else {
-                // 分离路径和文件名，只对文件名进行编码
-                const pathParts = src.split('/');
-                const fileName = pathParts.pop();
-                const pathPrefix = pathParts.length > 0 ? pathParts.join('/') + '/' : '';
-                const encodedFileName = encodeURIComponent(fileName);
-                imageSrc = `/static/${pathPrefix}${encodedFileName}`;
-              }
+            if (!/^https?:/i.test(src) && !src.startsWith('/')) {
+              let clean = src;
+              try { clean = decodeURIComponent(src); } catch (e) { /* 保持原样 */ }
+              const prefix = report.output_dir
+                ? `/static/${report.output_dir}/`
+                : '/static/';
+              imageSrc = `${prefix}${clean}`;
             }
-            
+
             return (
-              <img 
-                src={imageSrc} 
-                alt={alt} 
+              <img
+                src={imageSrc}
+                alt={alt}
                 {...props}
-                onError={(e) => handleImageError(e, src)}
+                onError={(e) => handleImageError(e, imageSrc)}
                 className="max-w-full h-auto rounded-lg shadow-sm"
                 loading="lazy"
               />

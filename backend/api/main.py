@@ -868,13 +868,34 @@ async def export_task_markdown(task_id: str):
     def _read(path):
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
+    def _embed_local_images(md_text: str) -> str:
+        """
+        把 Markdown 中的本地相对路径图片（keyframes/xxx.jpg 等）内嵌为 base64，
+        使导出的单个 .md 文件在任意本地查看器中都能直接显示图片。
+        """
+        import base64
+        import mimetypes
+        import re
+
+        def _replace(match):
+            alt, rel_path = match.group(1), match.group(2)
+            rel_path = rel_path.replace("\\", "/").lstrip("./")
+            img_path = output_dir / rel_path
+            if not img_path.exists():
+                return match.group(0)
+            mime = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
+            data = base64.b64encode(img_path.read_bytes()).decode("ascii")
+            return f"![{alt}](data:{mime};base64,{data})"
+
+        return re.sub(r"!\[([^\]]*)\]\((?!https?://)([^)]+)\)", _replace, md_text)
+
     parts = []
     outline_content = _read(outline_path)
     report_content = _read(report_path)
     if outline_content:
-        parts.append(f"# 内容大纲\n\n{outline_content}")
+        parts.append(f"# 内容大纲\n\n{_embed_local_images(outline_content)}")
     if report_content:
-        parts.append(f"# 详细报告\n\n{report_content}")
+        parts.append(f"# 详细报告\n\n{_embed_local_images(report_content)}")
     full_content = "\n\n---\n\n".join(parts)
 
     filename = f"videodevour_{task_id[:8]}.md"
