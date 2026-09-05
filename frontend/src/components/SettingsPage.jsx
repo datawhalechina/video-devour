@@ -4,6 +4,23 @@ import { motion } from 'framer-motion'
 import { ArrowLeft, Settings, Save, Radio, HardDriveDownload, KeyRound, CheckCircle, XCircle, Loader2, GraduationCap } from 'lucide-react'
 import { getSettings, updateSettings, testSettings } from '../api/settingsService'
 
+// 供应商预设：点击芯片自动填充接口地址与推荐模型
+const PROVIDER_PRESETS = {
+  llm: [
+    { key: 'dashscope', label: 'DashScope 阿里云', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-max', 'qwen-plus', 'qwen-turbo'] },
+    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/step_plan/v1', models: ['step-3.7-flash', 'step-3.5-flash'] },
+    { key: 'deepseek', label: 'DeepSeek', url: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-reasoner'] },
+    { key: 'ark', label: '火山方舟', url: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-seed-1-6-flash-250828'] },
+    { key: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini'] },
+  ],
+  vlm: [
+    { key: 'dashscope', label: 'DashScope 阿里云', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-vl-max', 'qwen-vl-plus'] },
+    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/step_plan/v1', models: ['step-3.7-flash'] },
+    { key: 'ark', label: '火山方舟', url: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-seed-1-6-flash-250828'] },
+    { key: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', models: ['gpt-4o'] },
+  ],
+}
+
 function SettingsPage() {
   const navigate = useNavigate()
   const [settings, setSettings] = useState(null)
@@ -80,6 +97,50 @@ function SettingsPage() {
     } finally {
       setTesting(prev => ({ ...prev, [target]: false }))
     }
+  }
+
+  // 当前表单 URL 匹配到的供应商（未匹配则为 custom）
+  const detectProvider = (section) => {
+    const urlKey = section === 'llm' ? 'llm_api_url' : 'vlm_api_url'
+    const url = form[urlKey] || ''
+    const hit = PROVIDER_PRESETS[section].find(p => url.startsWith(p.url))
+    return hit ? hit.key : 'custom'
+  }
+
+  // 点击供应商芯片：自动填地址 + 推荐模型；StepFun 时自动复用 ASR 的 Key
+  const applyProvider = (section, prov) => {
+    const updates = section === 'llm'
+      ? { llm_api_url: prov.url, llm_model_type: prov.models[0] }
+      : { vlm_api_url: prov.url, vlm_model_type: prov.models[0] }
+    if (prov.key === 'stepfun' && form.stepfun_api_key) {
+      if (section === 'llm' && !form.llm_api_key) updates.llm_api_key = form.stepfun_api_key
+      if (section === 'vlm' && !form.vlm_api_key) updates.vlm_api_key = form.stepfun_api_key
+    }
+    setForm(prev => ({ ...prev, ...updates }))
+  }
+
+  const ProviderChips = ({ section }) => {
+    const active = detectProvider(section)
+    return (
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {PROVIDER_PRESETS[section].map(prov => (
+          <button
+            key={prov.key}
+            onClick={() => applyProvider(section, prov)}
+            className={`px-4 py-1.5 rounded-full text-xs font-medium border-2 transition ${
+              active === prov.key
+                ? 'border-primary-500 bg-primary-50 text-primary-700'
+                : 'border-gray-200 text-gray-600 hover:border-gray-300'
+            }`}
+          >
+            {prov.label}
+          </button>
+        ))}
+        <span className={`px-4 py-1.5 rounded-full text-xs font-medium border-2 ${active === 'custom' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-400'}`}>
+          自定义
+        </span>
+      </div>
+    )
   }
 
   const TestResult = ({ target }) => {
@@ -228,6 +289,8 @@ function SettingsPage() {
           className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
         >
           <h2 className="text-base font-bold text-gray-900 mb-4">LLM 配置（OpenAI 兼容接口）</h2>
+          <label className={labelClass}>快速选择供应商</label>
+          <ProviderChips section="llm" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className={labelClass}>API Key</label>
@@ -258,6 +321,14 @@ function SettingsPage() {
                 placeholder="qwen-max / deepseek-chat"
                 className={inputClass}
               />
+              <div className="flex flex-wrap gap-2 mt-2">
+                {(PROVIDER_PRESETS.llm.find(p => detectProvider('llm') === p.key)?.models || []).map(m => (
+                  <button key={m} onClick={() => setField('llm_model_type', m)}
+                    className={`px-3 py-1 rounded-full text-xs transition ${form.llm_model_type === m ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <button
@@ -277,6 +348,8 @@ function SettingsPage() {
           className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
         >
           <h2 className="text-base font-bold text-gray-900 mb-4">VLM 配置（关键帧分析，OpenAI 兼容接口）</h2>
+          <label className={labelClass}>快速选择供应商</label>
+          <ProviderChips section="vlm" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className={labelClass}>API Key</label>
@@ -305,6 +378,14 @@ function SettingsPage() {
                 onChange={(e) => setField('vlm_model_type', e.target.value)}
                 className={inputClass}
               />
+              <div className="flex flex-wrap gap-2 mt-2">
+                {(PROVIDER_PRESETS.vlm.find(p => detectProvider('vlm') === p.key)?.models || []).map(m => (
+                  <button key={m} onClick={() => setField('vlm_model_type', m)}
+                    className={`px-3 py-1 rounded-full text-xs transition ${form.vlm_model_type === m ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <button
