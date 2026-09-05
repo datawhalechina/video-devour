@@ -11,6 +11,11 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // 报告中的关键帧图片由后端静态目录提供，必须一并代理
+      "/static": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
 });
