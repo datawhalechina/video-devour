@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+VideoDevour skill 入口脚本（跨 agent 通用，遵循 .agents/skills 约定）
+
+把视频（B站/YouTube 链接或本地文件）端到端处理为中文图文报告。
+自动切换到 VideoDevour 项目的 .venv 运行，无需手动激活环境。
+
+项目根目录解析顺序:
+  1. --home 参数 / VIDEO_DEVOUR_HOME 环境变量
+  2. 脚本所在仓库（本文件位于 <repo>/.agents/skills/videodevour/scripts/ 时自动识别）
+  3. 默认安装路径
+
+用法:
+  devour.py search "关键词" [--platform bilibili|youtube] [--max N]
+  devour.py info <url>
+  devour.py process <url|本地视频路径> [--level 高中|初中|小学] [--home 项目目录]
+  devour.py report [--latest | --dir 输出目录]
+"""
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+FALLBACK_HOME = os.environ.get(
+    "VIDEO_DEVOUR_HOME", "/Volumes/拓展/workspace/videodevour/video-devour"
+)
+
+
+def project_home(override=None) -> Path:
+    candidates = []
+    if override:
+        candidates.append(Path(override))
+    if os.environ.get("VIDEO_DEVOUR_HOME"):
+        candidates.append(Path(os.environ["VIDEO_DEVOUR_HOME"]))
+    # 脚本位于 <repo>/.agents/skills/videodevour/scripts/ 时，向上回溯定位仓库
+    script_dir = Path(__file__).resolve().parent
+    for parent in [script_dir, *script_dir.parents]:
+        if (parent / "backend" / "algorithm").exists():
+            candidates.append(parent)
+            break
+    candidates.append(Path(FALLBACK_HOME).expanduser())
+
+    for home in candidates:
+        home = home.expanduser().resolve()
+        if (home / "backend").exists():
+            return home
+    print("错误: 未找到 VideoDevour 项目目录，请用 --home 或 VIDEO_DEVOUR_HOME 指定",
+          file=sys.stderr)
+    sys.exit(1)
+
+
+def reexec_with_venv(home: Path):
+    """若项目自带 .venv 且当前不是它，切换后重新执行自身"""
+    if os.environ.get("VD_IN_VENV") == "1":
+        return
+    venv_python = home / ".venv" / "bin" / "python"
+    if venv_python.exists() and Path(sys.executable).resolve() != venv_python.resolve():
+        env = dict(os.environ, VD_IN_VENV="1")
+        os.execve(str(venv_python), [str(venv_python), __file__] + sys.argv[1:], env)
+
+
+def setup_project(home: Path):
+    sys.path.insert(0, str(home))
+    os.chdir(home)
+    # 引导 config 模块与 sys.path（与后端启动逻辑一致）
+    from backend.algorithm import settings_store  # noqa
+
+    settings_store.apply_to_config()
+
+
+# ---------------------------------------------------------------------------
+# 子命令
+# ---------------------------------------------------------------------------
+
+def cmd_search(args):
+    setup_project(project_home(args.home))
+    from backend.devour.video_downloader import search_videos
+
+    results = search_videos(args.query, platform=args.platform, max_results=args.max)
+    print(json.dumps(results, ensure_ascii=False, indent=2))
+
+
+def cmd_info(args):
+    setup_project(project_home(args.home))
+    from backend.devour.video_downloader import probe_video_info
+
+    info = probe_video_info(args.url)
+    duration = info.get("duration")
+    if duration and duration > 1800:
+        print(f"提示: 时长约 {duration // 60} 分钟（多P合集为总时长，process 只处理当前分P）。\n",
+              file=sys.stderr)
+    print(json.dumps(info, ensure_ascii=False, indent=2))
+
+
+def cmd_process(args):
+    home = project_home(args.home)
+    setup_project(home)
+
+    from backend.algorithm.pipeline import run_full_pipeline
+
+    source = args.source
+    if source.startswith(("http://", "https://")):
+        print(f"[1/2] 下载视频: {source}")
+        from backend.devour.video_downloader import download_video
+
+        result = download_video(source, str(home / "uploads"), max_height=1080)
+        video_path = result["file_path"]
+        print(f"下载完成: {video_path}")
+    else:
+        video_path = str(Path(source).expanduser().resolve())
+        if not Path(video_path).exists():
+            print(f"错误: 文件不存在 {video_path}", file=sys.stderr)
+            sys.exit(1)
+        print(f"[1/2] 使用本地视频: {video_path}")
+
+    print(f"[2/2] 启动处理流水线 (学习阶段: {args.level}) ...")
+    run_full_pipeline(video_path, education_level=args.level)
+
+    # 定位本次输出目录（pipeline 以视频名命名，取最新一个）
+    video_name = Path(video_path).stem
+    candidates = sorted(
+        (home / "output").glob(f"frames_{video_name}_*"), key=lambda p: p.stat().st_mtime
+    )
+    if not candidates:
+        print(json.dumps({"error": "流水线未产生输出目录，请检查日志"}, ensure_ascii=False))
+        sys.exit(2)
+    out_dir = candidates[-1]
+    report = out_dir / "final_report.md"
+    outcome = {
+        "output_dir": str(out_dir),
+        "report": str(report) if report.exists() else None,
+        "outline": str(out_dir / "detailed_outline.md")
+        if (out_dir / "detailed_outline.md").exists()
+        else None,
+        "keyframes": [
+            str(p) for p in sorted((out_dir / "keyframes").glob("*.jpg"))
+        ]
+        if (out_dir / "keyframes").exists()
+        else [],
+    }
+    if not outcome["report"]:
+        outcome["error"] = "处理未完成：final_report.md 未生成，请检查 processing.log"
+        print(json.dumps(outcome, ensure_ascii=False, indent=2))
+        sys.exit(2)
+    print(json.dumps(outcome, ensure_ascii=False, indent=2))
+
+
+def cmd_report(args):
+    home = project_home(args.home)
+    if args.dir:
+        out_dir = Path(args.dir)
+    else:
+        candidates = sorted(
+            (home / "output").glob("frames_*"), key=lambda p: p.stat().st_mtime
+        )
+        if not candidates:
+            print("暂无任何处理产物", file=sys.stderr)
+            sys.exit(1)
+        out_dir = candidates[-1]
+    report = out_dir / "final_report.md"
+    if not report.exists():
+        print(f"该任务尚未完成（无 final_report.md）: {out_dir}", file=sys.stderr)
+        sys.exit(1)
+    print(f"# 输出目录: {out_dir}\n")
+    print(report.read_text(encoding="utf-8"))
+
+
+def main():
+    parser = argparse.ArgumentParser(description="VideoDevour 视频转图文报告")
+    parser.add_argument("--home", default=None, help="VideoDevour 项目根目录")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_search = sub.add_parser("search", help="搜索B站/YouTube视频")
+    p_search.add_argument("query")
+    p_search.add_argument("--platform", default="bilibili", choices=["bilibili", "youtube"])
+    p_search.add_argument("--max", type=int, default=5)
+    p_search.set_defaults(func=cmd_search)
+
+    p_info = sub.add_parser("info", help="查看链接视频元数据")
+    p_info.add_argument("url")
+    p_info.set_defaults(func=cmd_info)
+
+    p_proc = sub.add_parser("process", help="一键下载并处理视频")
+    p_proc.add_argument("source", help="视频链接或本地文件路径")
+    p_proc.add_argument("--level", default="高中", choices=["小学", "初中", "高中"])
+    p_proc.set_defaults(func=cmd_process)
+
+    p_report = sub.add_parser("report", help="查看最新/指定任务的报告")
+    p_report.add_argument("--latest", action="store_true")
+    p_report.add_argument("--dir", default=None)
+    p_report.set_defaults(func=cmd_report)
+
+    args = parser.parse_args()
+    home = project_home(args.home)
+    reexec_with_venv(home)
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
