@@ -99,6 +99,29 @@ python3 .agents/skills/videodevour/scripts/devour.py report --latest
 - 本机安装：软链到用户级技能目录 `ln -s <repo>/.agents/skills/videodevour ~/.agents/skills/videodevour`
 - `process` 为同步阻塞命令，agent 调用时请将超时设为 10 分钟以上
 
+## 🖼️ 系统预览
+
+以下截图来自一次完整运行：以 B站视频 [吴恩达 Agentic AI 课程 p1](https://www.bilibili.com/video/BV1DfrdByE2H) 为例
+（完整图文流程见 [docs/运行模式与使用示例.md](docs/运行模式与使用示例.md)）。
+
+**粘贴 B站 / YouTube 链接，内嵌播放器在线预览，一键下载处理：**
+
+![链接处理](docs/images/05-链接预览.png)
+
+**处理过程八阶段实时可视（下载 → 转写 → 大纲 → 关键帧 → 报告）：**
+
+![处理进度](docs/images/04-处理进度.png)
+
+**图文大纲：VLM 为每个章节挑选最具代表性的视频画面：**
+
+![图文大纲](docs/images/06-图文大纲-关键帧.png)
+
+**AI 学习卡片：报告一键转换为手机尺寸 Bento Grid 复习卡片：**
+
+![学习卡片](docs/images/08-学习卡片.png)
+
+> 更多截图（首页 / 设置控制台 / 上传页 / 精简报告）见 [docs/运行模式与使用示例.md](docs/运行模式与使用示例.md)。
+
 ## 🔧 技术架构
 
 | 组件 | 技术选型 | 说明 |
