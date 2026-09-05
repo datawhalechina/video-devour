@@ -77,6 +77,27 @@
 - **学习卡片**：一键将报告转换为手机尺寸 Bento Grid 风格 HTML 学习卡片。
 - **导出 Markdown**：大纲+报告合并导出，图片内嵌 base64，单文件即可本地查阅。
 
+### 🤖 Agent Skill（任意 AI 编码助手可调用）
+
+项目核心能力已封装为遵循 [Agent Skills](https://agentskills.io) 开放约定（`.agents/skills`）的技能，
+Codex / Claude Code / Cursor 等任何支持该约定的 agent 均可直接调用，无需启动 Web 界面：
+
+```bash
+# 搜索视频
+python3 .agents/skills/videodevour/scripts/devour.py search "关键词" --platform bilibili
+# 查看链接信息（标题/UP主/时长/封面）
+python3 .agents/skills/videodevour/scripts/devour.py info "https://www.bilibili.com/video/BV..."
+# 一键处理：下载 → ASR → 大纲 → 关键帧 → 中文图文报告
+python3 .agents/skills/videodevour/scripts/devour.py process "https://www.bilibili.com/video/BV..." --level 高中
+# 读取最新报告
+python3 .agents/skills/videodevour/scripts/devour.py report --latest
+```
+
+- 学习阶段可选：自由学习（默认）/ 小学 / 初中 / 高中 / 大学 / 硕士 / 博士 / 深入研究 / 垂直领域研究
+- 脚本自动切换到项目 `.venv` 运行；项目根按 `--home` → `VIDEO_DEVOUR_HOME` → 脚本位置 自动解析
+- 本机安装：软链到用户级技能目录 `ln -s <repo>/.agents/skills/videodevour ~/.agents/skills/videodevour`
+- `process` 为同步阻塞命令，agent 调用时请将超时设为 10 分钟以上
+
 ## 🔧 技术架构
 
 | 组件 | 技术选型 | 说明 |

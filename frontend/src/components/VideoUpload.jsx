@@ -11,7 +11,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
   const [uploadProgress, setUploadProgress] = useState({})
   const [error, setError] = useState(null)
   const [dragActive, setDragActive] = useState(false)
-  const [educationLevel, setEducationLevel] = useState('高中')
+  const [educationLevel, setEducationLevel] = useState('自由学习')
   const fileInputRef = useRef(null)
 
   const handleFileSelect = (files) => {
@@ -199,11 +199,11 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
             <GraduationCap className="w-5 h-5 text-primary-600" />
             <div>
               <p className="text-sm font-semibold text-gray-900">学习阶段</p>
-              <p className="text-xs text-gray-500">将影响生成大纲与报告的语言深度</p>
+              <p className="text-xs text-gray-500">自由学习为通用模式，其余阶段将调整内容深度</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            {['小学', '初中', '高中'].map((level) => (
+          <div className="flex flex-wrap items-center gap-2">
+            {['自由学习', '小学', '初中', '高中', '大学', '硕士', '博士', '深入研究', '垂直领域研究'].map((level) => (
               <button
                 key={level}
                 onClick={() => setEducationLevel(level)}

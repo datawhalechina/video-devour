@@ -189,7 +189,7 @@ async def update_app_settings(request: SettingsUpdateRequest):
     if updates.get("asr_mode") not in (None, "offline", "online"):
         raise HTTPException(status_code=400, detail="asr_mode 仅支持 offline 或 online")
     if updates.get("default_education_level") not in (None,) + tuple(settings_store.EDUCATION_LEVELS):
-        raise HTTPException(status_code=400, detail="default_education_level 仅支持 小学/初中/高中")
+        raise HTTPException(status_code=400, detail="default_education_level 取值非法")
 
     old_mode = settings_store.load_settings().get("asr_mode", "offline")
     settings = settings_store.update_settings(updates)
@@ -243,7 +243,7 @@ class LinkSearchRequest(BaseModel):
 
 class LinkProcessRequest(BaseModel):
     url: str
-    education_level: str = "高中"
+    education_level: str = "自由学习"
 
 
 def _run_link_probe(handler, **kwargs):
@@ -300,7 +300,7 @@ async def process_link_video(request: LinkProcessRequest):
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="请提供有效的视频链接")
     if request.education_level not in settings_store.EDUCATION_LEVELS:
-        raise HTTPException(status_code=400, detail="学习阶段仅支持 小学/初中/高中")
+        raise HTTPException(status_code=400, detail=f"学习阶段仅支持: {'/'.join(settings_store.EDUCATION_LEVELS)}")
 
     task_id = str(uuid.uuid4())
     file_path = UPLOAD_DIR / f"{task_id}.mp4"
@@ -387,7 +387,7 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
         save_tasks()
 
 @app.post("/api/video/upload", response_model=UploadResponse)
-async def upload_video(file: UploadFile = File(...), education_level: str = Form("高中")):
+async def upload_video(file: UploadFile = File(...), education_level: str = Form("自由学习")):
     """
     上传视频文件并开始处理
 
@@ -399,7 +399,7 @@ async def upload_video(file: UploadFile = File(...), education_level: str = Form
             raise HTTPException(status_code=400, detail="未选择文件")
 
         if education_level not in settings_store.EDUCATION_LEVELS:
-            raise HTTPException(status_code=400, detail="学习阶段仅支持 小学/初中/高中")
+            raise HTTPException(status_code=400, detail=f"学习阶段仅支持: {'/'.join(settings_store.EDUCATION_LEVELS)}")
         
         # 检查文件扩展名（更宽松的验证）
         file_extension = Path(file.filename).suffix.lower()

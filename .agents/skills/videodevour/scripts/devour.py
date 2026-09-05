@@ -184,7 +184,8 @@ def main():
 
     p_proc = sub.add_parser("process", help="一键下载并处理视频")
     p_proc.add_argument("source", help="视频链接或本地文件路径")
-    p_proc.add_argument("--level", default="高中", choices=["小学", "初中", "高中"])
+    p_proc.add_argument("--level", default="自由学习",
+                        choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
     p_proc.set_defaults(func=cmd_process)
 
     p_report = sub.add_parser("report", help="查看最新/指定任务的报告")

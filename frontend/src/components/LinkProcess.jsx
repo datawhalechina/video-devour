@@ -75,7 +75,7 @@ function LinkProcess() {
     setProcessing(true)
     setError(null)
     try {
-      const result = await processLink(link, '高中')
+      const result = await processLink(link, '自由学习')
       navigate(`/processing/${result.task_id}`)
     } catch (err) {
       showError(`创建任务失败: ${err.message}`)

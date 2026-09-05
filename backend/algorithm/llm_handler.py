@@ -23,11 +23,17 @@ import config
 MAX_RETRIES = 5
 BASE_RETRY_DELAY = 2
 
-# 学习阶段 -> prompt 指令（源自 light 版）
+# 学习阶段 -> prompt 指令
 EDUCATION_LEVEL_INSTRUCTIONS = {
+    "自由学习": "面向普通学习者，不预设专业背景，语言平实自然，注重直观理解与实用性。",
     "小学": "使用简单易懂的语言，适合小学生理解。",
     "初中": "使用清晰明了的语言，适合初中生理解。",
     "高中": "可以使用较为专业的术语，适合高中生理解。",
+    "大学": "使用严谨准确的语言，适合本科阶段学习，可包含学科基础理论与关键推导。",
+    "硕士": "面向硕士研究生的深度，覆盖理论体系、方法比较与相关研究视野。",
+    "博士": "面向博士研究生的深度，聚焦前沿问题、方法论创新与跨领域关联。",
+    "深入研究": "面向深入钻研场景，追求系统性与深度：原理推导、方法对比、局限分析与进一步探索建议。",
+    "垂直领域研究": "面向特定垂直领域的从业者与研究者，强调领域术语体系、行业实践与专业纵深。",
 }
 
 
@@ -66,9 +72,9 @@ class LLMHandler:
         if education_level is None:
             try:
                 from backend.algorithm.settings_store import load_settings
-                education_level = load_settings().get("default_education_level", "高中")
+                education_level = load_settings().get("default_education_level", "自由学习")
             except Exception:
-                education_level = "高中"
+                education_level = "自由学习"
         self.education_level = education_level
 
     def _call_with_retry(self, agent, prompt: str, task_desc: str = "LLM调用") -> str:

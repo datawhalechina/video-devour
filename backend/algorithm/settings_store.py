@@ -38,7 +38,7 @@ DEFAULT_SETTINGS = {
     "vlm_api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "vlm_model_type": "qwen-vl-max",
     # 默认学习阶段
-    "default_education_level": "高中",
+    "default_education_level": "自由学习",
 }
 
 # settings 字段 -> config 模块属性 的映射（仅非空时覆盖 config）
@@ -51,7 +51,17 @@ _SETTINGS_TO_CONFIG = {
     "vlm_model_type": "VLM_MODEL_TYPE",
 }
 
-EDUCATION_LEVELS = ["小学", "初中", "高中"]
+EDUCATION_LEVELS = [
+    "自由学习",        # 默认：面向普通学习者，不做阶段化适配
+    "小学",
+    "初中",
+    "高中",
+    "大学",
+    "硕士",
+    "博士",
+    "深入研究",        # 研究导向：原理/方法/局限的系统性深挖
+    "垂直领域研究",    # 面向特定行业/领域的从业者与研究者
+]
 
 
 def load_settings() -> dict:
