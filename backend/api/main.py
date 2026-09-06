@@ -787,6 +787,8 @@ CARD_PROMPT_TEMPLATE = """请根据以下Markdown笔记内容，生成一个适�
 5. 使用图标或符号标记重点内容，关键概念使用卡片式设计
 6. 【重要】必须完整保留笔记中的所有标题、要点和关键信息，不要遗漏任何内容
 7. 【重要】只输出HTML代码，不要输出多段，不要包含解释文字
+8. 【重要】报告中若有 keyframes/ 开头的关键帧图片，必须在卡片对应章节保留 <img> 标签，
+   且 src 必须**逐字复制**报告中的原始路径（禁止改写文件名、禁止使用外部图片链接）
 
 ## 笔记内容
 ---
@@ -833,11 +835,61 @@ async def generate_task_card(task_id: str):
         html = await loop.run_in_executor(executor, _generate)
 
     try:
+        html = _embed_card_images(html, output_dir)
         card_path.write_text(html, encoding="utf-8")
     except Exception as e:
         logging.warning(f"学习卡片缓存写入失败: {e}")
 
-    return {"html": html, "cached": False}
+    return {"html": _embed_card_images(html, output_dir), "cached": False}
+
+
+def _embed_card_images(html: str, output_dir: Path) -> str:
+    """
+    卡片图片自包含处理：
+    - <img> 引用的本地 keyframes 图片统一内嵌为 base64（卡片在任何上下文打开都有图）
+    - LLM 改写过的错误路径按「序号前缀 → 文件名包含」自动匹配实际文件
+    - 外链图片（LLM 编造的占位图）直接移除
+    """
+    import base64
+    import mimetypes
+    import re as _re
+
+    kf_dir = output_dir / "keyframes"
+    real_files = (sorted(kf_dir.glob("*.jpg")) + sorted(kf_dir.glob("*.png"))) if kf_dir.exists() else []
+
+    def find_real_file(ref_name: str):
+        ref_name = Path(ref_name).name
+        for f in real_files:                      # 精确匹配
+            if f.name == ref_name:
+                return f
+        m_num = _re.match(r"^(\d+)", ref_name)    # 序号前缀匹配（01_xxx）
+        if m_num:
+            for f in real_files:
+                if f.name.startswith(m_num.group(1) + "_"):
+                    return f
+        core = _re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9]", "", ref_name.rsplit(".", 1)[0])
+        if core:                                  # 文件名包含匹配
+            for f in real_files:
+                if core in _re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9]", "", f.name):
+                    return f
+        return None
+
+    def replace_img(match):
+        tag, src = match.group(0), match.group(1)
+        if src.startswith("data:"):
+            return tag
+        if src.startswith(("http://", "https://")):
+            return ""                              # 移除编造的外链图
+        if not src.startswith("keyframes/"):
+            return tag
+        real = find_real_file(src)
+        if not real:
+            return ""                              # 无法匹配的引用，移除避免破图
+        mime = mimetypes.guess_type(str(real))[0] or "image/jpeg"
+        data = base64.b64encode(real.read_bytes()).decode("ascii")
+        return tag.replace(f'"{src}"', f'data:{mime};base64,{data}', 1)
+
+    return _re.sub(r'<img\b[^>]*src="([^"]*)"[^>]*>', replace_img, html)
 
 
 # --- 思维导图（markmap 渲染）与知识图谱（ECharts 力导向图） ---
