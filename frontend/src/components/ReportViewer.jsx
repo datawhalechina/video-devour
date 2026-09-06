@@ -15,20 +15,43 @@ const ReportViewer = ({ report, onBack }) => {
   const [cardLoading, setCardLoading] = useState(false);
   const [htmlLoading, setHtmlLoading] = useState({});
 
-  // 通用：调用生成接口并在新窗口打开返回的 HTML（思维导图 / 知识图谱）
+  // 通用：调用生成接口并在新窗口打开（思维导图 / 知识图谱）。
+  // 注意：window.open 必须在点击手势内同步调用（await 之后调用会被弹窗拦截
+  // 且 win 为 null 静默失败），生成完成后再将窗口定向到静态缓存地址。
+  const openWindowNow = (kind, fileName) => {
+    const win = window.open("", "_blank");
+    if (win && report.output_dir) {
+      win.document.write(
+        `<html><head><meta charset="utf-8"><style>body{font:16px/2 -apple-system,"PingFang SC",sans-serif;color:#334155;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}</style></head><body><p>⏳ 正在生成${fileName}，请稍候（约 10-30 秒）…</p></body></html>`
+      );
+    }
+    return win;
+  };
+
+  const finalizeWindow = (win, kind, fileName, cachedPath) => {
+    if (!win || win.closed) {
+      alert(
+        `${fileName}已生成完成！\n\n但浏览器拦截了新窗口，请点击报告页的按钮重试，` +
+        `或直接访问：\n/static/${report.output_dir}/${cachedPath}`
+      );
+      return;
+    }
+    win.location.href = `/static/${report.output_dir}/${cachedPath}`;
+  };
+
   const handleOpenHtml = async (kind) => {
     if (htmlLoading[kind]) return;
+    const fileName = kind === "mindmap" ? "思维导图" : "知识图谱";
+    const cachedPath = kind === "mindmap" ? "mindmap.html" : "knowledge_graph.html";
+    const win = openWindowNow(kind, fileName);
     setHtmlLoading(prev => ({ ...prev, [kind]: true }));
     try {
       const fn = kind === "mindmap" ? generateMindmap : generateKnowledgeGraph;
-      const result = await fn(report.task_id);
-      const win = window.open("", "_blank");
-      if (win) {
-        win.document.write(result.html);
-        win.document.close();
-      }
+      await fn(report.task_id);
+      finalizeWindow(win, kind, fileName, cachedPath);
     } catch (err) {
-      alert(`${kind === "mindmap" ? "思维导图" : "知识图谱"}生成失败: ${err.message}`);
+      if (win && !win.closed) win.close();
+      alert(`${fileName}生成失败: ${err.message}`);
     } finally {
       setHtmlLoading(prev => ({ ...prev, [kind]: false }));
     }
@@ -37,16 +60,22 @@ const ReportViewer = ({ report, onBack }) => {
   // 生成学习卡片（移植自 light 版），在新窗口预览
   const handleGenerateCard = async () => {
     if (cardLoading) return;
+    const win = window.open("", "_blank");
+    if (win && report.output_dir) {
+      win.document.write(
+        `<html><head><meta charset="utf-8"><style>body{font:16px/2 -apple-system,"PingFang SC",sans-serif;color:#334155;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}</style></head><body><p>⏳ 正在生成学习卡片，请稍候（约 10-30 秒）…</p></body></html>`
+      );
+    }
     setCardLoading(true);
     try {
-      const result = await generateCard(report.task_id);
-      setCardHtml(result.html);
-      const win = window.open("", "_blank");
-      if (win) {
-        win.document.write(result.html);
-        win.document.close();
+      await generateCard(report.task_id);
+      if (!win || win.closed) {
+        alert(`学习卡片已生成完成！\n\n但浏览器拦截了新窗口，请重试或直接访问：\n/static/${report.output_dir}/learning_card.html`);
+        return;
       }
+      win.location.href = `/static/${report.output_dir}/learning_card.html`;
     } catch (err) {
+      if (win && !win.closed) win.close();
       alert(`学习卡片生成失败: ${err.message}`);
     } finally {
       setCardLoading(false);

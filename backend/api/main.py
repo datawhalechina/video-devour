@@ -982,11 +982,12 @@ KNOWLEDGE_GRAPH_TEMPLATE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>课程知识图谱</title>
 <style>
-  html, body {{ margin: 0; padding: 0; height: 100%; background: #f8fafc; }}
-  #graph {{ position: absolute; inset: 0; }}
-  .toolbar {{ position: fixed; top: 12px; left: 16px; z-index: 10;
-    font: 14px/1.6 -apple-system, "PingFang SC", sans-serif; color: #334155; }}
-  .toolbar small {{ color: #94a3b8; }}
+  html, body { margin: 0; padding: 0; height: 100%; background: #f8fafc; }
+  /* 固定最小尺寸：后台/隐藏标签初始化时容器可能为 0，导致空白 */
+  #graph { position: absolute; inset: 0; min-width: 1024px; min-height: 600px; }
+  .toolbar { position: fixed; top: 12px; left: 16px; z-index: 10;
+    font: 14px/1.6 -apple-system, "PingFang SC", sans-serif; color: #334155; }
+  .toolbar small { color: #94a3b8; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 </head>
@@ -1000,29 +1001,33 @@ const option = {
   backgroundColor: '#f8fafc',
   tooltip: {
     formatter: (p) => p.dataType === 'edge'
-      ? `${{p.data.source}} —[${{p.data.relation}}]→ ${{p.data.target}}`
-      : (p.data.desc ? `<b>${{p.name}}</b><br/>${{p.data.desc}}` : `<b>${{p.name}}</b>`)
+      ? (p.data.source + ' —[' + p.data.relation + ']→ ' + p.data.target)
+      : (p.data.desc ? '<b>' + p.name + '</b><br/>' + p.data.desc : '<b>' + p.name + '</b>')
   },
-  legend: {{
+  legend: {
     data: graphData.categories.map(c => c.name),
-    top: 10, textStyle: {{ color: '#334155' }}
-  }},
-  series: [{{
+    top: 10, textStyle: { color: '#334155' }
+  },
+  series: [{
     type: 'graph', layout: 'force', roam: true,
-    label: {{ show: true, fontSize: 12, color: '#0f172a' }},
-    edgeLabel: {{ show: true, fontSize: 10, color: '#64748b',
-      formatter: (p) => p.data.relation || '' }},
+    label: { show: true, fontSize: 12, color: '#0f172a' },
+    edgeLabel: { show: true, fontSize: 10, color: '#64748b',
+      formatter: (p) => p.data.relation || '' },
     edgeSymbol: ['none', 'arrow'], edgeSymbolSize: 8,
-    lineStyle: {{ color: '#94a3b8', width: 1.5, curveness: 0.1 }},
-    force: {{ repulsion: 420, edgeLength: 130, gravity: 0.08 }},
-    emphasis: {{ focus: 'adjacency', lineStyle: {{ width: 3 }} }},
+    lineStyle: { color: '#94a3b8', width: 1.5, curveness: 0.1 },
+    force: { repulsion: 420, edgeLength: 130, gravity: 0.08 },
+    emphasis: { focus: 'adjacency', lineStyle: { width: 3 } },
     categories: graphData.categories,
     data: graphData.nodes,
     links: graphData.links,
-  }}]
+  }]
 };
 chart.setOption(option);
 window.addEventListener('resize', () => chart.resize());
+// 标签页从后台切换到前台时重新量取容器尺寸，避免空白
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) setTimeout(() => chart.resize(), 100);
+});
 </script>
 </body>
 </html>"""
