@@ -857,10 +857,8 @@ async def generate_task_card(task_id: str):
 
 # --- 思维导图与知识图谱（生成逻辑见 backend/algorithm/report_viz.py） ---
 
-MINDMAP_SYSTEM_PROMPT = None  # 已迁移至 report_viz 模块
 
-
-def _viz_html(task_id: str, kind: str) -> dict:
+async def _viz_html(task_id: str, kind: str) -> dict:
     """生成或读取缓存的知识可视化 HTML（mindmap / knowledge-graph 共用）"""
     output_dir = _find_task_output_dir(task_id)
     if not output_dir:
@@ -879,12 +877,14 @@ def _viz_html(task_id: str, kind: str) -> dict:
             output_dir, education_level,
         )
         try:
-            path = future.result()
+            # 必须 await：run_in_executor 返回 asyncio Future，
+            # 同步调用 result() 会在未完成时抛 InvalidStateError("Result is not set.")
+            path = await future
         except ValueError as e:
             raise HTTPException(status_code=502, detail=str(e))
         except Exception as e:
             logging.error(f"知识可视化生成失败({kind}): {e}", exc_info=True)
-            raise HTTPException(status_code=502, detail=f"生成失败: {e}")
+            raise HTTPException(status_code=502, detail=str(e))
 
     return {"html": Path(path).read_text(encoding="utf-8"), "cached": cached}
 
@@ -892,7 +892,7 @@ def _viz_html(task_id: str, kind: str) -> dict:
 @app.post("/api/task/{task_id}/mindmap")
 async def generate_task_mindmap(task_id: str):
     """生成课程思维导图（markmap HTML，结果缓存到任务目录）"""
-    return _viz_html(task_id, "mindmap")
+    return await _viz_html(task_id, "mindmap")
 
 
 @app.get("/api/task/{task_id}/mindmap")
@@ -909,7 +909,7 @@ async def get_task_mindmap(task_id: str):
 @app.post("/api/task/{task_id}/knowledge-graph")
 async def generate_task_knowledge_graph(task_id: str):
     """生成课程知识图谱（ECharts 力导向图 HTML，结果缓存到任务目录）"""
-    return _viz_html(task_id, "graph")
+    return await _viz_html(task_id, "graph")
 
 
 @app.get("/api/task/{task_id}/knowledge-graph")
