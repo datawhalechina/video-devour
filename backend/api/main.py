@@ -262,12 +262,12 @@ def _run_link_probe(handler, **kwargs):
 
 @app.post("/api/video/link/info")
 async def get_link_info(request: LinkInfoRequest):
-    """获取链接视频的元数据（不下载），用于预览确认"""
-    url = (request.url or "").strip()
+    """获取链接视频的元数据（不下载），用于预览确认。支持直接粘贴 App 分享文案"""
+    from backend.devour.video_downloader import probe_video_info, extract_share_url
+    url = extract_share_url(request.url or "")
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="请提供有效的视频链接")
     try:
-        from backend.devour.video_downloader import probe_video_info
         return await _run_link_probe(probe_video_info, url=url)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -297,11 +297,12 @@ async def search_link_videos(request: LinkSearchRequest):
 @app.post("/api/video/link", response_model=UploadResponse)
 async def process_link_video(request: LinkProcessRequest):
     """
-    通过链接一键下载并处理视频（B站/YouTube）。
+    通过链接一键下载并处理视频（B站/YouTube/微信视频号）。
 
-    流程：yt-dlp 下载到 uploads/{task_id}.mp4 → 复用现有处理 pipeline
+    流程：yt-dlp 或解析服务下载到 uploads/{task_id}.mp4 → 复用现有处理 pipeline
     """
-    url = (request.url or "").strip()
+    from backend.devour.video_downloader import extract_share_url
+    url = extract_share_url(request.url or "")
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="请提供有效的视频链接")
     if request.education_level not in settings_store.EDUCATION_LEVELS:

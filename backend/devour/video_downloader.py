@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-在线视频链接下载器（Bilibili / YouTube 等）
+在线视频链接下载器（Bilibili / YouTube / 微信视频号等）
 
 移植自 bilibili-video-download 与 youtube-downloader 两个工具的核心思路：
 - 先取元数据（标题/封面/时长/作者）供预览确认，再执行下载
 - yt-dlp 统一支持 B 站与 YouTube（含搜索），ffmpeg 负责合成 mp4
+- 微信视频号不支持 yt-dlp：优先走分享链接解析服务换直链，失败时引导本地捕获
 - 合理默认值：单个视频（不展开合集/列表）、最高 1080p、mp4 输出
 
 说明：请仅对拥有版权或已获授权的内容进行下载处理。
@@ -19,6 +20,35 @@ _BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
+
+# 视频号分享多来自手机端，用移动端 UA 提高分享页可达性
+_MOBILE_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.49"
+)
+
+# 公共解析服务（ltaoo/wx_channels_download 作者提供，第三方服务非微信官方）
+DEFAULT_WECHAT_RESOLVER = "https://sph.litao.workers.dev"
+
+_URL_IN_TEXT_RE = re.compile(r"https?://[^\s\"'<>【】（）()，。；]+", re.IGNORECASE)
+_WECHAT_URL_RE = re.compile(r"https?://weixin\.qq\.com/sph/[A-Za-z0-9_\-]+", re.IGNORECASE)
+
+
+def extract_share_url(text: str) -> str:
+    """
+    从用户粘贴的分享文本中提取视频链接。
+
+    微信/B站 App 的分享内容通常是一段文案+链接，先抽出纯链接再交给平台识别；
+    未匹配到链接时原样返回（视为用户直接粘贴了 URL）。
+    """
+    text = (text or "").strip()
+    wechat = _WECHAT_URL_RE.search(text)
+    if wechat:
+        return wechat.group(0)
+    generic = _URL_IN_TEXT_RE.search(text)
+    if generic:
+        return generic.group(0).rstrip(".,;，；")
+    return text
 
 
 def _get_ydl(**extra):
@@ -43,12 +73,14 @@ def _get_ydl(**extra):
 
 
 def detect_platform(url: str) -> str:
-    """根据链接判断来源平台：youtube | bilibili | other"""
+    """根据链接判断来源平台：youtube | bilibili | wechat | other"""
     url = (url or "").lower()
     if re.search(r"(youtube\.com|youtu\.be)", url):
         return "youtube"
     if re.search(r"(bilibili\.com|b23\.tv)", url):
         return "bilibili"
+    if re.search(r"weixin\.qq\.com/sph/", url):
+        return "wechat"
     return "other"
 
 
@@ -63,6 +95,9 @@ def _extract_video_id(url: str, platform: str) -> Optional[str]:
         m = re.search(r"(?:/video/|BV)([A-Za-z0-9]{10,})", url) or re.search(
             r"(BV[A-Za-z0-9]{8,})", url
         )
+        return m.group(1) if m else None
+    if platform == "wechat":
+        m = re.search(r"weixin\.qq\.com/sph/([A-Za-z0-9_\-]+)", url, re.IGNORECASE)
         return m.group(1) if m else None
     return None
 
@@ -92,6 +127,9 @@ def probe_video_info(url: str) -> Dict:
         ValueError: 链接不受支持或视频不存在
     """
     platform = detect_platform(url)
+    if platform == "wechat":
+        # 视频号不支持 yt-dlp，先从分享页尽力取标题，解析下载在 download 阶段进行
+        return _wechat_share_info(url)
     if platform == "bilibili":
         # B站视频页接口对无指纹请求返回 412，优先走官方 view API
         bvid = _extract_video_id(url, "bilibili")
@@ -149,6 +187,238 @@ def _youtube_oembed_info(url: str) -> Dict:
 
 def _platform_referer(platform: str) -> str:
     return "https://www.youtube.com/" if platform == "youtube" else "https://www.bilibili.com/"
+
+
+# ---------------------------------------------------------------------------
+# 微信视频号（weixin.qq.com/sph/...）
+# 机制参考 joeseesun/qiaomu-wx-video：视频号没有公开直链，两条路径——
+# 1) 在线解析：把分享链接交给解析服务换媒体直链（尽力而为，服务可能限流/要求授权）
+# 2) 本地捕获：ltaoo/wx_channels_download 依赖微信桌面端+根证书+本地代理，
+#    属于重量级人工流程，本项目不自动执行，失败时引导用户走该路径后手动上传。
+# ---------------------------------------------------------------------------
+
+_WECHAT_FAIL_HINT = (
+    "视频号在线解析失败：分享链接可能已过期、内容为直播回放，或解析服务暂时不可用。"
+    "可尝试：1) 稍后重试；2) 自建解析服务并通过环境变量 WECHAT_RESOLVER_URL 指向它；"
+    "3) 使用本地捕获工具（ltaoo/wx_channels_download，参考 joeseesun/qiaomu-wx-video 工作流）"
+    "下载到本机后，在“上传视频”页直接处理。"
+)
+
+
+def _wechat_share_info(url: str) -> Dict:
+    """视频号元数据：先解析分享页 HTML 尽力取标题，取不到就用占位信息。"""
+    import requests
+
+    vid = _extract_video_id(url, "wechat") or ""
+    info = {
+        "id": vid,
+        "title": f"微信视频号 {vid}",
+        "uploader": "",
+        "duration": None,
+        "thumbnail": "",
+        "platform": "wechat",
+        "webpage_url": url,
+        "video_id": vid,
+        "description": "视频号内容不支持网页内嵌预览；可直接“一键下载处理”，"
+                       "解析失败时请用本地工具下载后在“上传视频”页上传。",
+    }
+    try:
+        resp = requests.get(url, timeout=10, headers={
+            "User-Agent": _MOBILE_UA, "Referer": "https://weixin.qq.com/",
+        })
+        if resp.ok:
+            m = (re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)', resp.text, re.IGNORECASE)
+                 or re.search(r"<title[^>]*>([^<]+)<", resp.text))
+            title = m.group(1).strip() if m else ""
+            # 分享页兜底标题常为“视频号”三个字，过滤掉避免误导
+            if title and title not in ("视频号", "微信视频号"):
+                info["title"] = title
+    except Exception as e:
+        logging.warning(f"视频号分享页标题获取失败: {e}")
+    return info
+
+
+def _wechat_resolver_base() -> str:
+    import os
+    return (os.getenv("WECHAT_RESOLVER_URL") or DEFAULT_WECHAT_RESOLVER).rstrip("/")
+
+
+def _find_media_urls(obj, found=None):
+    """递归在解析服务返回的 JSON 中收集疑似媒体直链"""
+    if found is None:
+        found = []
+    if isinstance(obj, str):
+        if re.match(r"https?://", obj) and re.search(r"\.(mp4|m3u8)(\?|$)", obj, re.IGNORECASE):
+            found.append(obj)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _find_media_urls(v, found)
+    elif isinstance(obj, list):
+        for v in obj:
+            _find_media_urls(v, found)
+    return found
+
+
+def _wechat_resolve(share_url: str, target_dir: Path, vid: str):
+    """
+    调用解析服务，返回待下载源列表。
+
+    每个元素为 (kind, payload)：kind 为 "url"（mp4/m3u8 直链）或
+    "local"（解析服务直接回流的媒体内容，已落盘的临时文件）。
+    """
+    import requests
+
+    sources = []
+    base = _wechat_resolver_base()
+    attempts = [
+        ("GET", f"{base}/?url={share_url}", None),
+        ("POST", base, {"url": share_url}),
+    ]
+    last_status = None
+    for method, req_url, data in attempts:
+        try:
+            resp = requests.request(
+                method, req_url, data=data, timeout=30,
+                headers={
+                    "User-Agent": _BROWSER_UA,
+                    "Referer": "https://weixin.qq.com/",
+                    "Accept": "*/*",
+                },
+                allow_redirects=True,
+            )
+        except Exception as e:
+            logging.warning(f"解析服务请求失败({method} {req_url}): {e}")
+            continue
+        if resp.status_code != 200:
+            last_status = resp.status_code
+            logging.warning(f"解析服务返回 {resp.status_code}: {req_url}")
+            continue
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+        if ctype.startswith(("video/", "audio/", "application/octet-stream")):
+            # 解析服务直接回流媒体内容：落盘后按本地文件处理
+            tmp = target_dir / f"{vid}_resolve.tmp"
+            with open(tmp, "wb") as f:
+                f.write(resp.content)
+            sources.append(("local", str(tmp)))
+            break
+        # JSON 或 HTML：提取媒体直链
+        media = _find_media_urls(_safe_json(resp))
+        if not media:
+            media = re.findall(
+                r"https?://[^\"'\\\s<>]+\.(?:mp4|m3u8)[^\"'\\\s<>]*",
+                resp.text or "", re.IGNORECASE,
+            )
+        sources = [("m3u8" if u.lower().split("?")[0].endswith(".m3u8") else "url", u)
+                   for u in dict.fromkeys(media)]
+        if sources:
+            break
+    if not sources and last_status:
+        sources = []  # 保留空列表，由调用方统一报错
+    return sources, last_status
+
+
+def _safe_json(resp):
+    try:
+        return resp.json()
+    except Exception:
+        return None
+
+
+def _validate_video_file(path: Path) -> bool:
+    """ffprobe 验证存在视频流；ffprobe 不可用时退化为容器签名+大小弱验证"""
+    import subprocess
+
+    if not path.exists() or path.stat().st_size < 10240:
+        return False
+    try:
+        proc = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(path)],
+            capture_output=True, timeout=30,
+        )
+        if proc.returncode == 0:
+            return bool(proc.stdout.strip())
+    except FileNotFoundError:
+        # 无 ffprobe：mp4 容器偏移 4 字节应为 'ftyp'
+        with open(path, "rb") as f:
+            head = f.read(8)
+        return len(head) >= 8 and head[4:8] == b"ftyp"
+    except Exception as e:
+        logging.warning(f"ffprobe 校验异常: {e}")
+    return False
+
+
+def _download_wechat_video(url: str, target_dir: str, progress_hook=None) -> Dict:
+    """视频号下载：解析直链 → 流式下载 → ffprobe 验证 → 落盘为 {vid}.mp4"""
+    import requests
+    import subprocess
+
+    target = Path(target_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    vid = _extract_video_id(url, "wechat") or "wechat_video"
+    share_url = extract_share_url(url)
+
+    def _hook(d):
+        if progress_hook:
+            try:
+                progress_hook(d)
+            except Exception:
+                pass
+
+    sources, resolver_status = _wechat_resolve(share_url, target, vid)
+    if not sources:
+        if resolver_status in (401, 403):
+            raise ValueError(_WECHAT_FAIL_HINT + f"（解析服务返回 {resolver_status}，公共实例可能已限流）")
+        raise ValueError(_WECHAT_FAIL_HINT)
+
+    final_path = target / f"{vid}.mp4"
+    errors = []
+    for kind, payload in sources:
+        try:
+            if kind == "local":
+                Path(payload).replace(final_path)
+            elif kind == "m3u8":
+                # 未加密 HLS 可直接由 ffmpeg 下载合成；加密流会失败进入下一个候选
+                proc = subprocess.run(
+                    ["ffmpeg", "-y", "-i", payload, "-c", "copy",
+                     "-bsf:a", "aac_adtstoasc", str(final_path)],
+                    capture_output=True, timeout=600,
+                )
+                if proc.returncode != 0:
+                    raise RuntimeError("m3u8 下载失败（可能为加密流）")
+            else:
+                with requests.get(
+                    payload, stream=True, timeout=(10, 60),
+                    headers={"User-Agent": _MOBILE_UA, "Referer": "https://weixin.qq.com/"},
+                ) as resp:
+                    resp.raise_for_status()
+                    total = int(resp.headers.get("Content-Length") or 0)
+                    done = 0
+                    _hook({"status": "downloading", "downloaded_bytes": 0,
+                           "total_bytes": total or None})
+                    with open(final_path, "wb") as f:
+                        for chunk in resp.iter_content(chunk_size=1 << 20):
+                            if chunk:
+                                f.write(chunk)
+                                done += len(chunk)
+                                _hook({"status": "downloading",
+                                       "downloaded_bytes": done,
+                                       "total_bytes": total or None})
+            _hook({"status": "finished"})
+            if _validate_video_file(final_path):
+                logging.info(f"视频号下载完成: {final_path}")
+                return {"file_path": str(final_path),
+                        "info": _wechat_share_info(share_url)}
+            errors.append(f"候选源校验失败: {payload[:80]}")
+        except Exception as e:
+            errors.append(f"{str(e)[:120]} ({payload[:60]})")
+        finally:
+            if kind == "local" and Path(payload).exists():
+                Path(payload).unlink(missing_ok=True)
+    if final_path.exists():
+        final_path.unlink(missing_ok=True)
+    detail = f"（{'；'.join(errors[-2:])}）" if errors else ""
+    raise ValueError(_WECHAT_FAIL_HINT + detail)
 
 
 def _youtube_thumbnail_fallback(video_id: str) -> str:
@@ -254,7 +524,7 @@ def search_videos(query: str, platform: str = "bilibili", max_results: int = 8) 
     if not query:
         raise ValueError("搜索关键词不能为空")
     if platform not in ("bilibili", "youtube"):
-        raise ValueError("platform 仅支持 bilibili 或 youtube")
+        raise ValueError("platform 仅支持 bilibili 或 youtube（微信视频号暂不支持搜索，请直接粘贴分享链接）")
 
     if platform == "bilibili":
         return _bilibili_search(query, max_results)
@@ -328,10 +598,10 @@ def download_video(url: str, target_dir: str, max_height: int = 1080,
     下载视频到指定目录（mp4），返回文件路径与元数据。
 
     Args:
-        url: 视频链接
+        url: 视频链接（B站/YouTube/微信视频号分享链接）
         target_dir: 保存目录
-        max_height: 最大分辨率（默认1080p）
-        progress_hook: yt-dlp 进度回调，接收 dict（downloaded_bytes/total_bytes/status）
+        max_height: 最大分辨率（默认1080p；视频号清晰度由解析服务决定，此参数不生效）
+        progress_hook: 进度回调，接收 dict（downloaded_bytes/total_bytes/status）
 
     Returns:
         {"file_path": str, "info": {...}}
@@ -339,6 +609,8 @@ def download_video(url: str, target_dir: str, max_height: int = 1080,
     target = Path(target_dir)
     target.mkdir(parents=True, exist_ok=True)
     platform = detect_platform(url)
+    if platform == "wechat":
+        return _download_wechat_video(url, target_dir, progress_hook=progress_hook)
     referer = "https://www.youtube.com/" if platform == "youtube" else "https://www.bilibili.com/"
 
     def _wrap_hook(d):

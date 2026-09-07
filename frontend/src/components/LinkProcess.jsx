@@ -1,13 +1,19 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle } from 'lucide-react'
 import { getLinkInfo, searchLinkVideos, processLink } from '../api/videoService'
 
 const PLATFORM_TABS = [
   { key: 'bilibili', label: 'B站', embed: (id) => `https://player.bilibili.com/player.html?bvid=${id}&autoplay=0` },
   { key: 'youtube', label: 'YouTube', embed: (id) => `https://www.youtube.com/embed/${id}` },
 ]
+
+const PLATFORM_LABELS = {
+  bilibili: 'B站',
+  youtube: 'YouTube',
+  wechat: '微信视频号',
+}
 
 function formatDuration(seconds) {
   if (!seconds) return '未知'
@@ -90,7 +96,7 @@ function LinkProcess() {
         {item.uploader && <span>UP: {item.uploader}</span>}
         {item.duration && <span>时长: {formatDuration(item.duration)}</span>}
         <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700">
-          {item.platform === 'bilibili' ? 'B站' : item.platform === 'youtube' ? 'YouTube' : '网页'}
+          {PLATFORM_LABELS[item.platform] || '网页'}
         </span>
       </p>
     </div>
@@ -126,7 +132,7 @@ function LinkProcess() {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleProbe()}
-              placeholder="支持 B站 / YouTube 视频链接，如 https://www.bilibili.com/video/BV..."
+              placeholder="支持 B站 / YouTube / 微信视频号分享链接（weixin.qq.com/sph/...），可直接粘贴分享文案"
               className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
             />
             <button
@@ -229,6 +235,15 @@ function LinkProcess() {
                       allow="encrypted-media; fullscreen"
                       title={preview.title}
                     />
+                  ) : preview.platform === 'wechat' ? (
+                    <div className="w-full h-[420px] flex flex-col items-center justify-center gap-3 text-gray-400 px-8 text-center">
+                      <MessageCircle className="w-12 h-12" />
+                      <p className="text-sm font-medium text-gray-300">微信视频号内容不支持网页内嵌预览</p>
+                      <p className="text-xs text-gray-500 leading-relaxed">
+                        点击右上角“一键下载处理”将调用解析服务下载；
+                        若解析失败（链接过期/服务限流），请用本地工具下载后到“上传视频”页上传处理
+                      </p>
+                    </div>
                   ) : (
                     preview.thumbnail && (
                       <img src={preview.thumbnail} alt={preview.title} referrerPolicy="no-referrer" className="w-full h-[420px] object-contain" />
