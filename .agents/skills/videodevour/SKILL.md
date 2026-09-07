@@ -60,7 +60,21 @@ python3 <skill目录>/scripts/devour.py process /path/to/video.mp4 --level 初�
   `{"report": ".../final_report.md", "outline": ".../detailed_outline.md", ...}`
 - ASR 模式跟随 `settings.json`（离线=本地 MPS/CPU，在线=DashScope），LLM/VLM 固定走云端
 
-### 4. 读取报告
+### 4. 生成思维导图与知识图谱（对学习场景推荐）
+
+基于任务报告生成两种知识可视化（LLM 生成、浏览器渲染的交互页面）：
+
+```bash
+# 思维导图：三层分支结构（markmap 渲染，可缩放/折叠）
+python3 <skill目录>/scripts/devour.py mindmap --latest --open
+# 知识图谱：概念关系力导向网络（节点按类别着色、关系标注）
+python3 <skill目录>/scripts/devour.py graph --latest --open
+# 也可用 --dir 指定任务输出目录、--level 指定学习阶段
+```
+
+输出 JSON `{"html": "<输出目录>/mindmap.html", ...}`，将 html 路径呈现给用户（浏览器打开即用）。
+
+### 5. 读取报告
 
 处理完成后读取打印的 `final_report.md` 路径，向用户呈现报告内容摘要（含关键帧图片的相对路径引用）。
 也可手动查看：
@@ -68,6 +82,18 @@ python3 <skill目录>/scripts/devour.py process /path/to/video.mp4 --level 初�
 ```bash
 python3 <skill目录>/scripts/devour.py report --latest
 ```
+
+## 推荐组合工作流（一次视频 → 全套学习材料）
+
+```bash
+S=<skill目录>/scripts/devour.py
+python3 $S process "https://www.bilibili.com/video/BV..." --level 高中   # 1. 下载+处理
+python3 $S mindmap --latest --open        # 2. 思维导图（建立框架）
+python3 $S graph --latest --open          # 3. 知识图谱（概念关联）
+python3 $S report --latest                # 4. 报告全文
+```
+
+向用户交付时建议按「报告全文 → 思维导图 → 知识图谱」的顺序呈现：先细节后框架，便于学习理解。
 
 ## 注意事项
 

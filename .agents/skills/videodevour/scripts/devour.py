@@ -15,6 +15,8 @@ VideoDevour skill 入口脚本（跨 agent 通用，遵循 .agents/skills 约定
   devour.py search "关键词" [--platform bilibili|youtube] [--max N]
   devour.py info <url>
   devour.py process <url|本地视频路径> [--level 高中|初中|小学] [--home 项目目录]
+  devour.py mindmap [--latest | --dir 输出目录] [--open] [--level 学习阶段]
+  devour.py graph   [--latest | --dir 输出目录] [--open] [--level 学习阶段]
   devour.py report [--latest | --dir 输出目录]
 """
 import argparse
@@ -147,6 +149,44 @@ def cmd_process(args):
     print(json.dumps(outcome, ensure_ascii=False, indent=2))
 
 
+def _resolve_task_dir(home: Path, args) -> Path:
+    """定位任务输出目录：--dir 优先，否则取最新 frames_* 目录"""
+    if getattr(args, "dir", None):
+        out = Path(args.dir).expanduser().resolve()
+    else:
+        candidates = sorted((home / "output").glob("frames_*"), key=lambda p: p.stat().st_mtime)
+        if not candidates:
+            print("暂无任何处理产物", file=sys.stderr)
+            sys.exit(1)
+        out = candidates[-1]
+    if not out.exists():
+        print(f"输出目录不存在: {out}", file=sys.stderr)
+        sys.exit(1)
+    return out
+
+
+def cmd_viz(args, kind: str):
+    """生成思维导图 / 知识图谱（复用 API 同款逻辑，结果缓存到任务目录）"""
+    home = project_home(args.home)
+    setup_project(home)
+    out_dir = _resolve_task_dir(home, args)
+    label = "思维导图" if kind == "mindmap" else "知识图谱"
+    print(f"正在为 {out_dir.name} 生成{label}（LLM 生成约 10-30 秒）...")
+
+    from backend.algorithm import report_viz
+    if kind == "mindmap":
+        path = report_viz.generate_mindmap(out_dir, education_level=args.level or None)
+    else:
+        path = report_viz.generate_knowledge_graph(out_dir, education_level=args.level or None)
+
+    result = {"html": str(path), "output_dir": str(out_dir)}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if args.open:
+        import webbrowser
+        webbrowser.open(path.as_uri())
+        print("已在浏览器打开")
+
+
 def cmd_report(args):
     home = project_home(args.home)
     if args.dir:
@@ -187,6 +227,22 @@ def main():
     p_proc.add_argument("--level", default="自由学习",
                         choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
     p_proc.set_defaults(func=cmd_process)
+
+    p_mm = sub.add_parser("mindmap", help="为任务报告生成思维导图（markmap HTML）")
+    p_mm.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
+    p_mm.add_argument("--dir", default=None, help="指定任务输出目录")
+    p_mm.add_argument("--level", default=None,
+                      choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
+    p_mm.add_argument("--open", action="store_true", help="生成后在浏览器打开")
+    p_mm.set_defaults(func=lambda a: cmd_viz(a, "mindmap"))
+
+    p_kg = sub.add_parser("graph", help="为任务报告生成知识图谱（ECharts 力导向图 HTML）")
+    p_kg.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
+    p_kg.add_argument("--dir", default=None, help="指定任务输出目录")
+    p_kg.add_argument("--level", default=None,
+                      choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
+    p_kg.add_argument("--open", action="store_true", help="生成后在浏览器打开")
+    p_kg.set_defaults(func=lambda a: cmd_viz(a, "graph"))
 
     p_report = sub.add_parser("report", help="查看最新/指定任务的报告")
     p_report.add_argument("--latest", action="store_true")
