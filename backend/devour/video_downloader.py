@@ -338,18 +338,23 @@ def _wechat_feed_info(eid: str, token: str) -> Dict:
 
 
 def _walk_collect_video_media(node, found=None):
-    """递归在 feed JSON 中收集视频媒体项：含 mediaUrl/url 的对象且带解码/类型标识"""
+    """
+    递归在 feed JSON 中收集视频媒体项。
+
+    兼容两种结构：老版 mediaList（mediaUrl + decodeKey/fileType）与
+    finder-preview 新版（videoUrl / h264VideoInfo / h265VideoInfo，可能无 decodeKey）。
+    """
     if found is None:
         found = []
     if isinstance(node, dict):
         url = None
-        for key in ("mediaUrl", "url"):
+        for key in ("mediaUrl", "videoUrl", "url"):
             value = node.get(key)
             if isinstance(value, str) and value.startswith(("http://", "https://")):
                 url = value
                 break
-        if url and ("decodeKey" in node or "fileType" in node
-                    or "mediaUrl" in node or "spec" in node):
+        if url and ("decodeKey" in node or "fileType" in node or "mediaUrl" in node
+                    or "videoUrl" in node or "spec" in node):
             token = node.get("urlToken") or ""
             if token and token not in url:
                 url = url + token
@@ -368,7 +373,7 @@ def _walk_collect_video_media(node, found=None):
 
 
 def _feed_meta(feed: Dict) -> Dict:
-    """从 feed JSON 中提取标题/作者/封面（键名随版本漂移，做多候选兼容）"""
+    """从 feed JSON 中提取标题/作者/封面（兼容 mediaList 与 authorInfo 两种结构）"""
     meta = {}
 
     def _walk(node):
@@ -383,6 +388,9 @@ def _feed_meta(feed: Dict) -> Dict:
                     if node.get(key):
                         meta.setdefault("thumbnail", str(node[key]))
                         break
+            if node.get("nickname") and "headImgUrl" in node:
+                # finder-preview 新版：authorInfo.nickname
+                meta.setdefault("uploader", str(node["nickname"]))
             for value in node.values():
                 _walk(value)
         elif isinstance(node, list):
@@ -687,7 +695,13 @@ def _download_wechat_video(url: str, target_dir: str, progress_hook=None) -> Dic
             eid, token = _wechat_parse_share(share_url, cookie)
             feed = _wechat_feed_info(eid, token)
             meta = _feed_meta(feed)
-            candidates = _walk_collect_video_media(feed)
+            # feedInfo 顶层 videoUrl 与 h264VideoInfo 重复，按 URL 去重保持顺序
+            seen = set()
+            candidates = []
+            for item in _walk_collect_video_media(feed):
+                if item["url"] not in seen:
+                    seen.add(item["url"])
+                    candidates.append(item)
             if not candidates:
                 notes.append("直连解析成功但未在返回中找到视频流")
         except _WeChatError as e:
