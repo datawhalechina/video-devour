@@ -154,23 +154,36 @@ def select_keyframes_with_vlm(headings_with_level, output_dir):
             clean_name = '_'.join(dir_name.split('_')[2:])
             frame_dirs[clean_name] = os.path.join(output_dir, dir_name)
 
-    for i, (level, heading) in enumerate(headings_with_level):
-        if level != 2:
-            continue
+    # 按顺序收集二级标题；多个章节共用唯一帧目录时（兜底切分场景），
+    # 需按章节顺序把候选帧按时间分段，避免所有章节选中同一帧
+    level2_items = [(idx, heading) for idx, (lvl, heading) in enumerate(headings_with_level) if lvl == 2]
+    shared_frame_dir = None
+    if len(level2_items) > 1 and len(frame_dirs) == 1:
+        shared_frame_dir = next(iter(frame_dirs.values()))
+        logging.info(
+            f"检测到 {len(level2_items)} 个章节共用单一片段的帧目录 "
+            f"'{os.path.basename(shared_frame_dir)}'，将按章节顺序分段选取关键帧"
+        )
 
+    used_source_paths = set()
+
+    for k, (idx, heading) in enumerate(level2_items):
         safe_heading = re.sub(r'[\\/*?:"<>|]', "", heading).replace(" ", "_")
-        
-        # 找到对应的帧目录；找不到时回退到唯一可用的帧目录
-        # （例如大纲只有一个一级标题、兜底切分出的单一片段，其帧应供所有章节共用）
-        frame_dir = frame_dirs.get(safe_heading)
-        if not frame_dir or not os.path.isdir(frame_dir):
-            fallback_dirs = list(frame_dirs.values())
-            if len(fallback_dirs) == 1 and os.path.isdir(fallback_dirs[0]):
-                frame_dir = fallback_dirs[0]
-                logging.info(f"标题 '{heading}' 无专属帧目录，回退使用唯一帧目录: {os.path.basename(frame_dir)}")
-            else:
-                logging.warning(f"未找到标题 '{heading}' 对应的帧目录，跳过。")
-                continue
+
+        if shared_frame_dir:
+            frame_dir = shared_frame_dir
+        else:
+            # 找到对应的帧目录；找不到时回退到唯一可用的帧目录
+            # （例如大纲只有一个一级标题、兜底切分出的单一片段，其帧应供所有章节共用）
+            frame_dir = frame_dirs.get(safe_heading)
+            if not frame_dir or not os.path.isdir(frame_dir):
+                fallback_dirs = list(frame_dirs.values())
+                if len(fallback_dirs) == 1 and os.path.isdir(fallback_dirs[0]):
+                    frame_dir = fallback_dirs[0]
+                    logging.info(f"标题 '{heading}' 无专属帧目录，回退使用唯一帧目录: {os.path.basename(frame_dir)}")
+                else:
+                    logging.warning(f"未找到标题 '{heading}' 对应的帧目录，跳过。")
+                    continue
 
         image_files = sorted([f for f in os.listdir(frame_dir) if f.endswith('.jpg')])
 
@@ -178,49 +191,68 @@ def select_keyframes_with_vlm(headings_with_level, output_dir):
             logging.warning(f"目录 '{frame_dir}' 中没有找到图片，无法为标题 '{heading}' 选择关键帧。")
             continue
 
-        if len(image_files) == 1:
+        candidates = image_files
+        if shared_frame_dir:
+            # 按章节顺序把候选帧（按文件名即时间顺序）等分，本章节只在对应时间段内选帧
+            total = len(level2_items)
+            n = len(image_files)
+            if n >= total:
+                seg = image_files[k * n // total: (k + 1) * n // total]
+                candidates = seg or image_files[k % n: k % n + 1]
+            else:
+                candidates = [image_files[k % n]]
+            logging.info(f"标题 '{heading}' 使用第 {k + 1}/{total} 段候选帧: "
+                         f"{candidates[0]} ~ {candidates[-1]}（共 {len(candidates)} 帧）")
+
+        # 排除已被其他章节选用的帧，保证各章节配图互不相同
+        filtered = [f for f in candidates if os.path.join(frame_dir, f) not in used_source_paths]
+        if filtered:
+            candidates = filtered
+
+        if len(candidates) == 1:
             # 如果只有一帧，直接选择它
-            best_frame = image_files[0]
+            best_frame = candidates[0]
             logging.info(f"标题 '{heading}' 只有一帧，直接选定: {best_frame}")
         else:
             # 如果有多帧，使用VLM进行批量评分
             best_score = -1
             best_frame = None
-            logging.info(f"为标题 '{heading}' 的 {len(image_files)} 帧进行VLM评分...")
+            logging.info(f"为标题 '{heading}' 的 {len(candidates)} 帧进行VLM评分...")
 
             # 准备所有图片路径
-            image_paths = [os.path.join(frame_dir, img) for img in image_files]
-            
+            image_paths = [os.path.join(frame_dir, img) for img in candidates]
+
             # 使用批量评分
             results = vlm_handler.score_frames_batch(image_paths, heading)
-            
+
             # 找出最佳帧
-            for image_file, (score, description) in zip(image_files, results):
+            for image_file, (score, description) in zip(candidates, results):
                 if score > best_score:
                     best_score = score
                     best_frame = image_file
-            
+
             if best_frame:
                 logging.info(f"为标题 '{heading}' 选定的最佳帧是 '{best_frame}' (得分: {best_score})")
             else:
                 logging.warning(f"无法为标题 '{heading}' 确定最佳帧，将默认选择第一帧。")
-                best_frame = image_files[0]
+                best_frame = candidates[0]
 
         if best_frame:
             source_path = os.path.join(frame_dir, best_frame)
-            
+
             # 为关键帧创建一个清晰、有序的文件名
             keyframe_filename = f"{len(selected_keyframes) + 1:02d}_{safe_heading}.jpg"
             dest_path = os.path.join(keyframes_output_dir, keyframe_filename)
-            
+
             try:
                 # 复制文件
                 shutil.copy(source_path, dest_path)
-                
+                used_source_paths.add(source_path)
+
                 # 存储用于Markdown的相对路径
                 relative_path = os.path.join('keyframes', keyframe_filename)
                 selected_keyframes[heading] = relative_path
-                
+
             except Exception as e:
                 logging.error(f"复制关键帧 '{source_path}' 到 '{dest_path}' 失败: {e}")
 

@@ -103,30 +103,64 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
         logging.info(f"--- 视频切分完成，共生成 {video_cut_count} 个视频片段 ---")
         print(f"视频切分完成！共 {video_cut_count} 个片段已保存至: {videocut_path}")
     else:
-        # 兜底：大纲只有一级标题（无二级章节）时，按所有匹配文本块的整体时间范围
-        # 切出一段视频，保证后续抽帧/关键帧环节仍可运行
-        logging.warning("--- 未切分任何视频片段，尝试整段兜底切分 ---")
+        # 兜底：二级标题均未匹配到文本块（常见于短视频或标题为 LLM 转述的场景）。
+        # 按二级标题数量把整体时间范围均分切分，保证每个章节有独立的抽帧来源；
+        # 若所有章节共用一段，后续关键帧环节会因候选帧相同而插出重复图片。
+        logging.warning("--- 未切分任何视频片段，尝试兜底切分 ---")
         all_chunks = [c for chunks in matched_data.values() for c in chunks]
-        level1_headings = [h for lvl, h in headings_with_level if lvl == 1]
-        if all_chunks and level1_headings:
+        level2_items = [(i, h) for i, (lvl, h) in enumerate(headings_with_level) if lvl == 2]
+        if all_chunks and level2_items:
             start_time = min(c['start'] for c in all_chunks)
             end_time = max(c['end'] for c in all_chunks)
-            heading = level1_headings[0]
-            safe_heading = re.sub(r'[\\/*?:"<>|]', "", heading).replace(" ", "_")
-            output_path = os.path.join(videocut_path, f"01_{safe_heading}.mp4")
-            ffmpeg_command = [
-                'ffmpeg', '-i', input_video_path,
-                '-ss', str(start_time), '-to', str(end_time),
-                '-c:v', 'libx264', '-c:a', 'aac',
-                '-avoid_negative_ts', 'make_zero',
-                '-y', output_path
-            ]
-            try:
-                subprocess.run(ffmpeg_command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                logging.info(f"兜底切分成功: {output_path} ({start_time:.1f}s - {end_time:.1f}s)")
-                video_cut_count = 1
-            except subprocess.CalledProcessError as e:
-                logging.error(f"兜底切分失败: {e.stderr.decode('utf-8', errors='ignore')[:500]}")
+            total = end_time - start_time
+            k = len(level2_items)
+            if k == 1:
+                ranges = [(start_time, end_time)]
+            else:
+                step = total / k
+                ranges = [(start_time + step * j, start_time + step * (j + 1))
+                          for j in range(k)]
+            logging.info(f"按 {k} 个二级标题均分时间范围 {start_time:.1f}s - {end_time:.1f}s")
+            for (i, heading), (seg_start, seg_end) in zip(level2_items, ranges):
+                safe_heading = re.sub(r'[\\/*?:"<>|]', "", heading).replace(" ", "_")
+                output_path = os.path.join(videocut_path, f"{i+1:02d}_{safe_heading}.mp4")
+                ffmpeg_command = [
+                    'ffmpeg', '-i', input_video_path,
+                    '-ss', f"{seg_start:.2f}", '-to', f"{seg_end:.2f}",
+                    '-c:v', 'libx264', '-c:a', 'aac',
+                    '-avoid_negative_ts', 'make_zero',
+                    '-y', output_path
+                ]
+                try:
+                    subprocess.run(ffmpeg_command, check=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    logging.info(f"兜底切分成功: {output_path} ({seg_start:.1f}s - {seg_end:.1f}s)")
+                    video_cut_count += 1
+                except subprocess.CalledProcessError as e:
+                    logging.error(f"兜底切分失败({heading}): "
+                                  f"{e.stderr.decode('utf-8', errors='ignore')[:300]}")
+        elif all_chunks:
+            # 无二级标题的扁平大纲：按所有匹配文本块的整体时间范围切一整段
+            start_time = min(c['start'] for c in all_chunks)
+            end_time = max(c['end'] for c in all_chunks)
+            heading = next((h for lvl, h in headings_with_level if lvl == 1), None)
+            if heading:
+                safe_heading = re.sub(r'[\\/*?:"<>|]', "", heading).replace(" ", "_")
+                output_path = os.path.join(videocut_path, f"01_{safe_heading}.mp4")
+                ffmpeg_command = [
+                    'ffmpeg', '-i', input_video_path,
+                    '-ss', str(start_time), '-to', str(end_time),
+                    '-c:v', 'libx264', '-c:a', 'aac',
+                    '-avoid_negative_ts', 'make_zero',
+                    '-y', output_path
+                ]
+                try:
+                    subprocess.run(ffmpeg_command, check=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    logging.info(f"兜底切分成功: {output_path} ({start_time:.1f}s - {end_time:.1f}s)")
+                    video_cut_count = 1
+                except subprocess.CalledProcessError as e:
+                    logging.error(f"兜底切分失败: {e.stderr.decode('utf-8', errors='ignore')[:500]}")
         if video_cut_count == 0:
             logging.warning("--- 未切分任何视频片段 ---")
 
