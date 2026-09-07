@@ -14,6 +14,7 @@ VideoDevour skill 入口脚本（跨 agent 通用，遵循 .agents/skills 约定
 用法:
   devour.py search "关键词" [--platform bilibili|youtube] [--max N]
   devour.py info <url>
+  devour.py wechat <视频号分享链接> [--check]
   devour.py process <url|本地视频路径> [--level 高中|初中|小学] [--home 项目目录]
   devour.py mindmap [--latest | --dir 输出目录] [--open] [--level 学习阶段]
   devour.py graph   [--latest | --dir 输出目录] [--open] [--level 学习阶段]
@@ -152,6 +153,59 @@ def cmd_process(args):
     print(json.dumps(outcome, ensure_ascii=False, indent=2))
 
 
+def cmd_wechat(args):
+    """视频号：检查元宝 Cookie 状态（--check），或下载分享链接视频（仅下载不处理）"""
+    home = project_home(args.home)
+    setup_project(home)
+
+    from backend.devour.video_downloader import (
+        _wechat_setting, _wechat_parse_share, extract_share_url, detect_platform,
+        download_video,
+    )
+
+    if args.check:
+        cookie = _wechat_setting("wechat_yuanbao_cookie", "YUANBAO_COOKIE")
+        if not cookie:
+            print(json.dumps({
+                "configured": False, "valid": None,
+                "message": "未配置元宝 Cookie。登录 yuanbao.tencent.com → F12 → Network → "
+                           "复制任意请求的 Cookie，填入 WebUI 设置页「微信视频号」，或写入 "
+                           "settings.json 的 wechat_yuanbao_cookie / 环境变量 YUANBAO_COOKIE",
+            }, ensure_ascii=False, indent=2))
+            sys.exit(1)
+        # 探测原理：格式合法但无效的分享 id —— Cookie 失效时元宝返回 401/403，
+        # Cookie 有效时能进入解析（返回"未找到 export id"类业务错误）
+        try:
+            _wechat_parse_share("https://weixin.qq.com/sph/CookieCheckProbe00", cookie)
+            print(json.dumps({"configured": True, "valid": True,
+                              "message": "元宝 Cookie 已配置且有效"}, ensure_ascii=False, indent=2))
+        except Exception as e:
+            msg = str(e)
+            if "401" in msg or "403" in msg:
+                print(json.dumps({"configured": True, "valid": False,
+                                  "message": "元宝 Cookie 已失效，请重新复制并更新设置"},
+                                 ensure_ascii=False, indent=2))
+                sys.exit(1)
+            print(json.dumps({"configured": True, "valid": True,
+                              "message": "元宝 Cookie 已配置且有效"}, ensure_ascii=False, indent=2))
+        return
+
+    url = extract_share_url(args.url or "")
+    if detect_platform(url) != "wechat":
+        print("错误: 请提供微信视频号分享链接（weixin.qq.com/sph/...，可直接粘贴分享文案）",
+              file=sys.stderr)
+        sys.exit(1)
+    print(f"[1/1] 解析并下载视频号视频: {url}")
+    result = download_video(url, str(home / "uploads"))
+    info = result.get("info", {})
+    print(json.dumps({
+        "file_path": result["file_path"],
+        "title": info.get("title"),
+        "uploader": info.get("uploader"),
+        "hint": "可继续用 process 命令处理该本地文件生成图文报告",
+    }, ensure_ascii=False, indent=2))
+
+
 def _resolve_task_dir(home: Path, args) -> Path:
     """定位任务输出目录：--dir 优先，否则取最新 frames_* 目录"""
     if getattr(args, "dir", None):
@@ -230,6 +284,12 @@ def main():
     p_proc.add_argument("--level", default="自由学习",
                         choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
     p_proc.set_defaults(func=cmd_process)
+
+    p_wx = sub.add_parser("wechat", help="微信视频号：下载分享链接视频 / 检查元宝 Cookie")
+    p_wx.add_argument("url", nargs="?", default=None,
+                      help="视频号分享链接（weixin.qq.com/sph/...）或含链接的分享文案")
+    p_wx.add_argument("--check", action="store_true", help="检查元宝 Cookie 是否已配置且有效")
+    p_wx.set_defaults(func=cmd_wechat)
 
     p_mm = sub.add_parser("mindmap", help="为任务报告生成思维导图（markmap HTML）")
     p_mm.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")

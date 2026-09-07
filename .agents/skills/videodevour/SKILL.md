@@ -47,7 +47,22 @@ python3 <skill目录>/scripts/devour.py info "https://www.bilibili.com/video/BV.
 输出标题/UP主/时长/封面 JSON。注意：多P合集的 BV 链接，`info` 返回的时长是合集总时长，
 而 `process` 只下载并处理**当前分P**（通常几分钟），不会被合集时长吓退。
 
-### 3. 一键处理（核心流程）
+### 3. 微信视频号（weixin.qq.com/sph/... 分享链接）
+
+```bash
+# 首次使用先检查元宝 Cookie（视频号解析依赖腾讯元宝接口登录态）
+python3 <skill目录>/scripts/devour.py wechat --check
+# 下载视频号视频到项目 uploads/（仅下载，返回 JSON：file_path/title/uploader）
+python3 <skill目录>/scripts/devour.py wechat "https://weixin.qq.com/sph/..."
+# 也可直接粘贴含链接的分享文案；下载后接 process 本地文件即得图文报告
+```
+
+- Cookie 未配置/失效时 `--check` 会明确返回并给出配置指引；配置方法见 README
+  「微信视频号 Cookie 配置」一节（WebUI 设置页或 settings.json / 环境变量均可）
+- `process` 命令同样直接支持视频号链接（自动先下载再处理），`wechat` 用于只要视频文件的场景
+- 直播回放、已过期分享链接无法解析；解析失败会返回中文引导
+
+### 4. 一键处理（核心流程）
 
 ```bash
 python3 <skill目录>/scripts/devour.py process "https://www.bilibili.com/video/BV..." --level 高中
@@ -60,7 +75,7 @@ python3 <skill目录>/scripts/devour.py process /path/to/video.mp4 --level 初�
   `{"report": ".../final_report.md", "outline": ".../detailed_outline.md", ...}`
 - ASR 模式跟随 `settings.json`（离线=本地 MPS/CPU，在线=DashScope），LLM/VLM 固定走云端
 
-### 4. 生成思维导图与知识图谱（对学习场景推荐）
+### 5. 生成思维导图与知识图谱（对学习场景推荐）
 
 基于任务报告生成两种知识可视化（LLM 生成、浏览器渲染的交互页面）：
 
@@ -74,7 +89,7 @@ python3 <skill目录>/scripts/devour.py graph --latest --open
 
 输出 JSON `{"html": "<输出目录>/mindmap.html", ...}`，将 html 路径呈现给用户（浏览器打开即用）。
 
-### 5. 读取报告
+### 6. 读取报告
 
 处理完成后读取打印的 `final_report.md` 路径，向用户呈现报告内容摘要（含关键帧图片的相对路径引用）。
 也可手动查看：
@@ -101,8 +116,9 @@ python3 $S report --latest                # 4. 报告全文
 - 英文视频同样输出中文报告（内部已强制中文），但中文 ASR 模型对英文转写质量有限，内容深度受影响
 - B站未登录只能取约 720p；高频调用可能触发平台风控，脚本已内置退避重试
 - 微信视频号无公开直链：优先走「元宝 Cookie 直连解析」（设置页填写后自动启用），也可配
-  自建解析服务（`WECHAT_RESOLVER_URL`）；失败时引导用户用本地捕获工具
-  （ltaoo/wx_channels_download）下载后按本地文件处理。视频号不支持搜索，只能粘贴分享链接
+  自建解析服务（`WECHAT_RESOLVER_URL`）；处理前可用 `wechat --check` 验证 Cookie；
+  失败时引导用户用本地捕获工具（ltaoo/wx_channels_download）下载后按本地文件处理。
+  视频号不支持搜索，只能粘贴分享链接
 - 仅处理拥有权利或已获授权的视频内容，用于个人学习
 
 ## Stop points

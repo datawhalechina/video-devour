@@ -91,7 +91,10 @@ Codex / Claude Code / Cursor 等任何支持该约定的 agent 均可直接调�
 python3 .agents/skills/videodevour/scripts/devour.py search "关键词" --platform bilibili
 # 查看链接信息（标题/UP主/时长/封面）
 python3 .agents/skills/videodevour/scripts/devour.py info "https://www.bilibili.com/video/BV..."
-# 一键处理：下载 → ASR → 大纲 → 关键帧 → 中文图文报告
+# 微信视频号：检查元宝 Cookie / 下载分享链接视频
+python3 .agents/skills/videodevour/scripts/devour.py wechat --check
+python3 .agents/skills/videodevour/scripts/devour.py wechat "https://weixin.qq.com/sph/..."
+# 一键处理：下载 → ASR → 大纲 → 关键帧 → 中文图文报告（同样支持视频号链接）
 python3 .agents/skills/videodevour/scripts/devour.py process "https://www.bilibili.com/video/BV..." --level 高中
 # 读取最新报告
 python3 .agents/skills/videodevour/scripts/devour.py report --latest
@@ -214,10 +217,27 @@ source ~/.bashrc
 - B站未登录最高可取 720p 左右画质，高清晰度需自行配置登录态；短时间高频请求可能触发平台风控，服务端已带 cookie 指纹与自动重试
 - YouTube 存在 bot 检查：元数据自动回退 oEmbed 获取；下载需浏览器导出 cookies（Netscape 格式）并设置环境变量 `YTDLP_COOKIES_FILE` 指向该文件
 - **微信视频号**：粘贴 `weixin.qq.com/sph/...` 分享链接即可（不支持搜索与内嵌预览）。视频号没有公开直链，按优先级走三条链路：
-  1. **直连解析（推荐）**：在设置页「微信视频号」填入腾讯元宝 Cookie（登录 [yuanbao.tencent.com](https://yuanbao.tencent.com) 后按 F12 从 Network 面板复制），后端调用元宝解析接口换取 exportId+token → 视频号 feed 接口取媒体地址 → 若带 `decodeKey` 则本地 ISAAC64 解密前 128KB（WechatSphDecrypt 算法，已与独立参考实现交叉验证）→ ffprobe 校验。全程无第三方服务
+  1. **直连解析（推荐）**：在设置页「微信视频号」填入腾讯元宝 Cookie（配置步骤见下文「[微信视频号 Cookie 配置](#微信视频号-cookie-配置)」），后端调用元宝解析接口换取 exportId+token → 视频号 feed 接口取媒体地址 → 若带 `decodeKey` 则本地 ISAAC64 解密前 128KB（WechatSphDecrypt 算法，已与独立参考实现交叉验证）→ ffprobe 校验。全程无第三方服务
   2. **自建解析服务**：设置页填 `WECHAT_RESOLVER_URL`（可选 Bearer Token），兼容 [ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download) 的 sph worker（支持其 feed 结构返回）
   3. **本地捕获**：解析均失败时的兜底——用 wx_channels_download 桌面工具（依赖微信客户端 + 根证书 + 本地代理，工作流参考 [joeseesun/qiaomu-wx-video](https://github.com/joeseesun/qiaomu-wx-video)）下载到本机后，在「上传视频」页直接处理
 - 请确保对所处理的视频内容拥有相应权利或已获得授权，仅用于个人学习用途
+
+### 微信视频号 Cookie 配置
+
+视频号解析依赖腾讯元宝（[yuanbao.tencent.com](https://yuanbao.tencent.com)）的登录态，首次使用配置一次即可（Cookie 一般数周内有效，失效后重新复制更新）：
+
+1. 浏览器打开 [yuanbao.tencent.com](https://yuanbao.tencent.com) 并登录（微信扫码即可）
+2. 按 `F12` 打开开发者工具 → 切到 **Network（网络）** 标签 → 刷新页面
+3. 在请求列表中点击任意一条发往 `yuanbao.tencent.com` 的请求 → 找到 **Request Headers（请求标头）** 下的 `Cookie:` → 右键/手动复制**完整**值
+4. 打开 VideoDevour 设置控制台（主页入口，或任意页面右下角 ⚙ 悬浮按钮）→「微信视频号」→ 粘贴到 **元宝 Cookie** → 保存设置
+
+不走 WebUI 的等价方式（二选一即可）：
+
+- 写入项目根目录 `settings.json`：`"wechat_yuanbao_cookie": "粘贴的Cookie"`
+- 设置环境变量：`export YUANBAO_COOKIE="粘贴的Cookie"`
+
+> Cookie 仅保存在本机（`settings.json` 已被 gitignore 排除，页面上脱敏显示），不会上传到任何服务。
+> Agent Skill 用户可用 `devour.py wechat --check` 一键验证 Cookie 是否有效；解析报 401 时按上述步骤重新复制即可。
 
 ### 学习卡片与导出
 
