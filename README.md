@@ -68,9 +68,10 @@
 - **中文输出保障**：无论视频原语言是什么，大纲与报告一律输出简体中文（专有名词保留原文）。
 - **LLM 限流重试**：限流/超时自动指数退避重试，保证长任务稳定性。
 
-### 🔗 在线视频链接处理（B站 / YouTube）
-- **粘贴链接直接处理**：自动识别平台，预览窗口内嵌官方播放器在线播放，一键下载并进入完整处理流水线。
+### 🔗 在线视频链接处理（B站 / YouTube / 微信视频号）
+- **粘贴链接直接处理**：自动识别平台（可直接粘贴 App 分享文案），预览窗口内嵌官方播放器在线播放，一键下载并进入完整处理流水线。
 - **关键词搜索**：内置 B站官方搜索与 YouTube 搜索，封面/时长/UP主卡片式展示。
+- **微信视频号**：支持 `weixin.qq.com/sph/...` 分享链接，通过在线解析服务下载（尽力而为，公共实例可能限流；可用环境变量 `WECHAT_RESOLVER_URL` 指向自建解析服务），失败时引导使用本地捕获工具（[ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download)，工作流参考 [joeseesun/qiaomu-wx-video](https://github.com/joeseesun/qiaomu-wx-video)）下载后上传处理。
 - 由 `yt-dlp` 驱动，含 B站风控退避重试与 YouTube cookies 支持（`YTDLP_COOKIES_FILE`）。
 
 ### 🎓 学习增强
@@ -201,17 +202,18 @@ source ~/.bashrc
 
 配置保存在项目根目录的 `settings.json`（已被 gitignore，含密钥请勿提交），并会在每次任务执行时注入运行时配置；`backend/algorithm/config.py` 缺失时后端也可直接启动。`config.template.py` 为手动配置的参考模板（`cp config.template.py config.py`）。
 
-### 在线视频链接处理（B站 / YouTube）
+### 在线视频链接处理（B站 / YouTube / 微信视频号）
 
 前端「链接处理」页面支持不上传文件、直接通过视频链接生成报告：
 
-- **粘贴链接**：自动识别平台并展示预览窗口（B站用官方播放器嵌入，YouTube 用 embed 播放器），可在线播放预览
+- **粘贴链接**：自动识别平台并展示预览窗口（B站用官方播放器嵌入，YouTube 用 embed 播放器），可在线播放预览；直接粘贴 App 分享文案也可以（自动提取其中的纯链接）
 - **关键词搜索**：内置 B站（官方搜索接口）与 YouTube（ytsearch）搜索，结果卡片含封面/时长/UP主，点击即预览
 - **一键下载处理**：yt-dlp 下载（自动合并 mp4）→ 接入标准处理流水线（ASR → 大纲 → 关键帧 → 报告）
 
 说明：
 - B站未登录最高可取 720p 左右画质，高清晰度需自行配置登录态；短时间高频请求可能触发平台风控，服务端已带 cookie 指纹与自动重试
 - YouTube 存在 bot 检查：元数据自动回退 oEmbed 获取；下载需浏览器导出 cookies（Netscape 格式）并设置环境变量 `YTDLP_COOKIES_FILE` 指向该文件
+- **微信视频号**：粘贴 `weixin.qq.com/sph/...` 分享链接即可（不支持搜索与内嵌预览）。视频号没有公开直链，采用「在线解析」路径——将分享链接提交给解析服务换取媒体地址后下载，默认公共实例为 `sph.litao.workers.dev`（第三方服务，可能限流或要求授权，链接过期/直播回放可能无法解析），可通过环境变量 `WECHAT_RESOLVER_URL` 指向自建解析实例。解析失败时可使用本地捕获工具 [ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download)（依赖微信桌面端 + 根证书 + 本地代理，工作流参考 [joeseesun/qiaomu-wx-video](https://github.com/joeseesun/qiaomu-wx-video)）下载到本机后，在「上传视频」页直接处理
 - 请确保对所处理的视频内容拥有相应权利或已获得授权，仅用于个人学习用途
 
 ### 学习卡片与导出

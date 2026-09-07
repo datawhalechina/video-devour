@@ -1,6 +1,6 @@
 ---
 name: videodevour
-description: 使用 VideoDevour 把视频（B站/YouTube 链接或本地文件）处理成中文图文报告。当用户要求"处理这个视频"、"视频转笔记/报告/图文大纲"、"下载并总结B站/YouTube视频"时使用。支持搜索视频、查询链接信息、一键生成带关键帧的图文报告。
+description: 使用 VideoDevour 把视频（B站/YouTube 链接、微信视频号分享链接或本地文件）处理成中文图文报告。当用户要求"处理这个视频"、"视频转笔记/报告/图文大纲"、"下载并总结B站/YouTube/视频号视频"时使用。支持搜索视频、查询链接信息、一键生成带关键帧的图文报告。
 license: Apache-2.0
 compatibility: 需要 Python 3.12+ 与项目 .venv（uv sync），ffmpeg；任何支持 .agents/skills 约定的 agent 均可调用
 ---
@@ -14,7 +14,7 @@ compatibility: 需要 Python 3.12+ 与项目 .venv（uv sync），ffmpeg；任�
 
 ## 必要输入
 
-- **视频来源**：B站/YouTube 链接、或本地视频文件路径（MP4 等）
+- **视频来源**：B站/YouTube 链接、微信视频号分享链接（weixin.qq.com/sph/...，可直接粘贴含链接的分享文案）、或本地视频文件路径（MP4 等）
 - 可选：学习阶段（自由学习[默认]/小学/初中/高中/大学/硕士/博士/深入研究/垂直领域研究）
 
 ## 使用前检查（首次使用时执行一次）
@@ -100,6 +100,9 @@ python3 $S report --latest                # 4. 报告全文
 - 处理产物在 `<项目>/output/frames_*/` 目录，与 WebUI 历史共用（skill 直跑的任务不注册到 WebUI 任务列表）
 - 英文视频同样输出中文报告（内部已强制中文），但中文 ASR 模型对英文转写质量有限，内容深度受影响
 - B站未登录只能取约 720p；高频调用可能触发平台风控，脚本已内置退避重试
+- 微信视频号无公开直链：走在线解析服务（尽力而为，公共实例可能限流），失败时引导用户用
+  本地捕获工具（ltaoo/wx_channels_download）下载后按本地文件处理；可用环境变量
+  `WECHAT_RESOLVER_URL` 指向自建解析服务。视频号不支持搜索，只能粘贴分享链接
 - 仅处理拥有权利或已获授权的视频内容，用于个人学习
 
 ## Stop points

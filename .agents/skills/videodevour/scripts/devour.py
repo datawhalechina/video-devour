@@ -103,11 +103,14 @@ def cmd_process(args):
     from backend.algorithm.pipeline import run_full_pipeline
 
     source = args.source
-    if source.startswith(("http://", "https://")):
-        print(f"[1/2] 下载视频: {source}")
+    # 支持直接粘贴含链接的分享文案（微信/B站 App 分享格式）
+    from backend.devour.video_downloader import extract_share_url
+    url = extract_share_url(source)
+    if url.startswith(("http://", "https://")):
+        print(f"[1/2] 下载视频: {url}")
         from backend.devour.video_downloader import download_video
 
-        result = download_video(source, str(home / "uploads"), max_height=1080)
+        result = download_video(url, str(home / "uploads"), max_height=1080)
         video_path = result["file_path"]
         print(f"下载完成: {video_path}")
     else:
