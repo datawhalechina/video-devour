@@ -42,6 +42,11 @@ DEFAULT_SETTINGS = {
     "vlm_model_type": "qwen-vl-max",
     # 默认学习阶段
     "default_education_level": "自由学习",
+    # 微信视频号：元宝网页 Cookie 用于分享链接解析（见设置页说明）；
+    # 也可选配自建解析服务（ltaoo/wx_channels_download 的 sph worker）
+    "wechat_yuanbao_cookie": "",
+    "wechat_resolver_url": "",
+    "wechat_resolver_token": "",
 }
 
 # settings 字段 -> config 模块属性 的映射（仅非空时覆盖 config）
@@ -96,10 +101,15 @@ def mask_key(value: str) -> str:
     return value[:6] + "****" + value[-4:]
 
 
+# 需要脱敏的敏感字段
+_SECRET_KEYS = ("dashscope_api_key", "llm_api_key", "vlm_api_key",
+                "stepfun_api_key", "wechat_yuanbao_cookie", "wechat_resolver_token")
+
+
 def get_settings(mask: bool = True) -> dict:
     settings = load_settings()
     if mask:
-        for key in ("dashscope_api_key", "llm_api_key", "vlm_api_key", "stepfun_api_key"):
+        for key in _SECRET_KEYS:
             settings[key] = mask_key(settings.get(key, ""))
     return settings
 
@@ -110,7 +120,7 @@ def update_settings(updates: dict) -> dict:
     for key in DEFAULT_SETTINGS:
         if key in updates and updates[key] not in (None, ""):
             # 脱敏值（含 ****）不回写，避免把掩码存成真密钥
-            if key.endswith("_api_key") and "****" in str(updates[key]):
+            if key in _SECRET_KEYS and "****" in str(updates[key]):
                 continue
             settings[key] = updates[key]
     save_settings(settings)

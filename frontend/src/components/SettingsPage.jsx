@@ -53,6 +53,10 @@ function SettingsPage() {
         vlm_api_url: data.vlm_api_url,
         vlm_model_type: data.vlm_model_type,
         default_education_level: data.default_education_level,
+
+        wechat_yuanbao_cookie: data.wechat_yuanbao_cookie || '',
+        wechat_resolver_url: data.wechat_resolver_url || '',
+        wechat_resolver_token: data.wechat_resolver_token || '',
       })
     } catch (err) {
       setError(`加载设置失败: ${err.message}`)
@@ -397,6 +401,54 @@ function SettingsPage() {
             <span>测试 VLM 连通性</span>
           </button>
           <TestResult target="vlm" />
+        </motion.section>
+
+        {/* 微信视频号 */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
+        >
+          <h2 className="text-base font-bold text-gray-900 mb-2">微信视频号（分享链接解析）</h2>
+          <p className="text-xs text-gray-500 leading-relaxed mb-4">
+            视频号没有公开直链，下载需通过腾讯元宝接口解析：登录
+            <span className="text-primary-600"> yuanbao.tencent.com </span>
+            后按 F12 打开开发者工具 → Network → 任选请求复制 Cookie 填入下方
+            （仅保存在本机 settings.json）。未配置时自动尝试公共解析服务，或使用本地工具下载后直接上传。
+          </p>
+          <div className="space-y-4">
+            <div>
+              <label className={labelClass}>元宝 Cookie（用于解析分享链接）</label>
+              <input
+                type="password"
+                value={form.wechat_yuanbao_cookie || ''}
+                onChange={(e) => setField('wechat_yuanbao_cookie', e.target.value)}
+                placeholder="粘贴 yuanbao.tencent.com 的 Cookie"
+                className={inputClass}
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>自建解析服务 URL（可选）</label>
+                <input
+                  type="text"
+                  value={form.wechat_resolver_url || ''}
+                  onChange={(e) => setField('wechat_resolver_url', e.target.value)}
+                  placeholder="https://your-worker.workers.dev"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>解析服务 Token（可选）</label>
+                <input
+                  type="password"
+                  value={form.wechat_resolver_token || ''}
+                  onChange={(e) => setField('wechat_resolver_token', e.target.value)}
+                  placeholder="sph worker 的 ACCESS_CREDENTIAL"
+                  className={inputClass}
+                />
+              </div>
+            </div>
+          </div>
         </motion.section>
 
         {/* 默认学习阶段 */}

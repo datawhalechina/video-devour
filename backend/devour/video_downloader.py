@@ -128,8 +128,18 @@ def probe_video_info(url: str) -> Dict:
     """
     platform = detect_platform(url)
     if platform == "wechat":
-        # 视频号不支持 yt-dlp，先从分享页尽力取标题，解析下载在 download 阶段进行
-        return _wechat_share_info(url)
+        # 视频号不支持 yt-dlp：分享页兜底信息 + 直连链路尽力补全真实元数据
+        info = _wechat_share_info(url)
+        cookie = _wechat_setting("wechat_yuanbao_cookie", "YUANBAO_COOKIE")
+        if cookie:
+            try:
+                eid, token = _wechat_parse_share(url, cookie)
+                meta = _feed_meta(_wechat_feed_info(eid, token))
+                info.update({k: v for k, v in meta.items()
+                             if k in ("title", "uploader", "thumbnail") and v})
+            except Exception as e:
+                logging.warning(f"视频号元数据直连解析失败（不影响下载重试）: {e}")
+        return info
     if platform == "bilibili":
         # B站视频页接口对无指纹请求返回 412，优先走官方 view API
         bvid = _extract_video_id(url, "bilibili")
@@ -191,18 +201,257 @@ def _platform_referer(platform: str) -> str:
 
 # ---------------------------------------------------------------------------
 # 微信视频号（weixin.qq.com/sph/...）
-# 机制参考 joeseesun/qiaomu-wx-video：视频号没有公开直链，两条路径——
-# 1) 在线解析：把分享链接交给解析服务换媒体直链（尽力而为，服务可能限流/要求授权）
-# 2) 本地捕获：ltaoo/wx_channels_download 依赖微信桌面端+根证书+本地代理，
-#    属于重量级人工流程，本项目不自动执行，失败时引导用户走该路径后手动上传。
+# 机制参考 joeseesun/qiaomu-wx-video 与 ltaoo/wx_channels_download 的 sph worker：
+# 视频号没有公开直链，解析链路为——
+# 1) 直连（优先，无第三方）：腾讯元宝 get_parse_result（需元宝网页 Cookie）
+#    换取 exportId + token → 视频号 finder-preview get_feed_info 取媒体列表
+#    （url+urlToken，decodeKey 指示前 N 字节经 ISAAC64 加密）→ 下载后本地解密
+# 2) 自建解析服务：WECHAT_RESOLVER_URL 指向 sph worker 等服务（支持 Bearer token）
+# 3) 本地捕获（引导用户手动）：wx_channels_download 桌面端方案，失败时提示
 # ---------------------------------------------------------------------------
 
 _WECHAT_FAIL_HINT = (
-    "视频号在线解析失败：分享链接可能已过期、内容为直播回放，或解析服务暂时不可用。"
-    "可尝试：1) 稍后重试；2) 自建解析服务并通过环境变量 WECHAT_RESOLVER_URL 指向它；"
-    "3) 使用本地捕获工具（ltaoo/wx_channels_download，参考 joeseesun/qiaomu-wx-video 工作流）"
-    "下载到本机后，在“上传视频”页直接处理。"
+    "视频号解析失败。当前链路：①直连腾讯元宝解析（需在设置页填写元宝 Cookie，"
+    "登录 yuanbao.tencent.com 后从浏览器开发者工具复制）；②自建解析服务"
+    "（WECHAT_RESOLVER_URL）；③本地捕获工具 wx_channels_download 下载后上传。"
 )
+
+# 元宝解析接口的浏览器指纹头（来自 sph worker，缺失会 401）
+_YUANBAO_PARSE_URL = "https://yuanbao.tencent.com/api/weixin/get_parse_result"
+_YUANBAO_PARSE_HEADERS = {
+    "accept": "application/json, text/plain, */*",
+    "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "content-type": "application/json",
+    "origin": "https://yuanbao.tencent.com",
+    "referer": "https://yuanbao.tencent.com/chat/naQivTmsDa/cf4d0079-ed1b-4c55-a3f3-2ca1379727d1",
+    "user-agent": _BROWSER_UA,
+    "t-userid": "b9575f6b0a8c4a55a08096904a5ef20a",
+    "x-agentid": "naQivTmsDa/cf4d0079-ed1b-4c55-a3f3-2ca1379727d1",
+    "x-commit-tag": "72282a0d",
+    "x-device-id": "1921b001708100d7fa31002b9646bd0cc15a3e2e1f",
+    "x-id": "b9575f6b0a8c4a55a08096904a5ef20a",
+    "x-language": "zh-CN",
+    "x-os_version": "Mac OS(10.15.7)-Blink",
+    "x-platform": "mac",
+    "x-requested-with": "XMLHttpRequest",
+    "x-source": "web",
+    "x-webversion": "2.69.0",
+}
+
+_FEED_INFO_URL = "https://channels.weixin.qq.com/finder-preview/api/feed/get_feed_info"
+_FEED_INFO_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Content-Type": "application/json",
+    "Origin": "https://channels.weixin.qq.com",
+    "User-Agent": _BROWSER_UA,
+}
+
+
+class _WeChatError(Exception):
+    """视频号解析链路中可向用户展示的错误"""
+
+
+def _plain_text(value) -> str:
+    """HTML 片段转纯文本（微信 errMsg 常带标签与实体）"""
+    import html as _html
+    text = str(value or "")
+    text = re.sub(r"<br\s*/?>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]*>", "", text)
+    return _html.unescape(text).strip()
+
+
+def _wechat_setting(key: str, env_name: str = "") -> str:
+    """视频号相关配置：settings.json 优先，环境变量兜底"""
+    import os
+    value = ""
+    try:
+        from backend.algorithm.settings_store import load_settings
+        value = (load_settings().get(key) or "").strip()
+    except Exception:
+        pass
+    if not value and env_name:
+        value = (os.getenv(env_name) or "").strip()
+    return value
+
+
+def _wechat_parse_share(share_url: str, cookie: str):
+    """元宝解析分享链接 → (exportId, token)"""
+    import requests
+
+    headers = dict(_YUANBAO_PARSE_HEADERS)
+    if cookie:
+        headers["cookie"] = cookie
+    resp = requests.post(
+        _YUANBAO_PARSE_URL,
+        json={"type": "video_channel_url", "url": share_url, "scene": 1},
+        headers=headers, timeout=30,
+    )
+    if resp.status_code in (401, 403):
+        raise _WeChatError("元宝解析接口返回 401：Cookie 缺失或已过期，请在设置页更新")
+    if not resp.ok:
+        raise _WeChatError(f"元宝解析接口异常: HTTP {resp.status_code}")
+    data = (resp.json() or {}).get("data") or {}
+    export_id = data.get("wx_export_id") or ""
+    token, eid = "", export_id
+    playable = data.get("playable_url") or ""
+    if playable:
+        from urllib.parse import urlsplit, parse_qs
+        query = parse_qs(urlsplit(playable).query)
+        token = (query.get("token") or [""])[0]
+        eid = (query.get("eid") or [export_id])[0]
+    if not eid:
+        raise _WeChatError("元宝解析未返回 export id（分享链接可能已失效）")
+    return eid, token
+
+
+def _wechat_feed_info(eid: str, token: str) -> Dict:
+    """调用视频号 finder-preview feed 接口（无需登录，但需有效 eid+token）"""
+    import random
+    import time
+    from urllib.parse import quote
+    import requests
+
+    rid = f"{int(time.time()):x}-" + "".join(random.choice("0123456789abcdef") for _ in range(8))
+    api = (f"{_FEED_INFO_URL}?_rid={rid}"
+           "&_pageUrl=https%3A%2F%2Fchannels.weixin.qq.com%2Ffinder-preview%2Fpages%2Ffeed")
+    referer = ("https://channels.weixin.qq.com/finder-preview/pages/feed"
+               f"?entry_card_type=48&comment_scene=39&appid=0"
+               f"&token={quote(token)}&entry_scene=0&eid={quote(eid)}")
+    resp = requests.post(
+        api,
+        json={"baseReq": {"generalToken": token}, "exportId": eid},
+        headers={**_FEED_INFO_HEADERS, "Referer": referer},
+        timeout=30,
+    )
+    if not resp.ok:
+        raise _WeChatError(f"视频号接口异常: HTTP {resp.status_code}")
+    result = resp.json()
+    if result.get("errCode"):
+        raise _WeChatError(f"视频号接口错误: {_plain_text(result.get('errMsg'))}")
+    detail = (result.get("data") or {}).get("errMsg") or {}
+    title = _plain_text(detail.get("title"))
+    content = _plain_text(detail.get("content"))
+    if detail.get("type") or title or content:
+        raise _WeChatError(content and f"{title}: {content}" or title or "内容无法播放（可能为回放或已下架）")
+    return result
+
+
+def _walk_collect_video_media(node, found=None):
+    """递归在 feed JSON 中收集视频媒体项：含 mediaUrl/url 的对象且带解码/类型标识"""
+    if found is None:
+        found = []
+    if isinstance(node, dict):
+        url = None
+        for key in ("mediaUrl", "url"):
+            value = node.get(key)
+            if isinstance(value, str) and value.startswith(("http://", "https://")):
+                url = value
+                break
+        if url and ("decodeKey" in node or "fileType" in node
+                    or "mediaUrl" in node or "spec" in node):
+            token = node.get("urlToken") or ""
+            if token and token not in url:
+                url = url + token
+            decode_key = node.get("decodeKey")
+            try:
+                decode_key = int(str(decode_key)) if decode_key not in (None, "") else None
+            except (TypeError, ValueError):
+                decode_key = None
+            found.append({"url": url, "decode_key": decode_key})
+        for value in node.values():
+            _walk_collect_video_media(value, found)
+    elif isinstance(node, list):
+        for value in node:
+            _walk_collect_video_media(value, found)
+    return found
+
+
+def _feed_meta(feed: Dict) -> Dict:
+    """从 feed JSON 中提取标题/作者/封面（键名随版本漂移，做多候选兼容）"""
+    meta = {}
+
+    def _walk(node):
+        if isinstance(node, dict):
+            if "description" in node:
+                meta.setdefault("title", _plain_text(node.get("description"))[:120])
+                for key in ("nickname", "objectNickname", "userName"):
+                    if node.get(key):
+                        meta.setdefault("uploader", str(node[key]))
+                        break
+                for key in ("coverUrl", "coverImgUrl", "thumbUrl"):
+                    if node.get(key):
+                        meta.setdefault("thumbnail", str(node[key]))
+                        break
+            for value in node.values():
+                _walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                _walk(value)
+
+    _walk(feed)
+    return {k: v for k, v in meta.items() if v}
+
+
+def _wechat_resolve_via_service(share_url: str, target_dir: Path, vid: str):
+    """外部解析服务路径：返回 (sources, last_status)，sources 元素为 (kind, payload)"""
+    import requests
+
+    sources = []
+    base = (_wechat_setting("wechat_resolver_url", "WECHAT_RESOLVER_URL")
+            or DEFAULT_WECHAT_RESOLVER).rstrip("/")
+    token = _wechat_setting("wechat_resolver_token", "WECHAT_RESOLVER_TOKEN")
+    auth = {"Authorization": f"Bearer {token}"} if token else {}
+    attempts = [
+        ("GET", f"{base}/?url={share_url}", None),
+        ("POST", base, {"url": share_url}),
+    ]
+    last_status = None
+    for method, req_url, data in attempts:
+        try:
+            resp = requests.request(
+                method, req_url, data=data, timeout=30,
+                headers={
+                    "User-Agent": _BROWSER_UA,
+                    "Referer": "https://weixin.qq.com/",
+                    "Accept": "*/*",
+                    **auth,
+                },
+                allow_redirects=True,
+            )
+        except Exception as e:
+            logging.warning(f"解析服务请求失败({method} {req_url}): {e}")
+            continue
+        if resp.status_code != 200:
+            last_status = resp.status_code
+            logging.warning(f"解析服务返回 {resp.status_code}: {req_url}")
+            continue
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+        if ctype.startswith(("video/", "audio/", "application/octet-stream")):
+            # 解析服务直接回流媒体内容：落盘后按本地文件处理
+            tmp = target_dir / f"{vid}_resolve.tmp"
+            with open(tmp, "wb") as f:
+                f.write(resp.content)
+            sources.append(("local", str(tmp)))
+            break
+        # JSON 或 HTML：先按 feed 结构提取（兼容 sph worker），再退回直链正则
+        payload = _safe_json(resp)
+        feed_media = _walk_collect_video_media(payload or {})
+        if feed_media:
+            sources = [("m3u8" if item["url"].lower().split("?")[0].endswith(".m3u8")
+                        else "url", item["url"]) for item in feed_media]
+        else:
+            media = _find_media_urls(payload)
+            if not media:
+                media = re.findall(
+                    r"https?://[^\"'\\\s<>]+\.(?:mp4|m3u8)[^\"'\\\s<>]*",
+                    resp.text or "", re.IGNORECASE,
+                )
+            sources = [("m3u8" if u.lower().split("?")[0].endswith(".m3u8") else "url", u)
+                       for u in dict.fromkeys(media)]
+        if sources:
+            break
+    return sources, last_status
 
 
 def _wechat_share_info(url: str) -> Dict:
@@ -238,11 +487,6 @@ def _wechat_share_info(url: str) -> Dict:
     return info
 
 
-def _wechat_resolver_base() -> str:
-    import os
-    return (os.getenv("WECHAT_RESOLVER_URL") or DEFAULT_WECHAT_RESOLVER).rstrip("/")
-
-
 def _find_media_urls(obj, found=None):
     """递归在解析服务返回的 JSON 中收集疑似媒体直链"""
     if found is None:
@@ -257,64 +501,6 @@ def _find_media_urls(obj, found=None):
         for v in obj:
             _find_media_urls(v, found)
     return found
-
-
-def _wechat_resolve(share_url: str, target_dir: Path, vid: str):
-    """
-    调用解析服务，返回待下载源列表。
-
-    每个元素为 (kind, payload)：kind 为 "url"（mp4/m3u8 直链）或
-    "local"（解析服务直接回流的媒体内容，已落盘的临时文件）。
-    """
-    import requests
-
-    sources = []
-    base = _wechat_resolver_base()
-    attempts = [
-        ("GET", f"{base}/?url={share_url}", None),
-        ("POST", base, {"url": share_url}),
-    ]
-    last_status = None
-    for method, req_url, data in attempts:
-        try:
-            resp = requests.request(
-                method, req_url, data=data, timeout=30,
-                headers={
-                    "User-Agent": _BROWSER_UA,
-                    "Referer": "https://weixin.qq.com/",
-                    "Accept": "*/*",
-                },
-                allow_redirects=True,
-            )
-        except Exception as e:
-            logging.warning(f"解析服务请求失败({method} {req_url}): {e}")
-            continue
-        if resp.status_code != 200:
-            last_status = resp.status_code
-            logging.warning(f"解析服务返回 {resp.status_code}: {req_url}")
-            continue
-        ctype = (resp.headers.get("Content-Type") or "").lower()
-        if ctype.startswith(("video/", "audio/", "application/octet-stream")):
-            # 解析服务直接回流媒体内容：落盘后按本地文件处理
-            tmp = target_dir / f"{vid}_resolve.tmp"
-            with open(tmp, "wb") as f:
-                f.write(resp.content)
-            sources.append(("local", str(tmp)))
-            break
-        # JSON 或 HTML：提取媒体直链
-        media = _find_media_urls(_safe_json(resp))
-        if not media:
-            media = re.findall(
-                r"https?://[^\"'\\\s<>]+\.(?:mp4|m3u8)[^\"'\\\s<>]*",
-                resp.text or "", re.IGNORECASE,
-            )
-        sources = [("m3u8" if u.lower().split("?")[0].endswith(".m3u8") else "url", u)
-                   for u in dict.fromkeys(media)]
-        if sources:
-            break
-    if not sources and last_status:
-        sources = []  # 保留空列表，由调用方统一报错
-    return sources, last_status
 
 
 def _safe_json(resp):
@@ -348,10 +534,134 @@ def _validate_video_file(path: Path) -> bool:
     return False
 
 
+# 视频号媒体流加密：仅前 N 字节经 ISAAC64 密钥流 XOR（WechatSphDecrypt 算法）
+_WECHAT_ENC_LIMIT = 131072
+_U64 = (1 << 64) - 1
+
+
+def _isaac64_mix(a, b, c, d, e, f, g, h):
+    a = (a - e) & _U64
+    f ^= h >> 9
+    h = (h + a) & _U64
+    b = (b - f) & _U64
+    g ^= (a << 9) & _U64
+    a = (a + b) & _U64
+    c = (c - g) & _U64
+    h ^= b >> 23
+    b = (b + c) & _U64
+    d = (d - h) & _U64
+    a ^= (c << 15) & _U64
+    c = (c + d) & _U64
+    e = (e - a) & _U64
+    b ^= d >> 14
+    d = (d + e) & _U64
+    f = (f - b) & _U64
+    c ^= (e << 20) & _U64
+    e = (e + f) & _U64
+    g = (g - c) & _U64
+    d ^= f >> 17
+    f = (f + g) & _U64
+    h = (h - d) & _U64
+    e ^= (g << 14) & _U64
+    g = (g + h) & _U64
+    return a, b, c, d, e, f, g, h
+
+
+def _isaac64_keystream(key: int):
+    """按 WechatSphDecrypt 的 ISAAC64 实现生成随机数流（每个数 XOR 8 字节，大端）"""
+    golden = 0x9E3779B97F4A7C13
+    seed = [0] * 256
+    seed[0] = key & _U64
+    mm = [0] * 256
+    a = b = c = d = e = f = g = h = golden
+    for _ in range(4):
+        a, b, c, d, e, f, g, h = _isaac64_mix(a, b, c, d, e, f, g, h)
+    for i in range(0, 256, 8):
+        a = (a + seed[i]) & _U64
+        b = (b + seed[i + 1]) & _U64
+        c = (c + seed[i + 2]) & _U64
+        d = (d + seed[i + 3]) & _U64
+        e = (e + seed[i + 4]) & _U64
+        f = (f + seed[i + 5]) & _U64
+        g = (g + seed[i + 6]) & _U64
+        h = (h + seed[i + 7]) & _U64
+        a, b, c, d, e, f, g, h = _isaac64_mix(a, b, c, d, e, f, g, h)
+        mm[i:i + 8] = [a, b, c, d, e, f, g, h]
+    for i in range(0, 256, 8):
+        a = (a + mm[i]) & _U64
+        b = (b + mm[i + 1]) & _U64
+        c = (c + mm[i + 2]) & _U64
+        d = (d + mm[i + 3]) & _U64
+        e = (e + mm[i + 4]) & _U64
+        f = (f + mm[i + 5]) & _U64
+        g = (g + mm[i + 6]) & _U64
+        h = (h + mm[i + 7]) & _U64
+        a, b, c, d, e, f, g, h = _isaac64_mix(a, b, c, d, e, f, g, h)
+        mm[i:i + 8] = [a, b, c, d, e, f, g, h]
+
+    state = {"aa": 0, "bb": 0, "cc": 0}
+
+    def _refill():
+        # 对齐 Go 实现：CC/BB 先自增，再重排 MM 并重填 seed
+        state["cc"] = (state["cc"] + 1) & _U64
+        state["bb"] = (state["bb"] + state["cc"]) & _U64
+        aa, bb = state["aa"], state["bb"]
+        for i in range(256):
+            if i % 4 == 0:
+                aa = ~(aa ^ ((aa << 21) & _U64)) & _U64
+            elif i % 4 == 1:
+                aa = (aa ^ (aa >> 5)) & _U64
+            elif i % 4 == 2:
+                aa = (aa ^ ((aa << 12) & _U64)) & _U64
+            else:
+                aa = (aa ^ (aa >> 33)) & _U64
+            aa = (aa + mm[(i + 128) % 256]) & _U64
+            x = mm[i]
+            y = (mm[(x >> 3) % 256] + aa + bb) & _U64
+            mm[i] = y
+            bb = (mm[(y >> 11) % 256] + x) & _U64
+            seed[i] = bb
+        state["aa"], state["bb"] = aa, bb
+
+    _refill()  # rand64Init 末尾的首次 isAAC64
+    rand_cnt = 255
+    while True:
+        result = seed[rand_cnt]
+        if rand_cnt == 0:
+            _refill()
+            rand_cnt = 255
+        else:
+            rand_cnt -= 1
+        yield result
+
+
+def _decrypt_wechat_media_head(path: Path, key: int, enc_len: int = _WECHAT_ENC_LIMIT):
+    """就地解密媒体文件前 enc_len 字节（ISAAC64 密钥流 XOR，8 字节对齐）"""
+    size = path.stat().st_size
+    span = min(size, enc_len) // 8 * 8
+    if span <= 0:
+        return
+    with open(path, "r+b") as f:
+        head = f.read(span)
+        out = bytearray(span)
+        i = 0
+        for rand_number in _isaac64_keystream(key):
+            if i >= span:
+                break
+            stream = rand_number.to_bytes(8, "big")
+            for j in range(8):
+                if i + j >= span:
+                    break
+                out[i + j] = head[i + j] ^ stream[j]
+            i += 8
+        f.seek(0)
+        f.write(bytes(out))
+
+
 def _download_wechat_video(url: str, target_dir: str, progress_hook=None) -> Dict:
-    """视频号下载：解析直链 → 流式下载 → ffprobe 验证 → 落盘为 {vid}.mp4"""
-    import requests
+    """视频号下载：直连解析优先 → 流式下载（按需解密）→ ffprobe 验证 → {vid}.mp4"""
     import subprocess
+    import requests
 
     target = Path(target_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -365,22 +675,65 @@ def _download_wechat_video(url: str, target_dir: str, progress_hook=None) -> Dic
             except Exception:
                 pass
 
-    sources, resolver_status = _wechat_resolve(share_url, target, vid)
-    if not sources:
-        if resolver_status in (401, 403):
-            raise ValueError(_WECHAT_FAIL_HINT + f"（解析服务返回 {resolver_status}，公共实例可能已限流）")
-        raise ValueError(_WECHAT_FAIL_HINT)
+    notes = []       # 各链路的失败原因，最终汇总进报错信息
+    candidates = []  # [{"url", "decode_key"}]
+    local_file = None
+    meta = None
+
+    # 1) 直连链路：元宝解析 + feed 接口（无第三方）
+    cookie = _wechat_setting("wechat_yuanbao_cookie", "YUANBAO_COOKIE")
+    if cookie:
+        try:
+            eid, token = _wechat_parse_share(share_url, cookie)
+            feed = _wechat_feed_info(eid, token)
+            meta = _feed_meta(feed)
+            candidates = _walk_collect_video_media(feed)
+            if not candidates:
+                notes.append("直连解析成功但未在返回中找到视频流")
+        except _WeChatError as e:
+            notes.append(str(e))
+        except Exception as e:
+            notes.append(f"直连解析异常: {e}")
+    else:
+        notes.append("未配置元宝 Cookie（设置页「微信视频号」或环境变量 YUANBAO_COOKIE）")
+
+    # 2) 外部解析服务兜底（sph worker 等，支持 Bearer token）
+    try:
+        sources, resolver_status = _wechat_resolve_via_service(share_url, target, vid)
+        for kind, payload in sources:
+            if kind == "local":
+                local_file = payload
+            else:
+                candidates.append({"url": payload, "decode_key": None})
+        if not sources and resolver_status:
+            notes.append(f"解析服务返回 {resolver_status}")
+    except Exception as e:
+        notes.append(f"解析服务异常: {e}")
+
+    if not candidates and not local_file:
+        raise ValueError(_WECHAT_FAIL_HINT + "（" + "；".join(notes[-2:]) + "）")
 
     final_path = target / f"{vid}.mp4"
     errors = []
-    for kind, payload in sources:
+
+    # 解析服务直接回流的本地内容
+    if local_file:
         try:
-            if kind == "local":
-                Path(payload).replace(final_path)
-            elif kind == "m3u8":
-                # 未加密 HLS 可直接由 ffmpeg 下载合成；加密流会失败进入下一个候选
+            Path(local_file).replace(final_path)
+            if _validate_video_file(final_path):
+                return {"file_path": str(final_path), "info": _wechat_share_info(share_url)}
+            errors.append("解析服务回流内容校验失败")
+        finally:
+            if Path(local_file).exists():
+                Path(local_file).unlink(missing_ok=True)
+
+    for cand in candidates:
+        media_url, decode_key = cand["url"], cand["decode_key"]
+        try:
+            if media_url.lower().split("?")[0].endswith(".m3u8"):
+                # 未加密 HLS 由 ffmpeg 直接合成；加密流会失败进入下一候选
                 proc = subprocess.run(
-                    ["ffmpeg", "-y", "-i", payload, "-c", "copy",
+                    ["ffmpeg", "-y", "-i", media_url, "-c", "copy",
                      "-bsf:a", "aac_adtstoasc", str(final_path)],
                     capture_output=True, timeout=600,
                 )
@@ -388,7 +741,7 @@ def _download_wechat_video(url: str, target_dir: str, progress_hook=None) -> Dic
                     raise RuntimeError("m3u8 下载失败（可能为加密流）")
             else:
                 with requests.get(
-                    payload, stream=True, timeout=(10, 60),
+                    media_url, stream=True, timeout=(10, 60),
                     headers={"User-Agent": _MOBILE_UA, "Referer": "https://weixin.qq.com/"},
                 ) as resp:
                     resp.raise_for_status()
@@ -405,18 +758,22 @@ def _download_wechat_video(url: str, target_dir: str, progress_hook=None) -> Dic
                                        "downloaded_bytes": done,
                                        "total_bytes": total or None})
             _hook({"status": "finished"})
+            # 常规校验失败且带 decodeKey 时，尝试解密前 128KB 后重新校验
+            if not _validate_video_file(final_path) and decode_key:
+                _decrypt_wechat_media_head(final_path, decode_key)
             if _validate_video_file(final_path):
                 logging.info(f"视频号下载完成: {final_path}")
-                return {"file_path": str(final_path),
-                        "info": _wechat_share_info(share_url)}
-            errors.append(f"候选源校验失败: {payload[:80]}")
+                info = _wechat_share_info(share_url)
+                if meta:
+                    info.update({k: v for k, v in meta.items()
+                                 if k in ("title", "uploader", "thumbnail") and v})
+                return {"file_path": str(final_path), "info": info}
+            errors.append(f"候选源校验失败: {media_url[:80]}")
         except Exception as e:
-            errors.append(f"{str(e)[:120]} ({payload[:60]})")
+            errors.append(f"{str(e)[:120]} ({media_url[:60]})")
         finally:
-            if kind == "local" and Path(payload).exists():
-                Path(payload).unlink(missing_ok=True)
-    if final_path.exists():
-        final_path.unlink(missing_ok=True)
+            if final_path.exists() and not _validate_video_file(final_path):
+                final_path.unlink(missing_ok=True)
     detail = f"（{'；'.join(errors[-2:])}）" if errors else ""
     raise ValueError(_WECHAT_FAIL_HINT + detail)
 
