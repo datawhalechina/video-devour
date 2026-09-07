@@ -249,6 +249,56 @@ class LinkSearchRequest(BaseModel):
 class LinkProcessRequest(BaseModel):
     url: str
     education_level: str = "自由学习"
+    extras: List[str] = []       # 可选附加产物：mindmap / graph / card
+
+
+# 任务完成后可选自动生成的附加产物（默认不生成，按需勾选，节省处理时间）
+VALID_EXTRAS = {"mindmap", "graph", "card"}
+EXTRA_LABELS = {"mindmap": "思维导图", "graph": "知识图谱", "card": "学习卡片"}
+
+
+def _parse_extras(raw) -> List[str]:
+    """解析并校验 extras（逗号分隔字符串或列表），去重保序"""
+    if not raw:
+        return []
+    items = raw.split(",") if isinstance(raw, str) else list(raw)
+    seen = []
+    for item in items:
+        item = (item or "").strip().lower()
+        if item in VALID_EXTRAS and item not in seen:
+            seen.append(item)
+    return seen
+
+
+async def _generate_extras(task_id: str, extras: List[str], education_level: str):
+    """任务报告完成后按勾选顺序生成附加产物；单项失败不影响任务状态"""
+    results = {}
+    total = len(extras)
+    for i, kind in enumerate(extras):
+        label = EXTRA_LABELS[kind]
+        processing_tasks[task_id].update({
+            "stage": "generating_extras",
+            "message": f"正在生成{label}...（{i + 1}/{total}）"
+        })
+        save_tasks()
+        try:
+            def _gen(kind=kind):
+                output_dir = _find_task_output_dir(task_id)
+                if not output_dir:
+                    raise ValueError("未找到任务输出目录")
+                if kind == "card":
+                    return report_viz.generate_learning_card(output_dir, education_level)
+                fn = report_viz.generate_mindmap if kind == "mindmap" else report_viz.generate_knowledge_graph
+                return fn(output_dir, education_level)
+            import concurrent.futures
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                path = await loop.run_in_executor(executor, _gen)
+            results[kind] = {"ok": True, "path": str(path)}
+        except Exception as e:
+            logging.error(f"附加产物 {kind} 生成失败: {e}", exc_info=True)
+            results[kind] = {"ok": False, "error": str(e)[:200]}
+    return results
 
 
 def _run_link_probe(handler, **kwargs):
@@ -307,6 +357,7 @@ async def process_link_video(request: LinkProcessRequest):
         raise HTTPException(status_code=400, detail="请提供有效的视频链接")
     if request.education_level not in settings_store.EDUCATION_LEVELS:
         raise HTTPException(status_code=400, detail=f"学习阶段仅支持: {'/'.join(settings_store.EDUCATION_LEVELS)}")
+    extras_list = _parse_extras(request.extras)
 
     task_id = str(uuid.uuid4())
     file_path = UPLOAD_DIR / f"{task_id}.mp4"
@@ -321,17 +372,21 @@ async def process_link_video(request: LinkProcessRequest):
         "file_path": str(file_path),
         "source_url": url,
         "education_level": request.education_level,
+        "extras": extras_list,
         "created_at": datetime.now().isoformat(),
     }
     save_tasks()
 
-    task = asyncio.create_task(_download_and_process(task_id, url, file_path, request.education_level))
+    task = asyncio.create_task(
+        _download_and_process(task_id, url, file_path, request.education_level, extras_list)
+    )
     running_tasks[task_id] = task
 
     return UploadResponse(task_id=task_id, message="链接任务已创建，开始下载", filename=url)
 
 
-async def _download_and_process(task_id: str, url: str, file_path: Path, education_level: str):
+async def _download_and_process(task_id: str, url: str, file_path: Path, education_level: str,
+                                extras: List[str] = None):
     """下载链接视频后接续标准处理流程"""
     try:
         def _hook(d):
@@ -378,7 +433,7 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
         save_tasks()
 
         # 清理下载占位文件后接续标准流程
-        await process_video_async(task_id, file_path, education_level)
+        await process_video_async(task_id, file_path, education_level, extras)
     except asyncio.CancelledError:
         raise
     except Exception as e:
@@ -393,12 +448,15 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
         save_tasks()
 
 @app.post("/api/video/upload", response_model=UploadResponse)
-async def upload_video(file: UploadFile = File(...), education_level: str = Form("自由学习")):
+async def upload_video(file: UploadFile = File(...), education_level: str = Form("自由学习"),
+                       extras: str = Form("")):
     """
     上传视频文件并开始处理
 
     education_level: 学习阶段（小学/初中/高中），影响大纲与报告的语言风格
+    extras: 逗号分隔的可选附加产物（mindmap/graph/card），完成后自动生成
     """
+    extras_list = _parse_extras(extras)
     try:
         # 检查文件是否存在
         if not file.filename:
@@ -471,6 +529,7 @@ async def upload_video(file: UploadFile = File(...), education_level: str = Form
             "filename": display_filename,  # 使用处理后的显示文件名
             "file_path": str(file_path),
             "education_level": education_level,
+            "extras": extras_list,
             "created_at": datetime.now().isoformat()
         }
 
@@ -478,7 +537,7 @@ async def upload_video(file: UploadFile = File(...), education_level: str = Form
         save_tasks()
 
         # 启动后台处理任务并存储任务引用
-        task = asyncio.create_task(process_video_async(task_id, file_path, education_level))
+        task = asyncio.create_task(process_video_async(task_id, file_path, education_level, extras_list))
         running_tasks[task_id] = task
         
         return UploadResponse(
@@ -773,125 +832,27 @@ def _get_task_education_level(task_id: str, default: str = "高中") -> str:
     return task.get("education_level") or default
 
 
-CARD_SYSTEM_PROMPT = (
-    "你是一位专业的教育科技产品设计师与前端开发专家，擅长设计适合学生学习和复习的交互式学习卡片页面。"
-    "你深谙学习心理学和认知科学原理，能够将复杂的学习内容转化为清晰、易记、视觉友好的学习卡片。"
-    "注意只输出一段完整的HTML代码，不要输出任何其他内容。"
-)
-
-CARD_PROMPT_TEMPLATE = """请根据以下Markdown笔记内容，生成一个适合{level}学生学习的学习卡片HTML页面。
-
-## 设计要求（必须严格遵守）
-1. 页面为手机尺寸设计，卡片宽度写死 393px，提供完整的HTML文件代码，确保可以直接运行
-2. 使用 Bento Grid 风格布局，柔和深色背景（#1a1a2e 或 #16213e），高亮色区分内容类型（#4CAF50重点、#FF9800提醒、#2196F3概念）
-3. 通过 CDN 引入 TailwindCSS 3.0+ 和图标库（Font Awesome 或 Material Icons）
-4. 核心知识点使用超大字体粗体突出，形成清晰的视觉层次
-5. 使用图标或符号标记重点内容，关键概念使用卡片式设计
-6. 【重要】必须完整保留笔记中的所有标题、要点和关键信息，不要遗漏任何内容
-7. 【重要】只输出HTML代码，不要输出多段，不要包含解释文字
-8. 【重要】报告中若有 keyframes/ 开头的关键帧图片，必须在卡片对应章节保留 <img> 标签，
-   且 src 必须**逐字复制**报告中的原始路径（禁止改写文件名、禁止使用外部图片链接）
-
-## 笔记内容
----
-{notes}
----
-"""
-
 @app.post("/api/task/{task_id}/card")
 async def generate_task_card(task_id: str):
     """
-    根据任务的最终报告生成学习卡片HTML（结果缓存到任务目录）
+    根据任务的最终报告生成学习卡片HTML（结果缓存到任务目录，生成逻辑见 report_viz）
     """
     output_dir = _find_task_output_dir(task_id)
     if not output_dir:
         raise HTTPException(status_code=404, detail="任务不存在或尚未完成")
 
-    card_path = output_dir / "learning_card.html"
-    if card_path.exists():
-        return {"html": card_path.read_text(encoding="utf-8"), "cached": True}
-
-    report_path = output_dir / "final_report.md"
-    if not report_path.exists():
-        raise HTTPException(status_code=400, detail="任务尚未生成报告，无法生成学习卡片")
-
-    notes = report_path.read_text(encoding="utf-8")
-    if len(notes) > 24000:
-        notes = notes[:24000] + "\n\n... (内容过长，已截取部分内容)"
-
+    cached = (output_dir / "learning_card.html").exists()
     education_level = _get_task_education_level(task_id)
 
     def _generate():
-        from backend.algorithm.llm_handler import LLMHandler
-        llm = LLMHandler(education_level=education_level)
-        prompt = CARD_PROMPT_TEMPLATE.format(level=education_level, notes=notes)
-        html = llm.get_response(prompt, system_message=CARD_SYSTEM_PROMPT)
-        # 清理 LLM 可能返回的 Markdown 代码块标记
-        import re
-        html = re.sub(r'^```html\s*|```$', '', html.strip(), flags=re.MULTILINE).strip()
-        return html
+        return report_viz.generate_learning_card(output_dir, education_level)
 
     import concurrent.futures
     loop = asyncio.get_event_loop()
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        html = await loop.run_in_executor(executor, _generate)
+        card_path = await loop.run_in_executor(executor, _generate)
 
-    try:
-        html = _embed_card_images(html, output_dir)
-        card_path.write_text(html, encoding="utf-8")
-    except Exception as e:
-        logging.warning(f"学习卡片缓存写入失败: {e}")
-
-    return {"html": _embed_card_images(html, output_dir), "cached": False}
-
-
-def _embed_card_images(html: str, output_dir: Path) -> str:
-    """
-    卡片图片自包含处理：
-    - <img> 引用的本地 keyframes 图片统一内嵌为 base64（卡片在任何上下文打开都有图）
-    - LLM 改写过的错误路径按「序号前缀 → 文件名包含」自动匹配实际文件
-    - 外链图片（LLM 编造的占位图）直接移除
-    """
-    import base64
-    import mimetypes
-    import re as _re
-
-    kf_dir = output_dir / "keyframes"
-    real_files = (sorted(kf_dir.glob("*.jpg")) + sorted(kf_dir.glob("*.png"))) if kf_dir.exists() else []
-
-    def find_real_file(ref_name: str):
-        ref_name = Path(ref_name).name
-        for f in real_files:                      # 精确匹配
-            if f.name == ref_name:
-                return f
-        m_num = _re.match(r"^(\d+)", ref_name)    # 序号前缀匹配（01_xxx）
-        if m_num:
-            for f in real_files:
-                if f.name.startswith(m_num.group(1) + "_"):
-                    return f
-        core = _re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9]", "", ref_name.rsplit(".", 1)[0])
-        if core:                                  # 文件名包含匹配
-            for f in real_files:
-                if core in _re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9]", "", f.name):
-                    return f
-        return None
-
-    def replace_img(match):
-        tag, src = match.group(0), match.group(1)
-        if src.startswith("data:"):
-            return tag
-        if src.startswith(("http://", "https://")):
-            return ""                              # 移除编造的外链图
-        if not src.startswith("keyframes/"):
-            return tag
-        real = find_real_file(src)
-        if not real:
-            return ""                              # 无法匹配的引用，移除避免破图
-        mime = mimetypes.guess_type(str(real))[0] or "image/jpeg"
-        data = base64.b64encode(real.read_bytes()).decode("ascii")
-        return tag.replace(f'"{src}"', f'data:{mime};base64,{data}', 1)
-
-    return _re.sub(r'<img\b[^>]*src="([^"]*)"[^>]*>', replace_img, html)
+    return {"html": card_path.read_text(encoding="utf-8"), "cached": cached}
 
 
 # --- 思维导图与知识图谱（生成逻辑见 backend/algorithm/report_viz.py） ---
@@ -1196,9 +1157,10 @@ async def delete_task(task_id: str):
         print(f"删除任务 {task_id} 时发生未知错误: {e}")
         raise HTTPException(status_code=500, detail=f"删除任务时发生错误: {str(e)}")
 
-async def process_video_async(task_id: str, file_path: Path, education_level: str = None):
+async def process_video_async(task_id: str, file_path: Path, education_level: str = None,
+                              extras: List[str] = None):
     """
-    异步处理视频文件
+    异步处理视频文件（extras: 报告完成后可选生成的附加产物）
     """
     try:
         # 更新状态为处理中
@@ -1209,9 +1171,9 @@ async def process_video_async(task_id: str, file_path: Path, education_level: st
             "message": "开始处理视频..."
         })
         save_tasks()
-        
+
         # 不创建额外的task_id目录，让pipeline自己创建frames_开头的目录
-        
+
         # 调用核心处理流程
         processing_tasks[task_id].update({
             "stage": "asr",
@@ -1219,17 +1181,29 @@ async def process_video_async(task_id: str, file_path: Path, education_level: st
             "message": "正在进行语音识别..."
         })
         save_tasks()
-        
+
         # 这里调用实际的处理函数
         # 注意：run_full_pipeline 可能需要修改以支持异步和进度回调
         result = await run_pipeline_with_progress(str(file_path), task_id, education_level)
-        
+
+        # 报告完成后按需生成附加产物（导图/图谱/卡片），未勾选则直接完成
+        extras = extras or []
+        extras_note = ""
+        if extras:
+            extras_results = await _generate_extras(task_id, extras, education_level)
+            ok = [EXTRA_LABELS[k] for k, r in extras_results.items() if r["ok"]]
+            failed = [EXTRA_LABELS[k] for k, r in extras_results.items() if not r["ok"]]
+            if ok:
+                extras_note = f"（含{'、'.join(ok)}）"
+            if failed:
+                extras_note += f"（{'、'.join(failed)}生成失败，可在报告页重试）"
+
         # 处理完成
         processing_tasks[task_id].update({
             "status": "completed",
             "stage": "completed",
             "progress": 100,
-            "message": "处理完成"
+            "message": f"处理完成{extras_note}"
         })
         save_tasks()
         

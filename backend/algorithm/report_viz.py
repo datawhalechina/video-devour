@@ -264,3 +264,118 @@ def generate_knowledge_graph(output_dir, education_level: str = None) -> Path:
     cache.write_text(html, encoding="utf-8")
     logging.info(f"知识图谱已生成: {cache}")
     return cache
+
+
+# ---------------------------------------------------------------------------
+# 学习卡片（原 main.py 端点逻辑下沉，供 API / 任务尾部 / skill 共用）
+# ---------------------------------------------------------------------------
+
+CARD_SYSTEM_PROMPT = (
+    "你是一位专业的教育科技产品设计师与前端开发专家，擅长设计适合学生学习和复习的交互式学习卡片页面。"
+    "你深谙学习心理学和认知科学原理，能够将复杂的学习内容转化为清晰、易记、视觉友好的学习卡片。"
+    "注意只输出一段完整的HTML代码，不要输出任何其他内容。"
+)
+
+CARD_PROMPT_TEMPLATE = """请根据以下Markdown笔记内容，生成一个适合{level}学生学习的学习卡片HTML页面。
+
+## 设计要求（必须严格遵守）
+1. 页面为手机尺寸设计，卡片宽度写死 393px，提供完整的HTML文件代码，确保可以直接运行
+2. 使用 Bento Grid 风格布局，柔和深色背景（#1a1a2e 或 #16213e），高亮色区分内容类型（#4CAF50重点、#FF9800提醒、#2196F3概念）
+3. 通过 CDN 引入 TailwindCSS 3.0+ 和图标库（Font Awesome 或 Material Icons）
+4. 核心知识点使用超大字体粗体突出，形成清晰的视觉层次
+5. 使用图标或符号标记重点内容，关键概念使用卡片式设计
+6. 【重要】必须完整保留笔记中的所有标题、要点和关键信息，不要遗漏任何内容
+7. 【重要】只输出HTML代码，不要输出多段，不要包含解释文字
+8. 【重要】报告中若有 keyframes/ 开头的关键帧图片，必须在卡片对应章节保留 <img> 标签，
+   且 src 必须**逐字复制**报告中的原始路径（禁止改写文件名、禁止使用外部图片链接）
+
+## 笔记内容
+---
+{notes}
+---
+"""
+
+
+def _embed_card_images(html: str, output_dir: Path) -> str:
+    """
+    卡片图片自包含处理：
+    - <img> 引用的本地 keyframes 图片统一内嵌为 base64（卡片在任何上下文打开都有图）
+    - LLM 改写过的错误路径按「序号前缀 → 文件名包含」自动匹配实际文件
+    - 外链图片（LLM 编造的占位图）直接移除
+    """
+    import base64
+    import mimetypes
+
+    kf_dir = output_dir / "keyframes"
+    real_files = (sorted(kf_dir.glob("*.jpg")) + sorted(kf_dir.glob("*.png"))) if kf_dir.exists() else []
+
+    def find_real_file(ref_name: str):
+        ref_name = Path(ref_name).name
+        for f in real_files:                      # 精确匹配
+            if f.name == ref_name:
+                return f
+        m_num = re.match(r"^(\d+)", ref_name)     # 序号前缀匹配（01_xxx）
+        if m_num:
+            for f in real_files:
+                if f.name.startswith(m_num.group(1) + "_"):
+                    return f
+        core = re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9]", "", ref_name.rsplit(".", 1)[0])
+        if core:                                  # 文件名包含匹配
+            for f in real_files:
+                if core in re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9]", "", f.name):
+                    return f
+        return None
+
+    def replace_img(match):
+        tag, src = match.group(0), match.group(1)
+        if src.startswith("data:"):
+            return tag
+        if src.startswith(("http://", "https://")):
+            return ""                              # 移除编造的外链图
+        if not src.startswith("keyframes/"):
+            return tag
+        real = find_real_file(src)
+        if not real:
+            return ""                              # 无法匹配的引用，移除避免破图
+        mime = mimetypes.guess_type(str(real))[0] or "image/jpeg"
+        data = base64.b64encode(real.read_bytes()).decode("ascii")
+        return tag.replace(f'"{src}"', f'data:{mime};base64,{data}', 1)
+
+    return re.sub(r'<img\b[^>]*src="([^"]*)"[^>]*>', replace_img, html)
+
+
+def generate_learning_card(output_dir, education_level: str = None) -> Path:
+    """
+    生成（或读取缓存的）学习卡片 HTML（Bento Grid 手机尺寸，图片内嵌 base64）。
+
+    Args:
+        output_dir: 任务输出目录（含 final_report.md）
+        education_level: 学习阶段，为空时使用设置中的默认值
+
+    Returns:
+        Path: learning_card.html 路径
+
+    Raises:
+        ValueError: 报告不存在或生成失败
+    """
+    output_dir = Path(output_dir)
+    cache = output_dir / "learning_card.html"
+    if cache.exists():
+        return cache
+
+    notes = _read_report_text(output_dir)
+    if len(notes) > 24000:
+        notes = notes[:24000] + "\n\n... (内容过长，已截取部分内容)"
+    if education_level is None:
+        try:
+            from backend.algorithm.settings_store import load_settings
+            education_level = load_settings().get("default_education_level")
+        except Exception:
+            education_level = None
+
+    prompt = CARD_PROMPT_TEMPLATE.format(level=education_level, notes=notes)
+    html = _run_llm(CARD_SYSTEM_PROMPT, prompt)
+    html = _embed_card_images(html, output_dir)
+    cache.write_text(html, encoding="utf-8")
+    logging.info(f"学习卡片已生成: {cache}")
+    return cache

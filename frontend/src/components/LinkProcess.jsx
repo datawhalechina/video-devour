@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle, Settings, KeyRound } from 'lucide-react'
 import { getLinkInfo, searchLinkVideos, processLink } from '../api/videoService'
+import ExtrasPicker, { getSelectedExtras } from './ExtrasPicker'
 
 const PLATFORM_TABS = [
   { key: 'bilibili', label: 'B站', embed: (id) => `https://player.bilibili.com/player.html?bvid=${id}&autoplay=0` },
@@ -81,7 +82,7 @@ function LinkProcess() {
     setProcessing(true)
     setError(null)
     try {
-      const result = await processLink(link, '自由学习')
+      const result = await processLink(link, '自由学习', getSelectedExtras())
       navigate(`/processing/${result.task_id}`)
     } catch (err) {
       showError(`创建任务失败: ${err.message}`)
@@ -158,6 +159,12 @@ function LinkProcess() {
               {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               <span>一键下载处理</span>
             </button>
+          </div>
+
+          {/* 附加产物（可选）：勾选后任务完成时自动生成 */}
+          <div className="flex items-center space-x-3">
+            <span className="text-xs text-gray-500 flex-shrink-0">完成后生成（可选，默认不生成）：</span>
+            <ExtrasPicker />
           </div>
 
           <div className="border-t border-gray-100 pt-4">

@@ -39,10 +39,11 @@ api.interceptors.response.use(
  * @param {string} educationLevel - 学习阶段，默认"自由学习"
  * @returns {Promise} 返回任务ID
  */
-export const uploadVideo = async (file, onProgress, educationLevel = "自由学习") => {
+export const uploadVideo = async (file, onProgress, educationLevel = "自由学习", extras = []) => {
   const formData = new FormData();
   formData.append("file", file);  // 修改字段名从 "video" 到 "file"
   formData.append("education_level", educationLevel);
+  if (extras?.length) formData.append("extras", extras.join(","));
 
   try {
     const response = await api.post("/video/upload", formData, {
@@ -175,10 +176,10 @@ export const searchLinkVideos = async (query, platform = "bilibili", maxResults 
  * @param {string} url - 视频链接
  * @param {string} educationLevel - 学习阶段
  */
-export const processLink = async (url, educationLevel = "自由学习") => {
+export const processLink = async (url, educationLevel = "自由学习", extras = []) => {
   try {
     const response = await api.post("/video/link", {
-      url, education_level: educationLevel,
+      url, education_level: educationLevel, extras,
     }, { timeout: 60000 });
     return response;
   } catch (error) {

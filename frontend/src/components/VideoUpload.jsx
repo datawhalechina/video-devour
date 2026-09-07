@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, ArrowLeft, Play, GraduationCap, Tv } from 'lucide-react'
+import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, ArrowLeft, Play, GraduationCap, Tv, Sparkles } from 'lucide-react'
 import { useNavigate, Link } from 'react-router-dom'
 import { uploadVideo } from '../api/videoService'
+import ExtrasPicker, { getSelectedExtras } from './ExtrasPicker'
 
 function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProcessing }) {
   const navigate = useNavigate()
@@ -82,7 +83,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
         
         const result = await uploadVideo(fileItem.file, (progress) => {
           setUploadProgress(prev => ({ ...prev, [fileItem.id]: progress }))
-        }, educationLevel)
+        }, educationLevel, getSelectedExtras())
 
         // 更新状态为成功
         setSelectedFiles(prev => 
@@ -194,7 +195,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
         className="bg-white rounded-3xl shadow-2xl p-10 border border-gray-100"
       >
         {/* 学习阶段选择 */}
-        <div className="mb-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center justify-between">
+        <div className="mb-4 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <GraduationCap className="w-5 h-5 text-primary-600" />
             <div>
@@ -217,6 +218,18 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
               </button>
             ))}
           </div>
+        </div>
+
+        {/* 附加产物（可选）：勾选后任务完成时自动生成，不勾最省时间 */}
+        <div className="mb-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Sparkles className="w-5 h-5 text-purple-500" />
+            <div>
+              <p className="text-sm font-semibold text-gray-900">完成后生成（可选）</p>
+              <p className="text-xs text-gray-500">默认不生成；勾选后报告完成时自动产出对应内容，报告页也可随时手动生成</p>
+            </div>
+          </div>
+          <ExtrasPicker />
         </div>
 
         {/* 在线链接入口 */}

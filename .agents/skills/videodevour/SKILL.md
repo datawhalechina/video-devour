@@ -74,8 +74,11 @@ python3 <skill目录>/scripts/devour.py process /path/to/video.mp4 --level 初�
 - 输出为逐阶段进度日志，成功结束时打印 JSON 结果：
   `{"report": ".../final_report.md", "outline": ".../detailed_outline.md", ...}`
 - ASR 模式跟随 `settings.json`（离线=本地 MPS/CPU，在线=DashScope），LLM/VLM 固定走云端
+- **思维导图/知识图谱/学习卡片默认不生成**（为不需要的用户节省时间）。用户明确需要时，
+  加 `--extras "mindmap,graph,card"`（可任选其一或多个，逗号分隔）在报告完成后一次生成；
+  也可事后用 `mindmap` / `graph` 子命令单独生成。**不要在用户未要求时主动生成**
 
-### 5. 生成思维导图与知识图谱（对学习场景推荐）
+### 5. 生成思维导图与知识图谱（仅用户需要时）
 
 基于任务报告生成两种知识可视化（LLM 生成、浏览器渲染的交互页面）：
 
@@ -88,6 +91,7 @@ python3 <skill目录>/scripts/devour.py graph --latest --open
 ```
 
 输出 JSON `{"html": "<输出目录>/mindmap.html", ...}`，将 html 路径呈现给用户（浏览器打开即用）。
+若在 `process` 时已用 `--extras` 生成过，直接使用输出 JSON 中 extras 里的路径，无需重复生成。
 
 ### 6. 读取报告
 
@@ -98,14 +102,21 @@ python3 <skill目录>/scripts/devour.py graph --latest --open
 python3 <skill目录>/scripts/devour.py report --latest
 ```
 
-## 推荐组合工作流（一次视频 → 全套学习材料）
+## 推荐组合工作流
+
+**默认（最快路径，适合只要报告的用户）**：
 
 ```bash
 S=<skill目录>/scripts/devour.py
-python3 $S process "https://www.bilibili.com/video/BV..." --level 高中   # 1. 下载+处理
-python3 $S mindmap --latest --open        # 2. 思维导图（建立框架）
-python3 $S graph --latest --open          # 3. 知识图谱（概念关联）
-python3 $S report --latest                # 4. 报告全文
+python3 $S process "https://www.bilibili.com/video/BV..." --level 高中   # 下载+处理，产出报告
+python3 $S report --latest                                               # 报告全文
+```
+
+**全套学习材料（仅当用户明确需要导图/图谱/卡片时）**：
+
+```bash
+S=<skill目录>/scripts/devour.py
+python3 $S process "https://www.bilibili.com/video/BV..." --level 高中 --extras "mindmap,graph,card"
 ```
 
 向用户交付时建议按「报告全文 → 思维导图 → 知识图谱」的顺序呈现：先细节后框架，便于学习理解。

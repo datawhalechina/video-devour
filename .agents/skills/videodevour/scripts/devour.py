@@ -134,6 +134,26 @@ def cmd_process(args):
         sys.exit(2)
     out_dir = candidates[-1]
     report = out_dir / "final_report.md"
+
+    # 可选附加产物：--extras mindmap,graph,card（默认不生成，节省时间）
+    extras_result = {}
+    extras = [x.strip() for x in (getattr(args, "extras", "") or "").split(",") if x.strip()]
+    labels = {"mindmap": "思维导图", "graph": "知识图谱", "card": "学习卡片"}
+    for kind in extras:
+        if kind not in labels:
+            continue
+        print(f"生成{labels[kind]}（LLM 生成约 10-30 秒）...")
+        try:
+            from backend.algorithm import report_viz
+            if kind == "card":
+                path = report_viz.generate_learning_card(out_dir, args.level)
+            else:
+                fn = report_viz.generate_mindmap if kind == "mindmap" else report_viz.generate_knowledge_graph
+                path = fn(out_dir, args.level)
+            extras_result[kind] = str(path)
+        except Exception as e:
+            extras_result[kind] = f"生成失败: {e}"
+
     outcome = {
         "output_dir": str(out_dir),
         "report": str(report) if report.exists() else None,
@@ -146,6 +166,8 @@ def cmd_process(args):
         if (out_dir / "keyframes").exists()
         else [],
     }
+    if extras_result:
+        outcome["extras"] = extras_result
     if not outcome["report"]:
         outcome["error"] = "处理未完成：final_report.md 未生成，请检查 processing.log"
         print(json.dumps(outcome, ensure_ascii=False, indent=2))
@@ -283,6 +305,8 @@ def main():
     p_proc.add_argument("source", help="视频链接或本地文件路径")
     p_proc.add_argument("--level", default="自由学习",
                         choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
+    p_proc.add_argument("--extras", default="",
+                        help="报告完成后附加生成（可选，默认不生成），逗号分隔：mindmap,graph,card")
     p_proc.set_defaults(func=cmd_process)
 
     p_wx = sub.add_parser("wechat", help="微信视频号：下载分享链接视频 / 检查元宝 Cookie")
