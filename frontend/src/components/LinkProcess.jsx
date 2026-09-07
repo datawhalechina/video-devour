@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle } from 'lucide-react'
+import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle, Settings, KeyRound } from 'lucide-react'
 import { getLinkInfo, searchLinkVideos, processLink } from '../api/videoService'
 
 const PLATFORM_TABS = [
@@ -115,7 +115,14 @@ function LinkProcess() {
             <Tv className="w-5 h-5 text-primary-600" />
             <h1 className="text-lg font-bold text-gray-900">在线视频链接处理</h1>
           </div>
-          <div className="w-16" />
+          <button
+            onClick={() => navigate('/settings')}
+            title="设置控制台（ASR / LLM / VLM / 视频号 Cookie）"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:text-primary-600 hover:border-primary-300 transition text-sm"
+          >
+            <Settings className="w-4 h-4" />
+            <span>设置</span>
+          </button>
         </div>
       </header>
 
@@ -195,7 +202,16 @@ function LinkProcess() {
         {error && (
           <div className="flex items-center space-x-2 p-4 bg-red-50 border-l-4 border-red-500 rounded-xl text-red-700 text-sm">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <span>{error}</span>
+            <span className="flex-1">{error}</span>
+            {/Cookie/.test(error) && (
+              <button
+                onClick={() => navigate('/settings')}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold flex-shrink-0 transition"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>去配置 Cookie</span>
+              </button>
+            )}
           </div>
         )}
 
