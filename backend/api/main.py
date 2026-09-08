@@ -1120,12 +1120,15 @@ async def get_task_card(task_id: str):
 
 
 @app.get("/api/export/{task_id}")
-async def export_task_markdown(task_id: str, type: str = "all"):
+async def export_task_markdown(task_id: str, type: str = "all", mode: str = "inline"):
     """
     导出任务的 Markdown。
 
-    type: outline（图文大纲）/ report（精简报告）/ all（两者合并，兼容旧调用）
-    图文大纲与报告结构差异大，分开导出阅读体验更好，故默认前端分别下载。
+    type: outline（图文大纲）/ report（精简报告）/ detailed（详细报告）/ all（全部合并）
+    mode: inline（图片内嵌，单文件可移植）/ zip（md + 原图打包，查看器 100% 兼容）
+
+    说明：base64 内嵌会让单行超长（25KB+），部分查看器会截断导致图片显示失败，
+    因此内嵌模式会把图片压缩到 800px 内、单张控制在约 8KB；追求原图质量用 zip 模式。
     """
     output_dir = _find_task_output_dir(task_id)
     if not output_dir:
@@ -1143,58 +1146,113 @@ async def export_task_markdown(task_id: str, type: str = "all"):
     def _read(path):
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
-    def _embed_local_images(md_text: str) -> str:
-        """
-        把 Markdown 中的本地相对路径图片（keyframes/xxx.jpg 等）内嵌为 base64，
-        使导出的单个 .md 文件在任意本地查看器中都能直接显示图片。
-        """
-        import base64
-        import mimetypes
-        import re
+    import base64
+    import io
+    import mimetypes
+    import re
 
+    # 内嵌模式的目标：单张 base64 尽量 ≤ 8KB（约 6KB 二进制），
+    # 否则单行超长会被部分 Markdown 查看器截断导致图片不显示
+    _INLINE_TARGET_BYTES = 6 * 1024
+
+    def _compress_image(img_path) -> tuple:
+        """把图片压缩到目标体积内（逐档降质量/降分辨率），返回 (mime, bytes)"""
+        try:
+            from PIL import Image
+            img = Image.open(img_path)
+            img = img.convert("RGB") if img.mode not in ("RGB", "L") else img
+            # 先按最长边 640 缩放，再逐档降质量；仍超标则继续缩小分辨率
+            for max_side in (640, 480, 360, 280):
+                work = img.copy()
+                if max(work.size) > max_side:
+                    work.thumbnail((max_side, max_side), Image.LANCZOS)
+                for quality in (70, 60, 50, 40):
+                    buf = io.BytesIO()
+                    work.save(buf, format="JPEG", quality=quality, optimize=True)
+                    data = buf.getvalue()
+                    if len(data) <= _INLINE_TARGET_BYTES:
+                        return "image/jpeg", data
+            # 兜底：返回最后一次压缩结果（体积最小）
+            return "image/jpeg", data
+        except Exception as e:
+            logging.warning(f"图片压缩失败，使用原图 {img_path.name}: {e}")
+            mime = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
+            return mime, img_path.read_bytes()
+
+    def _resolve(rel_path: str):
+        rel_path = rel_path.replace("\\", "/").lstrip("./")
+        p = output_dir / rel_path
+        return p if p.exists() else None
+
+    def _embed_local_images(md_text: str) -> str:
+        """把本地相对路径图片压缩后内嵌为 base64（控制单行长度）"""
         def _replace(match):
             alt, rel_path = match.group(1), match.group(2)
-            rel_path = rel_path.replace("\\", "/").lstrip("./")
-            img_path = output_dir / rel_path
-            if not img_path.exists():
+            img_path = _resolve(rel_path)
+            if not img_path:
                 return match.group(0)
-            mime = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
-            data = base64.b64encode(img_path.read_bytes()).decode("ascii")
-            return f"![{alt}](data:{mime};base64,{data})"
+            mime, data = _compress_image(img_path)
+            return f"![{alt}](data:{mime};base64,{base64.b64encode(data).decode('ascii')})"
 
-        return re.sub(r"!\[([^\]]*)\]\((?!https?://)([^)]+)\)", _replace, md_text)
+        return re.sub(r"!\[([^\]]*)\]\((?!https?://|data:)([^)]+)\)", _replace, md_text)
 
-    outline_content = _embed_local_images(_read(outline_path))
-    report_content = _embed_local_images(_read(report_path))
-    detailed_content = _embed_local_images(_read(detailed_report_path))
+    # 组装内容
+    outline_content = _read(outline_path)
+    report_content = _read(report_path)
+    detailed_content = _read(detailed_report_path)
 
     if type == "detailed":
         if not detailed_content:
             raise HTTPException(status_code=400, detail="该任务没有详细报告")
-        content, filename = detailed_content, f"详细报告_{task_id[:8]}.md"
+        parts, base_name = [detailed_content], f"详细报告_{task_id[:8]}"
     elif type == "outline":
         if not outline_content:
             raise HTTPException(status_code=400, detail="该任务没有图文大纲")
-        content, filename = outline_content, f"图文大纲_{task_id[:8]}.md"
+        parts, base_name = [outline_content], f"图文大纲_{task_id[:8]}"
     elif type == "report":
         if not report_content:
             raise HTTPException(status_code=400, detail="该任务没有精简报告")
-        content, filename = report_content, f"精简报告_{task_id[:8]}.md"
+        parts, base_name = [report_content], f"精简报告_{task_id[:8]}"
     else:
         parts = []
         if outline_content:
             parts.append(f"# 内容大纲\n\n{outline_content}")
         if report_content:
             parts.append(f"# 详细报告\n\n{report_content}")
-        content, filename = "\n\n---\n\n".join(parts), f"videodevour_{task_id[:8]}.md"
+        if detailed_content:
+            parts.append(f"# 原文对照报告\n\n{detailed_content}")
+        base_name = f"videodevour_{task_id[:8]}"
 
     from urllib.parse import quote
+
+    # ---------- ZIP 模式：md 用相对路径 + 原图一起打包 ----------
+    if mode == "zip":
+        import zipfile
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"{base_name}.md", "\n\n---\n\n".join(parts))
+            kf_dir = output_dir / "keyframes"
+            if kf_dir.exists():
+                for img in sorted(kf_dir.iterdir()):
+                    if img.is_file():
+                        zf.write(img, f"keyframes/{img.name}")
+        buf.seek(0)
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition":
+                     f"attachment; filename=\"export.zip\"; "
+                     f"filename*=UTF-8''{quote(base_name + '.zip')}"},
+        )
+
+    # ---------- 内嵌模式：压缩后 base64 内嵌，单文件 ----------
+    content = "\n\n---\n\n".join(_embed_local_images(x) for x in parts)
     return Response(
         content=content,
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition":
                  f"attachment; filename=\"videodevour.md\"; "
-                 f"filename*=UTF-8''{quote(filename)}"},
+                 f"filename*=UTF-8''{quote(base_name + '.md')}"},
     )
 
 @app.get("/api/subtitle-notes/download")

@@ -101,8 +101,11 @@ const ReportViewer = ({ report, onBack }) => {
     }
   }
 
-  const handleExportMarkdown = (type = "all") => {
-    window.open(`/api/export/${report.task_id}?type=${type}`, "_blank");
+  const [exportMenu, setExportMenu] = useState(null)   // 当前展开的导出类型
+
+  const doExport = (type, mode) => {
+    window.open(`/api/export/${report.task_id}?type=${type}&mode=${mode}`, "_blank");
+    setExportMenu(null);
   };
 
   // 动态更新页面标题
@@ -333,30 +336,40 @@ const ReportViewer = ({ report, onBack }) => {
                 <Timer className="w-4 h-4" />
                 {timingLoading ? "加载中..." : "耗时分析"}
               </button>
-              <button
-                onClick={() => handleExportMarkdown("outline")}
-                title="导出图文大纲（含关键帧图片，图片内嵌）"
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
-              >
-                <FileDown className="w-4 h-4" />
-                导出图文大纲
-              </button>
-              <button
-                onClick={() => handleExportMarkdown("report")}
-                title="导出精简报告（含关键帧图片，图片内嵌）"
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
-              >
-                <FileDown className="w-4 h-4" />
-                导出精简报告
-              </button>
-              <button
-                onClick={() => handleExportMarkdown("detailed")}
-                title="导出详细报告（原文+笔记对照，图片内嵌）"
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
-              >
-                <FileDown className="w-4 h-4" />
-                导出详细报告
-              </button>
+              {[
+                { type: "outline", label: "导出图文大纲" },
+                { type: "report", label: "导出精简报告" },
+                { type: "detailed", label: "导出详细报告" },
+              ].map(({ type, label }) => (
+                <div key={type} className="relative">
+                  <button
+                    onClick={() => setExportMenu(exportMenu === type ? null : type)}
+                    title="选择导出方式（内嵌单文件 / ZIP 原图打包）"
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    {label}
+                  </button>
+                  {exportMenu === type && (
+                    <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-20 overflow-hidden">
+                      <button
+                        onClick={() => doExport(type, "inline")}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100"
+                      >
+                        <p className="text-sm font-medium text-gray-800">内嵌图片（单文件 .md）</p>
+                        <p className="text-xs text-gray-500 mt-0.5">图片压缩后内嵌，随处可看</p>
+                      </button>
+                      <button
+                        onClick={() => doExport(type, "zip")}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50"
+                      >
+                        <p className="text-sm font-medium text-gray-800">ZIP 打包（原图 + md）</p>
+                        <p className="text-xs text-gray-500 mt-0.5">保留原图画质，兼容所有查看器</p>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </motion.div>
