@@ -18,7 +18,8 @@ import multiprocessing as mp
 import time
 from typing import Dict
 
-READ_TIMEOUT_SECONDS = 20
+READ_TIMEOUT_SECONDS = 240      # 单域读取上限：browser-cookie3 全表解密可能很慢（实测冷启动 >4 分钟）
+READ_TOTAL_TIMEOUT_SECONDS = 300
 AUTO_ORDER = ["chrome", "edge", "firefox", "safari", "brave", "opera", "vivaldi"]
 SUPPORTED_BROWSERS = AUTO_ORDER
 
@@ -46,27 +47,6 @@ def _read_jar_in_process(browser: str, domain: str, queue) -> None:
         queue.put(("err", f"{type(e).__name__}: {str(e)[:120]}"))
 
 
-def _read_cookies(browser: str, domain: str, timeout: int = READ_TIMEOUT_SECONDS):
-    """
-    子进程读取 + 超时强杀。不能用线程：钥匙串弹窗会无限阻塞，
-    ThreadPoolExecutor 的 with 退出会等待卡死线程导致接口挂起。
-    """
-    queue = mp.Queue()
-    proc = mp.Process(target=_read_jar_in_process, args=(browser, domain, queue), daemon=True)
-    proc.start()
-    proc.join(timeout)
-    if proc.is_alive():
-        proc.terminate()
-        proc.join(3)
-        raise TimeoutError("读取超时（可能在等待钥匙串授权，请在弹窗点「允许」后重试）")
-    if queue.empty():
-        raise RuntimeError("子进程无返回")
-    status, payload = queue.get()
-    if status != "ok":
-        raise RuntimeError(payload)
-    return payload
-
-
 def _netscape_line(cookie: Dict) -> str:
     domain = cookie["domain"]
     include_sub = domain.startswith(".")
@@ -77,35 +57,54 @@ def _netscape_line(cookie: Dict) -> str:
 
 
 def _collect_from_browser(browser: str):
-    """从单个浏览器读取三个目标域，返回 ({设置字段: 值}, attempts 明细)。
+    """
+    从单个浏览器并行读取三个目标域，返回 ({设置字段: 值}, attempts 明细)。
 
-    先用短超时快速探测第一个域：cookie 库打不开（未安装/无权限/挂起）
-    立即抛异常让 auto 模式换下一个浏览器；打开后继续读剩余两个域。
+    browser-cookie3 会全表解密 cookie 库，单域冷读可能耗时数分钟，
+    因此三域并行读 + 总超时兜底；全部失败时抛异常让 auto 换下一个浏览器。
     """
     fields = {}
     attempts = []
-    target_list = list(_TARGETS.items())
 
-    # 快速探针（12s）：判断该浏览器 cookie 库是否可读
-    first_label, (first_domain, first_key, first_names) = target_list[0]
-    try:
-        cookies = _read_cookies(browser, first_domain, timeout=12)
-    except Exception as e:
-        raise RuntimeError(f"{browser}: {e}") from e
+    procs, queues = {}, {}
+    for label, (domain, _key, _names) in _TARGETS.items():
+        q = mp.Queue()
+        p = mp.Process(target=_read_jar_in_process, args=(browser, domain, q), daemon=True)
+        p.start()
+        procs[label], queues[label] = p, q
+
+    deadline = time.time() + READ_TOTAL_TIMEOUT_SECONDS
+    results = {}
+    for label in _TARGETS:
+        proc = procs[label]
+        remaining = max(15, deadline - time.time())
+        proc.join(remaining)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(3)
+            attempts.append(f"{browser}/{label}: 读取超时（cookie 库较大或正在等待钥匙串授权；"
+                            f"弹窗请点「允许」，读取可能需要 1-3 分钟）")
+            results[label] = None
+            continue
+        q = queues[label]
+        if q.empty():
+            attempts.append(f"{browser}/{label}: 子进程无返回")
+            results[label] = None
+            continue
+        status, payload = q.get()
+        if status != "ok":
+            attempts.append(f"{browser}/{label}: {payload}")
+            results[label] = None
+            continue
+        results[label] = payload
+        attempts.append(f"{browser}/{label}: 读取到 {len(payload)} 个 cookie")
 
     failures = 0
-    for label, (domain, setting_key, key_names) in [(first_label, target_list[0][1])] + target_list[1:]:
-        if label != first_label:
-            try:
-                cookies = _read_cookies(browser, domain, timeout=READ_TIMEOUT_SECONDS)
-            except TimeoutError as e:
-                attempts.append(f"{browser}/{label}: {e}")
-                failures += 1
-                continue
-            except Exception as e:
-                attempts.append(f"{browser}/{label}: {type(e).__name__}: {str(e)[:80]}")
-                failures += 1
-                continue
+    for label, (domain, setting_key, key_names) in _TARGETS.items():
+        cookies = results.get(label)
+        if cookies is None:
+            failures += 1
+            continue
         if not cookies:
             attempts.append(f"{browser}/{label}: 无 cookie（该浏览器可能未登录此站）")
             continue
@@ -116,7 +115,8 @@ def _collect_from_browser(browser: str):
                 fields[setting_key] = sessdata
                 attempts.append(f"{browser}/{label}: 命中 SESSDATA ✅")
             else:
-                attempts.append(f"{browser}/{label}: 有 {len(cookies)} 个 cookie 但无 SESSDATA（可能未登录）")
+                attempts.append(f"{browser}/{label}: 有 {len(cookies)} 个 cookie 但无 SESSDATA"
+                                f"（浏览器里未登录B站；登录后重新读取即可）")
         elif label == "youtube":
             if names & set(key_names):
                 lines = [_netscape_line(c) for c in cookies]
@@ -132,7 +132,7 @@ def _collect_from_browser(browser: str):
             else:
                 attempts.append(f"{browser}/{label}: 有 {len(cookies)} 个 cookie 但无登录态（可能未登录）")
     if failures == len(_TARGETS):
-        raise RuntimeError("所有域均读取失败")
+        raise RuntimeError("所有域均读取失败（明细见列表）")
     return fields, attempts
 
 
