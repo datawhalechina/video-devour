@@ -18,6 +18,7 @@ from camel.agents import ChatAgent
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 import config
+from backend.algorithm import timing
 
 # 限流重试参数（源自 light 版实践）
 MAX_RETRIES = 5
@@ -162,6 +163,10 @@ class LLMHandler:
             return f"错误：调用 LLM 失败: {e}"
 
     def get_response(self, prompt: str, system_message: str = "你是一个能力强大的人工智能助手。") -> str:
+        with timing.track(f"LLM调用({getattr(self, 'model_type', 'llm')})", category="llm"):
+            return self._get_response_impl(prompt, system_message)
+
+    def _get_response_impl(self, prompt: str, system_message: str) -> str:
         """
         向LLM发送一个通用的prompt并获取响应。
 

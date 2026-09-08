@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Clock, FileText, Image, Download, Edit3, LayoutGrid, FileDown, Share2, Network } from "lucide-react";
+import { ArrowLeft, Clock, FileText, Image, Download, Edit3, LayoutGrid, FileDown,
+  Timer, Share2, Network } from "lucide-react";
 import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -12,7 +13,9 @@ const ReportViewer = ({ report, onBack }) => {
   const [editingContent, setEditingContent] = useState("");
   const [editingType, setEditingType] = useState(""); // "outline" or "report"
   const [cardHtml, setCardHtml] = useState("");
-  const [cardLoading, setCardLoading] = useState(false);
+  const [cardLoading, setCardLoading] = useState(false)
+  const [timing, setTiming] = useState(null)
+  const [timingLoading, setTimingLoading] = useState(false);
   const [htmlLoading, setHtmlLoading] = useState({});
 
   // 通用：调用生成接口并在新窗口打开（思维导图 / 知识图谱）。
@@ -83,6 +86,21 @@ const ReportViewer = ({ report, onBack }) => {
   };
 
   // 导出大纲+报告为单个 Markdown 文件（移植自 light 版）
+  const handleShowTiming = async () => {
+    if (timingLoading) return
+    setTimingLoading(true)
+    try {
+      const res = await fetch(`/api/task/${report.task_id}/timing`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || '获取失败')
+      setTiming(data)
+    } catch (err) {
+      alert(`耗时报告获取失败: ${err.message}`)
+    } finally {
+      setTimingLoading(false)
+    }
+  }
+
   const handleExportMarkdown = () => {
     window.open(`/api/export/${report.task_id}`, "_blank");
   };
@@ -306,6 +324,14 @@ const ReportViewer = ({ report, onBack }) => {
                 {htmlLoading.graph ? "生成中..." : "知识图谱"}
               </button>
               <button
+                onClick={handleShowTiming}
+                disabled={timingLoading}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition disabled:opacity-60"
+              >
+                <Timer className="w-4 h-4" />
+                {timingLoading ? "加载中..." : "耗时分析"}
+              </button>
+              <button
                 onClick={handleExportMarkdown}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
               >
@@ -315,6 +341,57 @@ const ReportViewer = ({ report, onBack }) => {
             </div>
           </div>
         </motion.div>
+
+        {/* 耗时分析面板 */}
+        {timing && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+            className="mt-4 bg-white rounded-xl shadow-lg p-6"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <Timer className="w-5 h-5 text-primary-600" />
+                耗时分析
+                <span className="text-xs font-normal text-gray-400">
+                  总耗时 {timing.summary?.total_elapsed}s
+                </span>
+              </h3>
+              <div className="flex items-center gap-2">
+                <a href={timing.timing_url} target="_blank" rel="noreferrer"
+                   className="text-xs text-primary-600 hover:underline">查看完整报告</a>
+                <button onClick={() => setTiming(null)}
+                        className="text-xs text-gray-400 hover:text-gray-600">关闭</button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {(timing.top_slowest || []).map((p, i) => {
+                const maxTotal = timing.top_slowest[0]?.total || 1
+                return (
+                  <div key={i}>
+                    <div className="flex items-center justify-between text-xs mb-0.5">
+                      <span className="text-gray-700">
+                        {p.name}
+                        <span className="ml-2 text-gray-400">{p.category}</span>
+                        {p.count > 1 && <span className="ml-2 text-gray-400">×{p.count}</span>}
+                      </span>
+                      <span className="text-gray-600 font-medium">
+                        {p.total.toFixed(2)}s
+                        {p.count > 1 && <span className="text-gray-400 ml-1">(avg {p.avg.toFixed(2)}s)</span>}
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-primary-500 to-purple-500 rounded-full"
+                           style={{ width: `${Math.max(2, (p.total / maxTotal) * 100)}%` }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="mt-4 text-xs text-gray-400">
+              报告同时落盘在任务目录：timing_report.json（明细）/ timing_summary.txt（摘要）
+            </p>
+          </motion.div>
+        )}
 
         {/* 标签页 */}
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Dict, List
 
 import requests
+from backend.algorithm import timing
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
@@ -132,6 +133,10 @@ class VideoDevourASRStepFun:
 
     def _transcribe_pcm(self, pcm_b64: str) -> str:
         """上传单段 base64 PCM，返回该段完整转写文本"""
+        with timing.track("StepFun单段识别", category="asr"):
+            return self._transcribe_pcm_impl(pcm_b64)
+
+    def _transcribe_pcm_impl(self, pcm_b64: str) -> str:
         body = {
             "audio": {
                 "data": pcm_b64,

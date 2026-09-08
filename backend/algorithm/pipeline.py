@@ -17,6 +17,7 @@ import backend.algorithm.outline_handler as outline_handler
 import backend.algorithm.video_handler as video_handler
 import backend.algorithm.image_processor as image_processor
 import backend.algorithm.config as config
+from backend.algorithm import timing
 
 def _setup_environment(video_path: str):
     """Initializes directories and logging for a new pipeline run."""
@@ -135,49 +136,63 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
 
         main_output_path, video_name, timestamp = _setup_environment(video_path)
 
-        processed_dialogue = _run_asr_and_process(video_path, video_name, main_output_path, asr_engine)
+        # 启动本任务的耗时追踪（落盘到任务输出目录）
+        tracker = timing.start_tracking(video_name)
+
+        with timing.track("步骤1-2_ASR与数据处理"):
+            processed_dialogue = _run_asr_and_process(video_path, video_name, main_output_path, asr_engine)
         if not processed_dialogue:
             raise ValueError("ASR处理后对话为空，流程中止。")
 
-        matched_data, headings_with_level, headings, outline = _generate_and_match_outline(
-            processed_dialogue, main_output_path, education_level
-        )
+        with timing.track("步骤3-4_大纲生成与匹配"):
+            matched_data, headings_with_level, headings, outline = _generate_and_match_outline(
+                processed_dialogue, main_output_path, education_level
+            )
         if not matched_data:
             raise ValueError("文本块与大纲匹配失败，流程中止。")
             
         logging.info("--- 步骤 5: 生成详细大纲 ---")
-        detailed_outline_path = outline_handler.generate_detailed_outline(
-            outline, headings, matched_data, output_dir=main_output_path
-        )
+        with timing.track("步骤5_生成详细大纲"):
+            detailed_outline_path = outline_handler.generate_detailed_outline(
+                outline, headings, matched_data, output_dir=main_output_path
+            )
 
         logging.info("--- 步骤 6: 根据大纲切分视频 ---")
-        videocut_path = video_handler.cut_videos_by_headings(
-            headings_with_level, matched_data, video_path, output_dir=main_output_path
-        )
+        with timing.track("步骤6_视频切分"):
+            videocut_path = video_handler.cut_videos_by_headings(
+                headings_with_level, matched_data, video_path, output_dir=main_output_path
+            )
 
         if videocut_path:
             logging.info("--- 步骤 7: 从视频片段中提取帧 ---")
-            video_handler.extract_frames_from_videos(
-                videocut_path=videocut_path, output_dir=main_output_path
-            )
+            with timing.track("步骤7_帧提取"):
+                video_handler.extract_frames_from_videos(
+                    videocut_path=videocut_path, output_dir=main_output_path
+                )
 
         logging.info("--- 步骤 8: 处理并筛选帧 ---")
-        image_processor.process_all_frames(output_dir=main_output_path)
+        with timing.track("步骤8_帧去重处理"):
+            image_processor.process_all_frames(output_dir=main_output_path)
         
         logging.info("--- 步骤 9: 使用VLM选择关键帧 ---")
-        selected_keyframes = image_processor.select_keyframes_with_vlm(
-            headings_with_level, main_output_path
-        )
+        with timing.track("步骤9_VLM关键帧选择"):
+            selected_keyframes = image_processor.select_keyframes_with_vlm(
+                headings_with_level, main_output_path
+            )
 
         if selected_keyframes:
             logging.info("--- 步骤 10: 更新大纲，添加关键帧 ---")
-            outline_handler.update_detailed_outline_with_keyframes(
-                detailed_outline_path, selected_keyframes
-            )
+            with timing.track("步骤10_大纲插入关键帧"):
+                outline_handler.update_detailed_outline_with_keyframes(
+                    detailed_outline_path, selected_keyframes
+                )
 
         logging.info("--- 步骤 11: 生成最终报告 ---")
-        outline_handler.generate_final_report(detailed_outline_path, main_output_path,
-                                              education_level=education_level)
+        with timing.track("步骤11_生成最终报告"):
+            outline_handler.generate_final_report(detailed_outline_path, main_output_path,
+                                                  education_level=education_level)
+
+        tracker.write_reports(main_output_path)
         
         logging.info(f"\n" + "="*60)
         logging.info(f"处理流程成功完成 - 时间戳: {timestamp}")

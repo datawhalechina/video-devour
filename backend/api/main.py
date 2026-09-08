@@ -699,6 +699,32 @@ async def upload_video(file: UploadFile = File(...), education_level: str = Form
         print(f"Upload error: {error_details}")
         raise HTTPException(status_code=500, detail=f"上传失败: {str(e)}")
 
+@app.get("/api/task/{task_id}/timing")
+async def get_task_timing(task_id: str):
+    """
+    获取任务的阶段/函数耗时报告（timing_report.json + 汇总摘要）。
+    用于定位性能瓶颈，任务目录下也会落盘同名文件。
+    """
+    output_dir = _find_task_output_dir(task_id)
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="任务不存在或尚未生成输出目录")
+    report_path = output_dir / "timing_report.json"
+    if not report_path.exists():
+        raise HTTPException(status_code=404, detail="该任务尚无耗时报告（可能未完成或为旧任务）")
+    try:
+        data = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"耗时报告解析失败: {e}")
+    summary = (data or {}).get("summary") or {}
+    return {
+        "task_id": task_id,
+        "output_dir": output_dir.name,
+        "summary": summary,
+        "top_slowest": summary.get("phases", [])[:15],
+        "timing_url": f"/static/{output_dir.name}/timing_summary.txt",
+    }
+
+
 @app.get("/api/task/{task_id}/status", response_model=TaskStatus)
 async def get_task_status(task_id: str):
     """
