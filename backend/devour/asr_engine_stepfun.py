@@ -24,6 +24,12 @@ import requests
 
 DEFAULT_BASE_URL = "https://api.stepfun.com/step_plan/v1"
 
+# 单次上传的音频体积上限：官方限制 100MB，留出 base64 膨胀（约 1.33 倍）
+# 与请求体余量后取 60MB —— 16kHz 单声道 16bit ≈ 32KB/s，即约 32 分钟/段
+MAX_CHUNK_BYTES = 60 * 1024 * 1024
+_SAMPLE_RATE, _CHANNELS, _BYTES_PER_SAMPLE = 16000, 1, 2
+_BYTES_PER_SECOND = _SAMPLE_RATE * _CHANNELS * _BYTES_PER_SAMPLE
+
 # 句末标点（用于近似分句）。英文句号单独处理：避免吞掉 "3.5" 这类数字小数点
 _SENTENCE_ENDINGS = "。！？!?；;"
 _SENTENCE_PERIOD = "."
@@ -118,71 +124,99 @@ class VideoDevourASRStepFun:
         logging.info(f"规范化完成，共 {len(results)} 个句子（时间为按字数线性近似）")
         return results
 
+    def _transcribe_pcm(self, pcm_b64: str) -> str:
+        """上传单段 base64 PCM，返回该段完整转写文本"""
+        body = {
+            "audio": {
+                "data": pcm_b64,
+                "input": {
+                    "transcription": {
+                        "model": self.model,
+                        "language": "zh",
+                        "enable_itn": True,
+                    },
+                    "format": {
+                        "type": "pcm", "codec": "pcm_s16le",
+                        "rate": 16000, "bits": 16, "channel": 1,
+                    },
+                },
+            }
+        }
+        resp = requests.post(
+            f"{self.base_url}/audio/asr/sse",
+            json=body,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+                "Authorization": f"Bearer {self.api_key}",
+            },
+            stream=True,
+            timeout=600,
+        )
+        if resp.status_code != 200:
+            detail = resp.text[:300]
+            raise RuntimeError(f"StepFun 识别失败: HTTP {resp.status_code} {detail}")
+
+        full_text = ""
+        for raw in resp.iter_lines(decode_unicode=True):
+            if not raw or not raw.startswith("data:"):
+                continue
+            try:
+                event = json.loads(raw[len("data:"):].strip())
+            except json.JSONDecodeError:
+                continue
+            if event.get("type") == "transcript.text.done":
+                full_text = event.get("text", "")
+                break
+            if event.get("type") == "transcript.text.delta":
+                full_text += event.get("delta", "")
+        return full_text.strip()
+
+    def _iter_pcm_chunks(self, pcm_path: str, chunk_bytes: int = MAX_CHUNK_BYTES):
+        """按字节切分 PCM 文件，yield (base64, 该段起始秒)。字节对齐到采样帧"""
+        frame = _BYTES_PER_SAMPLE * _CHANNELS          # 2 字节/帧
+        chunk_bytes = max(frame, chunk_bytes // frame * frame)
+        with open(pcm_path, "rb") as f:
+            offset = 0
+            while True:
+                data = f.read(chunk_bytes)
+                if not data:
+                    break
+                yield base64.b64encode(data).decode(), offset / _BYTES_PER_SECOND
+                offset += len(data)
+
     def devour_video(self, video_path: str) -> Dict:
-        """核心处理方法：转音频 → base64 上传 → SSE 解析 → 标准化输出"""
+        """核心处理方法：转音频 → 分段 base64 上传 → 时间戳偏移拼接 → 标准化输出"""
         logging.info(f"[StepFun] 开始处理视频: {video_path}")
         pcm_path = None
         try:
             pcm_path = self._extract_audio_to_pcm(video_path)
 
-            # 音频时长（秒）＝ 字节数 / (采样率 × 声道数 × 采样宽度)。
-            # 裸 PCM 无容器头，ffprobe 无法读取，直接按大小计算。
-            sample_rate, channels, bytes_per_sample = 16000, 1, 2
-            duration = os.path.getsize(pcm_path) / (sample_rate * channels * bytes_per_sample)
+            # 音频时长（秒）＝ 字节数 / 每秒字节数。裸 PCM 无容器头，直接按大小算。
+            total_bytes = os.path.getsize(pcm_path)
+            duration = total_bytes / _BYTES_PER_SECOND
+            n_chunks = max(1, (total_bytes + MAX_CHUNK_BYTES - 1) // MAX_CHUNK_BYTES)
+            logging.info(f"[StepFun] 音频时长 {duration / 60:.1f} 分钟，"
+                         f"按 {MAX_CHUNK_BYTES / 1024 / 1024:.0f}MB 切分为 {n_chunks} 段识别")
 
-            with open(pcm_path, "rb") as f:
-                pcm_b64 = base64.b64encode(f.read()).decode()
-
-            body = {
-                "audio": {
-                    "data": pcm_b64,
-                    "input": {
-                        "transcription": {
-                            "model": self.model,
-                            "language": "zh",
-                            "enable_itn": True,
-                        },
-                        "format": {
-                            "type": "pcm", "codec": "pcm_s16le",
-                            "rate": 16000, "bits": 16, "channel": 1,
-                        },
-                    },
-                }
-            }
-            logging.info("[StepFun] 正在进行语音识别（SSE 流式）...")
-            resp = requests.post(
-                f"{self.base_url}/audio/asr/sse",
-                json=body,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "text/event-stream",
-                    "Authorization": f"Bearer {self.api_key}",
-                },
-                stream=True,
-                timeout=300,
-            )
-            if resp.status_code != 200:
-                detail = resp.text[:300]
-                raise RuntimeError(f"StepFun 识别失败: HTTP {resp.status_code} {detail}")
-
-            full_text = ""
-            for raw in resp.iter_lines(decode_unicode=True):
-                if not raw or not raw.startswith("data:"):
+            transcript: List[Dict] = []
+            for idx, (chunk_b64, chunk_start) in enumerate(self._iter_pcm_chunks(pcm_path)):
+                chunk_seconds = len(chunk_b64) * 3 / 4 / _BYTES_PER_SECOND
+                logging.info(f"[StepFun] 识别第 {idx + 1}/{n_chunks} 段"
+                             f"（{chunk_start / 60:.1f} - {(chunk_start + chunk_seconds) / 60:.1f} 分钟）...")
+                text = self._transcribe_pcm(chunk_b64)
+                if not text:
+                    logging.warning(f"[StepFun] 第 {idx + 1} 段无识别结果，跳过")
                     continue
-                try:
-                    event = json.loads(raw[len("data:"):].strip())
-                except json.JSONDecodeError:
-                    continue
-                if event.get("type") == "transcript.text.done":
-                    full_text = event.get("text", "")
-                    break
-                if event.get("type") == "transcript.text.delta":
-                    full_text += event.get("delta", "")
+                # 段内时间戳为线性近似，整体加上该段在原始音频中的起始偏移
+                for seg in self.normalize_result(text, chunk_seconds):
+                    seg["index"] = len(transcript) + 1
+                    seg["start_time"] = round(seg["start_time"] + chunk_start, 2)
+                    seg["end_time"] = round(seg["end_time"] + chunk_start, 2)
+                    transcript.append(seg)
 
-            if not full_text.strip():
+            if not transcript:
                 raise RuntimeError("StepFun 未识别出任何内容（音频可能没有语音）")
-
-            transcript = self.normalize_result(full_text.strip(), duration)
             text_stats = {}
             if transcript:
                 total_text = "".join(seg["sentence"] for seg in transcript)
