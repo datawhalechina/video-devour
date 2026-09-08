@@ -18,67 +18,41 @@ const ReportViewer = ({ report, onBack }) => {
   const [timingLoading, setTimingLoading] = useState(false);
   const [htmlLoading, setHtmlLoading] = useState({});
 
-  // 通用：调用生成接口并在新窗口打开（思维导图 / 知识图谱）。
-  // 注意：window.open 必须在点击手势内同步调用（await 之后调用会被弹窗拦截
-  // 且 win 为 null 静默失败），生成完成后再将窗口定向到静态缓存地址。
-  const openWindowNow = (kind, fileName) => {
-    const win = window.open("", "_blank");
-    if (win && report.output_dir) {
-      win.document.write(
-        `<html><head><meta charset="utf-8"><style>body{font:16px/2 -apple-system,"PingFang SC",sans-serif;color:#334155;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}</style></head><body><p>⏳ 正在生成${fileName}，请稍候（约 10-30 秒）…</p></body></html>`
-      );
-    }
-    return win;
-  };
-
-  const finalizeWindow = (win, kind, fileName, cachedPath) => {
-    if (!win || win.closed) {
-      alert(
-        `${fileName}已生成完成！\n\n但浏览器拦截了新窗口，请点击报告页的按钮重试，` +
-        `或直接访问：\n/static/${report.output_dir}/${cachedPath}`
-      );
-      return;
-    }
-    win.location.href = `/static/${report.output_dir}/${cachedPath}`;
-  };
+  // 思维导图 / 知识图谱 / 学习卡片：统一用页面内模态预览。
+  // 不用 window.open——应用内浏览器/弹窗拦截会导致静默失败（用户只看到 alert）。
+  const [preview, setPreview] = useState(null)   // { title, url }
+  const [cardLoadingInline, setCardLoadingInline] = useState(false)
 
   const handleOpenHtml = async (kind) => {
     if (htmlLoading[kind]) return;
     const fileName = kind === "mindmap" ? "思维导图" : "知识图谱";
     const cachedPath = kind === "mindmap" ? "mindmap.html" : "knowledge_graph.html";
-    const win = openWindowNow(kind, fileName);
     setHtmlLoading(prev => ({ ...prev, [kind]: true }));
     try {
       const fn = kind === "mindmap" ? generateMindmap : generateKnowledgeGraph;
       await fn(report.task_id);
-      finalizeWindow(win, kind, fileName, cachedPath);
+      setPreview({
+        title: fileName,
+        url: `/static/${report.output_dir}/${cachedPath}`,
+      });
     } catch (err) {
-      if (win && !win.closed) win.close();
       alert(`${fileName}生成失败: ${err.message}`);
     } finally {
       setHtmlLoading(prev => ({ ...prev, [kind]: false }));
     }
   };
 
-  // 生成学习卡片（移植自 light 版），在新窗口预览
+  // 生成学习卡片（移植自 light 版），页面内模态预览
   const handleGenerateCard = async () => {
     if (cardLoading) return;
-    const win = window.open("", "_blank");
-    if (win && report.output_dir) {
-      win.document.write(
-        `<html><head><meta charset="utf-8"><style>body{font:16px/2 -apple-system,"PingFang SC",sans-serif;color:#334155;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}</style></head><body><p>⏳ 正在生成学习卡片，请稍候（约 10-30 秒）…</p></body></html>`
-      );
-    }
     setCardLoading(true);
     try {
       await generateCard(report.task_id);
-      if (!win || win.closed) {
-        alert(`学习卡片已生成完成！\n\n但浏览器拦截了新窗口，请重试或直接访问：\n/static/${report.output_dir}/learning_card.html`);
-        return;
-      }
-      win.location.href = `/static/${report.output_dir}/learning_card.html`;
+      setPreview({
+        title: "学习卡片",
+        url: `/static/${report.output_dir}/learning_card.html`,
+      });
     } catch (err) {
-      if (win && !win.closed) win.close();
       alert(`学习卡片生成失败: ${err.message}`);
     } finally {
       setCardLoading(false);
@@ -373,6 +347,35 @@ const ReportViewer = ({ report, onBack }) => {
             </div>
           </div>
         </motion.div>
+
+        {/* 内嵌预览模态（思维导图 / 知识图谱 / 学习卡片） */}
+        {preview && (
+          <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4"
+               onClick={() => setPreview(null)}>
+            <div className="bg-white rounded-xl shadow-2xl w-full h-full max-w-[95vw] max-h-[92vh] flex flex-col overflow-hidden"
+                 onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
+                <h3 className="text-base font-bold text-gray-900">{preview.title}</h3>
+                <div className="flex items-center gap-2">
+                  <a href={preview.url} target="_blank" rel="noreferrer"
+                     className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                    浏览器打开
+                  </a>
+                  <button onClick={() => setPreview(null)}
+                          className="px-3 py-1.5 rounded-lg bg-gray-800 text-white text-xs font-medium hover:bg-gray-900">
+                    关闭
+                  </button>
+                </div>
+              </div>
+              <iframe
+                key={preview.url}
+                src={preview.url}
+                title={preview.title}
+                className="flex-1 w-full border-0 bg-white"
+              />
+            </div>
+          </div>
+        )}
 
         {/* 耗时分析面板 */}
         {timing && (
