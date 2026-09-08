@@ -160,7 +160,7 @@ pip install -r requirements.txt
 
 ## 🎛️ 設定
 
-すべての設定は**設定コンソール**（下記参照）から行うのがおすすめです。ファイルを手動で編集する必要はありません。手動設定を希望する場合は `backend/algorithm/config.template.py` を `config.py` としてコピーして編集してください。API キーは環境変数 `LLM_API_KEY` / `VLM_API_KEY` で注入することも可能です。
+すべての設定は**設定コンソール**（下記参照）から行います。設定ファイルを手動で編集する必要はありません。プロジェクトは `config.py` に**依存しません** —— ファイルが存在しない場合、バックエンドは内蔵デフォルト値にフォールバックし、コンソール設定と自動的に統合します。出力ディレクトリなどの内部デフォルトを変更したい上級ユーザーのみ、`backend/algorithm/config.template.py` を参照してください（任意、通常は不要です）。
 
 ## 🚀 クイックスタート
 
@@ -173,7 +173,7 @@ pip install -r requirements.txt
 - **デフォルト学習ステージ**：9 段階から選択（自由学習 / 小学 / … / 専門分野研究）
 - **WeChat チャンネル**：元宝 Cookie を入力するとチャンネルのシェアリンク ダウンロードが有効化（手順は下記）
 
-設定はプロジェクトルートの `settings.json` に保存されます（gitignore 済み、秘密情報を含むためコミット禁止）。タスク実行ごとにランタイム設定へ注入されます。`backend/algorithm/config.py` が存在しなくてもバックエンドは起動できます。
+設定はプロジェクトルートの `settings.json` に保存されます（gitignore 済み、秘密情報を含むためコミット禁止）。タスク実行ごとにランタイム設定へ注入されます。
 
 ### オンライン動画リンク処理（ビリビリ / YouTube / WeChat チャンネル）
 
@@ -267,7 +267,7 @@ video-devour/
 │   │   ├── main.py              # CLI エントリーポイント
 │   │   ├── settings_store.py    # ランタイム設定（settings.json の読み書きと注入）
 │   │   ├── report_viz.py        # マインドマップ/ナレッジグラフ/ラーニングカード生成
-│   │   ├── config.template.py   # 手動設定テンプレート（config.py は gitignore 済み）
+│   │   ├── config.template.py   # （任意）内部デフォルトの参照テンプレート、通常は不要
 │   │   ├── data_processor.py    # ASR 後処理
 │   │   ├── llm_handler.py       # LLM ハンドラ（リトライ/中国語出力保証）
 │   │   ├── vlm_handler.py       # VLM ハンドラ

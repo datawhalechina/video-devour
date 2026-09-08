@@ -160,7 +160,7 @@ pip install -r requirements.txt
 
 ## 🎛️ Configuration
 
-The **settings console** is the recommended way to configure everything (see below) — no file editing required. If you prefer manual configuration, copy `backend/algorithm/config.template.py` to `config.py` and edit it; API keys can also be injected via the `LLM_API_KEY` / `VLM_API_KEY` environment variables.
+Everything is configured through the **settings console** (see below) — no config file editing required. The project does **not** require `config.py`: when it is absent, the backend falls back to built-in defaults wired to the console settings. Advanced users who need to tweak internal defaults (e.g. the output directory) can refer to `backend/algorithm/config.template.py` (optional; rarely needed).
 
 ## 🚀 Quick Start
 
@@ -173,7 +173,7 @@ After starting the services, click the ⚙ floating button at the bottom-right o
 - **Default education level**: nine levels (Self-paced / Primary / … / Vertical-domain research)
 - **WeChat Channels**: paste the Yuanbao cookie to enable Channels share-link downloads (see below)
 
-Settings are stored in `settings.json` at the project root (gitignored — never commit secrets) and injected at each task run. The backend starts even if `backend/algorithm/config.py` is missing.
+Settings are stored in `settings.json` at the project root (gitignored — never commit secrets) and injected at each task run.
 
 ### Online video links (Bilibili / YouTube / WeChat Channels)
 
@@ -267,7 +267,7 @@ video-devour/
 │   │   ├── main.py              # CLI entry point
 │   │   ├── settings_store.py    # Runtime settings (settings.json read/write & injection)
 │   │   ├── report_viz.py        # Mind map / knowledge graph / learning card generation
-│   │   ├── config.template.py   # Manual-config template (config.py is gitignored)
+│   │   ├── config.template.py   # (Optional) internal defaults reference; rarely needed
 │   │   ├── data_processor.py    # ASR post-processing
 │   │   ├── llm_handler.py       # LLM handler (retry / Chinese-output guarantee)
 │   │   ├── vlm_handler.py       # VLM handler

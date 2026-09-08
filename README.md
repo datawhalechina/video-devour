@@ -163,7 +163,7 @@ pip install -r requirements.txt
 
 ## 🎛️ 配置
 
-推荐直接使用**设置控制台**完成全部配置（见下文），无需手改任何文件。如偏好手动配置，可参考 `backend/algorithm/config.template.py`（`cp config.template.py config.py` 后按需修改）；API Key 也可以通过环境变量 `LLM_API_KEY` / `VLM_API_KEY` 注入。
+所有配置都在**设置控制台**完成（见下文），无需手动编辑任何配置文件。项目不依赖 `config.py`——缺失时后端会自动使用内置默认值并接入控制台设置。高级用户如需调整输出目录等内部默认值，可参考 `backend/algorithm/config.template.py`（可选，通常不需要）。
 
 ## 🚀 快速开始
 
@@ -176,7 +176,7 @@ pip install -r requirements.txt
 - **默认学习阶段**：九档可选（自由学习/小学/初中/高中/大学/硕士/博士/深入研究/垂直领域研究）
 - **微信视频号**：填入元宝 Cookie 以启用视频号分享链接下载（配置方法见下文）
 
-配置保存在项目根目录的 `settings.json`（已被 gitignore，含密钥请勿提交），并会在每次任务执行时注入运行时配置；`backend/algorithm/config.py` 缺失时后端也可直接启动。
+配置保存在项目根目录的 `settings.json`（已被 gitignore，含密钥请勿提交），并在每次任务执行时注入运行时配置。
 
 ### 在线视频链接处理（B站 / YouTube / 微信视频号）
 
@@ -276,7 +276,7 @@ video-devour/
 │   │   ├── main.py              # 命令行启动入口
 │   │   ├── settings_store.py    # 运行时设置（settings.json 读写与注入）
 │   │   ├── report_viz.py        # 思维导图/知识图谱/学习卡片生成
-│   │   ├── config.template.py   # 手动配置参考模板（config.py 被 gitignore）
+│   │   ├── config.template.py   # （可选）内部默认值参考模板，通常无需使用
 │   │   ├── data_processor.py    # ASR 数据后处理
 │   │   ├── llm_handler.py       # LLM 交互（含限流重试/中文输出保障）
 │   │   ├── vlm_handler.py       # VLM 交互
