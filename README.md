@@ -144,7 +144,7 @@ python3 .agents/skills/videodevour/scripts/devour.py report --latest
 
 ### 环境要求
 - Python 3.12+（推荐用 [uv](https://docs.astral.sh/uv/) 管理环境与依赖）
-- FFmpeg（brew install ffmpeg / apt install ffmpeg）
+- FFmpeg（macOS: `brew install ffmpeg` / Ubuntu: `apt install ffmpeg` / Windows: `winget install ffmpeg`）
 - GPU 可选：NVIDIA CUDA 或 Apple Silicon MPS 自动启用，无 GPU 时回退 CPU
 
 ### 安装步骤
@@ -222,7 +222,9 @@ pip install -r requirements.txt
 ### 启动服务
 
 #### 1. 启动后端服务
-在项目根目录下启动后端：
+在项目根目录下启动后端。
+
+macOS / Linux：
 ```bash
 # 安装依赖并激活虚拟环境
 uv sync
@@ -231,6 +233,16 @@ source .venv/bin/activate
 # 启动后端服务
 uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+Windows（PowerShell）：
+```powershell
+uv sync
+.venv\Scripts\activate
+
+uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+> 提示：不想激活虚拟环境的话，任何平台都可以直接用 `uv run uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000`（uv 会自动使用 `.venv` 中的环境）。Windows CMD 的激活命令为 `.venv\Scripts\activate.bat`。若 PowerShell 提示脚本被禁止运行，先执行 `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`。
 
 后端服务将在 `http://localhost:8000` 启动。
 

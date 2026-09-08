@@ -141,7 +141,7 @@ python3 .agents/skills/videodevour/scripts/devour.py report --latest
 
 ### 要件
 - Python 3.12+（環境・依存関係の管理には [uv](https://docs.astral.sh/uv/) を推奨）
-- FFmpeg（`brew install ffmpeg` / `apt install ffmpeg`）
+- FFmpeg（macOS: `brew install ffmpeg` / Ubuntu: `apt install ffmpeg` / Windows: `winget install ffmpeg`）
 - GPU は任意：NVIDIA CUDA または Apple Silicon MPS を自動検出、GPU なしでは CPU にフォールバック。
 
 ### 手順
@@ -219,7 +219,9 @@ Web UI を使わない場合（どちらか一方で OK）：
 ### サービスの起動
 
 #### 1. バックエンド
-プロジェクトルートで実行：
+プロジェクトルートで実行します。
+
+macOS / Linux：
 ```bash
 # 依存関係のインストールと仮想環境の有効化
 uv sync
@@ -228,6 +230,16 @@ source .venv/bin/activate
 # バックエンドを起動
 uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+Windows（PowerShell）：
+```powershell
+uv sync
+.venv\Scripts\activate
+
+uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+> ヒント：仮想環境を有効化しなくても、どのプラットフォームでも `uv run uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000` で直接起動できます（uv が `.venv` の環境を自動使用します）。Windows CMD の有効化コマンドは `.venv\Scripts\activate.bat` です。PowerShell でスクリプト実行がブロックされる場合は、先に `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` を実行してください。
 
 バックエンドは `http://localhost:8000` で起動します。
 

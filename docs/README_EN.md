@@ -141,7 +141,7 @@ All screenshots come from a full run on the Bilibili video [Andrew Ng's Agentic 
 
 ### Requirements
 - Python 3.12+ ([uv](https://docs.astral.sh/uv/) recommended for environment/dependency management)
-- FFmpeg (`brew install ffmpeg` / `apt install ffmpeg`)
+- FFmpeg (macOS: `brew install ffmpeg` / Ubuntu: `apt install ffmpeg` / Windows: `winget install ffmpeg`)
 - GPU optional: NVIDIA CUDA or Apple Silicon MPS is auto-detected; falls back to CPU.
 
 ### Steps
@@ -219,7 +219,9 @@ Without the web UI (either one):
 ### Start the services
 
 #### 1. Backend
-From the project root:
+From the project root.
+
+macOS / Linux:
 ```bash
 # Install deps and activate the virtualenv
 uv sync
@@ -228,6 +230,16 @@ source .venv/bin/activate
 # Start the backend
 uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+Windows (PowerShell):
+```powershell
+uv sync
+.venv\Scripts\activate
+
+uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+> Tip: without activating anything, you can run `uv run uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000` on any platform (uv automatically uses the `.venv` environment). On Windows CMD the activation command is `.venv\Scripts\activate.bat`. If PowerShell blocks script execution, run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` first.
 
 The backend runs at `http://localhost:8000`.
 
