@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Settings, Save, Radio, HardDriveDownload, KeyRound, CheckCircle, XCircle, Loader2, GraduationCap } from 'lucide-react'
-import { getSettings, updateSettings, testSettings, importCookiesFromBrowser } from '../api/settingsService'
+import { getSettings, updateSettings, testSettings, importCookiesFromBrowser, youtubeEnvCheck } from '../api/settingsService'
 
 // 供应商预设：点击芯片自动填充接口地址与推荐模型
 const PROVIDER_PRESETS = {
@@ -90,9 +90,22 @@ function SettingsPage() {
     }
   }
 
+  const [ytCheck, setYtCheck] = useState({ loading: false, result: null })
+
+  const handleYtCheck = async () => {
+    if (ytCheck.loading) return
+    setYtCheck({ loading: true, result: null })
+    try {
+      const result = await youtubeEnvCheck()
+      setYtCheck({ loading: false, result })
+    } catch (err) {
+      setYtCheck({ loading: false, result: { checks: {}, suggestions: [`自检失败: ${err.message}`] } })
+    }
+  }
+
   const handleImportCookies = async () => {
     if (cookieImport.loading) return
-    setCookieImport({ loading: true, message: '正在读取浏览器 Cookie…', attempts: [] })
+    setCookieImport({ loading: true, message: '正在读取浏览器 Cookie（首次可能需要 1-3 分钟；若弹出钥匙串授权请点「允许」）…', attempts: [] })
     try {
       const result = await importCookiesFromBrowser(form.cookie_browser || '')
       setCookieImport({ loading: false, message: result.message, attempts: result.attempts || [] })
@@ -569,6 +582,42 @@ function SettingsPage() {
               rows={6}
               className={`${inputClass} font-mono text-xs`}
             />
+          </div>
+          <div className="mt-4 border-t border-gray-100 pt-4">
+            <button
+              onClick={handleYtCheck}
+              disabled={ytCheck.loading}
+              className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+            >
+              {ytCheck.loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>下载环境自检</span>
+            </button>
+            {ytCheck.result && (
+              <div className="mt-3 space-y-1.5 text-xs">
+                {(() => {
+                  const c = ytCheck.result.checks || {}
+                  const items = [
+                    [!!c.yt_dlp_version, `yt-dlp ${c.yt_dlp_version || '未安装'}`],
+                    [!!c.cookies_configured, 'YouTube cookies 已配置'],
+                    [!!c.pot_script, 'PO Token 脚本已安装'],
+                    [!!c.node_available, `node 运行时${c.node_version ? ` ${c.node_version}` : ''}`],
+                  ]
+                  return items.map(([ok, text], i) => (
+                    <p key={i} className={ok ? 'text-green-700' : 'text-gray-500'}>
+                      {ok ? '✓' : '○'} {text}
+                    </p>
+                  ))
+                })()}
+                {(ytCheck.result.suggestions || []).length > 0 && (
+                  <div className="pt-1 border-t border-gray-100">
+                    <p className="font-semibold text-gray-700 mt-1">建议：</p>
+                    {(ytCheck.result.suggestions || []).map((s, i) => (
+                      <p key={i} className="text-gray-500 leading-relaxed">· {s}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </motion.section>
 

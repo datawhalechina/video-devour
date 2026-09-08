@@ -411,6 +411,57 @@ async def import_cookies_from_browser(request: BrowserCookieRequest):
             "attempts": result.get("attempts") or [], "message": message}
 
 
+@app.get("/api/video/link/youtube-check")
+async def youtube_env_check():
+    """
+    YouTube 下载环境自检：yt-dlp 版本 / cookies / PO Token 脚本 / node 运行时，
+    并给出下一步建议（供设置页与排障使用）
+    """
+    import shutil
+    import subprocess
+
+    checks: Dict = {}
+    try:
+        import yt_dlp
+        checks["yt_dlp_version"] = yt_dlp.version.__version__
+    except Exception:
+        checks["yt_dlp_version"] = None
+
+    cookies_text = (settings_store.load_settings().get("youtube_cookies") or "").strip()
+    env_cookies = os.getenv("YTDLP_COOKIES_FILE")
+    checks["cookies_configured"] = bool(
+        (cookies_text and "youtube.com" in cookies_text.lower())
+        or (env_cookies and os.path.exists(env_cookies))
+    )
+
+    from backend.devour.video_downloader import _bgutil_script_path
+    checks["pot_script"] = bool(_bgutil_script_path())
+
+    node = shutil.which("node")
+    checks["node_available"] = bool(node)
+    checks["node_version"] = None
+    if node:
+        try:
+            proc = await asyncio.to_thread(
+                subprocess.run, [node, "--version"], capture_output=True,
+                text=True, timeout=10)
+            checks["node_version"] = (proc.stdout or "").strip()
+        except Exception:
+            pass
+
+    suggestions = []
+    if not checks["cookies_configured"]:
+        suggestions.append("未配置 YouTube cookies：可在本卡片点「一键读取浏览器 Cookie」，"
+                           "或手动粘贴浏览器导出的 cookies.txt")
+    if not checks["pot_script"]:
+        suggestions.append("未安装 PO Token 支持：在项目目录执行 bash scripts/install_yt_pot.sh（需要 node）")
+    if checks["pot_script"] and not checks["node_available"]:
+        suggestions.append("已安装 PO Token 脚本但缺少 node 运行时：请安装 node")
+    if checks["yt_dlp_version"]:
+        suggestions.append("下载报 SABR/刷新页面类错误时，多为网络出口被 YouTube 限制：更换代理节点或网络后重试")
+    return {"checks": checks, "suggestions": suggestions}
+
+
 @app.post("/api/video/link", response_model=UploadResponse)
 async def process_link_video(request: LinkProcessRequest):
     """

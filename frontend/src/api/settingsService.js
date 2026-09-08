@@ -73,5 +73,12 @@ export const generateKnowledgeGraph = async (taskId) => {
  * @param {string} browser - 指定浏览器（空 = 自动按序尝试）
  */
 export const importCookiesFromBrowser = async (browser = "") => {
-  return api.post("/settings/cookies/from-browser", { browser }, { timeout: 180000 });
+  return api.post("/settings/cookies/from-browser", { browser }, { timeout: 480000 });
+};
+
+/**
+ * YouTube 下载环境自检（yt-dlp 版本 / cookies / PO Token / node）
+ */
+export const youtubeEnvCheck = async () => {
+  return api.get("/video/link/youtube-check", { timeout: 60000 });
 };
