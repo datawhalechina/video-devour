@@ -186,3 +186,6 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
     except Exception as e:
         logging.error(f"处理流程中发生错误: {e}", exc_info=True)
         print(f"处理失败，发生未知错误: {e}")
+        # 重新抛出：调用方（API/skill）依赖异常区分成败，
+        # 吞掉异常会让失败任务被误标为"处理完成"
+        raise

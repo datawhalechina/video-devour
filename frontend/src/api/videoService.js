@@ -91,7 +91,8 @@ export const getHistory = async () => {
       videoName: item.filename,
       status: item.status,
       createdAt: item.created_at,
-      progress: item.progress || 0
+      progress: item.progress || 0,
+      message: item.message || ''
     }));
   } catch (error) {
     throw error;

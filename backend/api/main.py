@@ -78,6 +78,17 @@ def load_tasks():
             processing_tasks = {}
     else:
         processing_tasks = {}
+    # 服务重启后，内存中的处理协程已不存在：
+    # 把遗留的 pending/processing/downloading 任务标记为失败，避免历史页出现永久"处理中"的僵尸任务
+    for task in processing_tasks.values():
+        if task.get("status") in ("pending", "processing", "downloading"):
+            task.update({
+                "status": "failed",
+                "stage": "error",
+                "progress": 0,
+                "message": "服务重启导致任务中断",
+                "error": task.get("error") or "服务重启导致任务中断，请重新提交",
+            })
 
 def save_tasks():
     """保存任务数据到文件"""
@@ -87,8 +98,9 @@ def save_tasks():
     except Exception as e:
         print(f"保存任务文件失败: {e}")
 
-# 启动时加载任务数据
+# 启动时加载任务数据（遗留的未完成任务标记为中断并持久化）
 load_tasks()
+save_tasks()
 
 @app.on_event("startup")
 async def startup_event():
@@ -1116,7 +1128,8 @@ async def get_history():
     获取处理历史记录，从output目录读取
     """
     history = []
-    
+    seen_task_ids = set()
+
     # 扫描output目录中的frames_开头的文件夹
     for dir_path in OUTPUT_DIR.iterdir():
         if dir_path.is_dir() and dir_path.name.startswith("frames_"):
@@ -1126,22 +1139,37 @@ async def get_history():
                 parts = dir_path.name.split("_")
                 if len(parts) >= 3:
                     task_id = parts[1]
+                    seen_task_ids.add(task_id)
                     timestamp_str = "_".join(parts[2:])
-                    
+
                     # 获取目录创建时间
                     created_at = datetime.fromtimestamp(dir_path.stat().st_ctime).isoformat()
-                    
+
                     # 检查是否有final_report.md文件来判断状态
                     final_report_path = dir_path / "final_report.md"
                     detailed_outline_path = dir_path / "detailed_outline.md"
-                    
+                    task_state = processing_tasks.get(task_id) or {}
+
                     # 如果有任一报告文件且内容不为空，则认为已完成
                     status = "processing"
                     if final_report_path.exists() and final_report_path.stat().st_size > 0:
                         status = "completed"
                     elif detailed_outline_path.exists() and detailed_outline_path.stat().st_size > 0:
                         status = "completed"
-                    
+                    elif task_state.get("status") == "completed":
+                        # 管线声称完成但目录缺报告：历史遗留的失败任务
+                        status = "failed"
+                        task_state["message"] = "处理失败，报告未生成"
+
+                    # 实时任务状态优先（下载/处理中的真实进度与阶段消息）
+                    if task_state.get("status") in ("pending", "processing", "downloading"):
+                        status = "processing"
+                    elif task_state.get("status") == "failed":
+                        status = "failed"
+                    progress = task_state.get("progress") if status == "processing" else (
+                        100 if status == "completed" else 0)
+                    message = task_state.get("message") or ""
+
                     # 优先从processing_tasks中获取文件名
                     filename = "unknown"
                     if task_id in processing_tasks and processing_tasks[task_id].get("filename"):
@@ -1157,17 +1185,32 @@ async def get_history():
                                 filename = f"{filename_part}.mp4"
                             else:
                                 filename = f"{task_id}.mp4"
-                    
+
                     history.append({
                         "task_id": task_id,
                         "filename": filename,
                         "status": status,
-                        "progress": 100 if status == "completed" else 90,
+                        "progress": progress,
+                        "message": message,
                         "created_at": created_at
                     })
             except Exception as e:
                 print(f"解析目录 {dir_path.name} 时出错: {e}")
                 continue
+
+    # 补充尚未生成输出目录的活动任务（如链接任务仍在下载阶段）
+    for task_id, task in processing_tasks.items():
+        if task_id in seen_task_ids:
+            continue
+        if task.get("status") in ("pending", "processing", "downloading"):
+            history.append({
+                "task_id": task_id,
+                "filename": task.get("filename") or task_id,
+                "status": "processing",
+                "progress": task.get("progress") or 0,
+                "message": task.get("message") or "",
+                "created_at": task.get("created_at") or datetime.now().isoformat()
+            })
     
     # 按创建时间倒序排列
     history.sort(key=lambda x: x["created_at"], reverse=True)
