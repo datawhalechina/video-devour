@@ -1,7 +1,9 @@
 # 🍽️ VideoDevour | 智能视频到报告生成器
 
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+**语言 / Language / 言語**：[简体中文](README.md) · [English](docs/README_EN.md) · [日本語](docs/README_JA.md)
 
 > 🎯 **核心理念**：吃掉视频，输出一份图文并茂的报告！  
 > 🚀 基于 ASR + VLM 技术的智能视频分析工具，能够将任何视频"吞噬"并生成包含关键帧图片、内容摘要和视频剪辑的结构化报告。
@@ -11,26 +13,17 @@
 > 📖 本次版本新增能力（双模式 ASR / 设置控制台 / 链接处理 / 学习卡片等）详见 [docs/新功能说明.md](docs/新功能说明.md)
 > 🖼️ 图文运行全流程示例（以吴恩达课程为例）详见 [docs/运行模式与使用示例.md](docs/运行模式与使用示例.md)
 
-- [🍽️ VideoDevour | 智能视频到报告生成器](#️-videodevour--智能视频到报告生成器)
-  - [📋 目录](#-目录)
-  - [🎯 项目简介](#-项目简介)
-    - [💡 核心价值](#-核心价值)
-    - [🎯 应用场景](#-应用场景)
-  - [✨ 核心功能](#-核心功能)
-    - [🎙️ 语音识别 (ASR)](#️-语音识别-asr)
-    - [📝 大纲生成与内容匹配](#-大纲生成与内容匹配)
-    - [🎬 视频与图像处理](#-视频与图像处理)
-    - [📜 报告生成](#-报告生成)
-  - [🔧 技术架构](#-技术架构)
-  - [📦 安装指南](#-安装指南)
-    - [环境要求](#环境要求)
-    - [安装步骤](#安装步骤)
-  - [🎛️ 模型概览与配置](#️-模型概览与配置)
-  - [🚀 快速开始](#-快速开始)
-    - [执行处理流程](#执行处理流程)
-  - [🏗️ 项目结构](#️-项目结构)
-  - [🤝 贡献指南](#-贡献指南)
-  - [📄 许可证](#-许可证)
+- [🎯 项目简介](#-项目简介)
+- [✨ 核心功能](#-核心功能)
+- [🤖 Agent Skill（任意 AI 编码助手可调用）](#-agent-skill任意-ai-编码助手可调用)
+- [🖼️ 系统预览](#️-系统预览)
+- [🔧 技术架构](#-技术架构)
+- [📦 安装指南](#-安装指南)
+- [🎛️ 配置](#️-配置)
+- [🚀 快速开始](#-快速开始)
+- [🏗️ 项目结构](#️-项目结构)
+- [🤝 贡献指南](#-贡献指南)
+- [📄 许可证](#-许可证)
 
 ## 🎯 项目简介
 
@@ -150,61 +143,40 @@ python3 .agents/skills/videodevour/scripts/devour.py report --latest
 ## 📦 安装指南
 
 ### 环境要求
-- Python 3.8+
-- FFmpeg
-- CUDA (可选, 用于GPU加速)
+- Python 3.12+（推荐用 [uv](https://docs.astral.sh/uv/) 管理环境与依赖）
+- FFmpeg（brew install ffmpeg / apt install ffmpeg）
+- GPU 可选：NVIDIA CUDA 或 Apple Silicon MPS 自动启用，无 GPU 时回退 CPU
 
 ### 安装步骤
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/your-username/VideoDevour.git
-cd VideoDevour
+git clone https://github.com/datawhalechina/video-devour.git
+cd video-devour
 
-# 2. 创建并激活Python虚拟环境
-python -m venv .venv
-source .venv/bin/activate  # On Windows, use: .venv\Scripts\activate
+# 2. 安装依赖（推荐 uv，自动创建 .venv 并按 uv.lock 精确安装）
+uv sync
 
-# 3. 安装所有依赖项
+# 或者不用 uv 的话：
 pip install -r requirements.txt
 ```
-*注意：`requirements.txt` 应包含 `funasr`, `torch`, `camel-ai`, `opencv-python-headless` 等所有必需的库。*
 
-## 🎛️ 模型概览与配置
-```
-# config.py
+## 🎛️ 配置
 
-# LLM 配置
-LLM_MODEL_TYPE = "deepseek-chat"
-LLM_API_URL = "https://api.deepseek.com"
-LLM_TEMPERATURE = 0.4
-LLM_TOKEN_COUNTER = 128000
-
-# VLM 配置
-VLM_MODEL_TYPE = "doubao-seed-1-6-flash-250828"
-VLM_API_URL = "https://ark.cn-beijing.volces.com/api/v3"
-```
+推荐直接使用**设置控制台**完成全部配置（见下文），无需手改任何文件。如偏好手动配置，可参考 `backend/algorithm/config.template.py`（`cp config.template.py config.py` 后按需修改）；API Key 也可以通过环境变量 `LLM_API_KEY` / `VLM_API_KEY` 注入。
 
 ## 🚀 快速开始
 
-项目现在提供了完整的Web界面，包括前端和后端服务。出于安全保护，需要提前将**API_KEY**注入环境变量，而不是直接在代码中硬编码。
-
-### 环境变量配置
-```bash
-echo "export LLM_API_KEY=your-llm-api-key" >> ~/.bashrc
-echo "export VLM_API_KEY=your-vlm-api-key" >> ~/.bashrc
-source ~/.bashrc
-```
-
 ### 设置控制台（推荐）
 
-也可以不修改任何配置文件，启动后在前端页面点击「控制台」（或访问 `/settings`）完成全部配置：
+启动后在任意页面点击右下角 ⚙ 悬浮按钮（或访问 `/settings`）完成全部配置：
 
-- **语音识别模式**：`离线`（本地 FunASR Paraformer，无需 API）或 `在线`（DashScope 云端识别，零模型下载、启动即用）
-- **LLM / VLM**：填写 API Key、接口地址（任意 OpenAI 兼容服务）与模型名称，并可一键连通性测试
-- **默认学习阶段**：小学 / 初中 / 高中，影响大纲与报告的语言风格
+- **语音识别模式**：`离线`（本地 FunASR Paraformer，无需 API）或 `在线`（DashScope / StepFun 云端识别，零模型下载、启动即用）
+- **LLM / VLM**：填写 API Key、接口地址（任意 OpenAI 兼容服务）与模型名称，支持常用供应商一键填入，并可一键连通性测试
+- **默认学习阶段**：九档可选（自由学习/小学/初中/高中/大学/硕士/博士/深入研究/垂直领域研究）
+- **微信视频号**：填入元宝 Cookie 以启用视频号分享链接下载（配置方法见下文）
 
-配置保存在项目根目录的 `settings.json`（已被 gitignore，含密钥请勿提交），并会在每次任务执行时注入运行时配置；`backend/algorithm/config.py` 缺失时后端也可直接启动。`config.template.py` 为手动配置的参考模板（`cp config.template.py config.py`）。
+配置保存在项目根目录的 `settings.json`（已被 gitignore，含密钥请勿提交），并会在每次任务执行时注入运行时配置；`backend/algorithm/config.py` 缺失时后端也可直接启动。
 
 ### 在线视频链接处理（B站 / YouTube / 微信视频号）
 
@@ -240,25 +212,24 @@ source ~/.bashrc
 > Cookie 仅保存在本机（`settings.json` 已被 gitignore 排除，页面上脱敏显示），不会上传到任何服务。
 > Agent Skill 用户可用 `devour.py wechat --check` 一键验证 Cookie 是否有效；解析报 401 时按上述步骤重新复制即可。
 
-### 学习卡片与导出
+### 学习增强（可选生成）
 
-- 报告页新增「生成学习卡片」：由 LLM 将报告转换为手机尺寸的 Bento Grid 风格 HTML 学习卡片
-- 报告页新增「导出 Markdown」：将大纲与最终报告合并为单个 Markdown 文件下载
-- 上传视频时可选择学习阶段（小学/初中/高中），LLM 生成内容会相应调整深度
+- **思维导图 / 知识图谱 / 学习卡片**：默认不自动生成——上传或链接处理时按需勾选「完成后生成」，报告完成时自动产出；报告页也保留手动生成按钮
+- **导出 Markdown**：报告页一键将大纲与最终报告合并为单个 Markdown 文件下载（本地图片内嵌 base64，离线可看）
+- **学习阶段**：九档可选（自由学习为默认通用模式），LLM 生成内容随阶段调整深度
 - LLM 调用内置限流自动重试（指数退避 + 随机抖动）
 
 ### 启动服务
 
 #### 1. 启动后端服务
-在项目根目录下，使用 `uv` 激活虚拟环境并启动后端：
+在项目根目录下启动后端：
 ```bash
-# 激活虚拟环境
+# 安装依赖并激活虚拟环境
 uv sync
 source .venv/bin/activate
 
 # 启动后端服务
-cd backend
-uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 后端服务将在 `http://localhost:8000` 启动。
@@ -288,9 +259,9 @@ python backend/algorithm/main.py "path/to/your/video.mp4"
 ```
 
 **示例：**
-处理位于 `input_video` 文件夹下的 `minvideo.mp4`：
+处理位于 `uploads` 文件夹下的 `demo.mp4`：
 ```bash
-python backend/algorithm/main.py "input_video/minvideo.mp4"
+python backend/algorithm/main.py "uploads/demo.mp4"
 ```
 
 程序执行完毕后，所有输出文件，包括日志、ASR结果、视频切片、关键帧图片和最终报告，都将保存在 `output` 目录下，一个以视频名和时间戳命名的新文件夹中。
@@ -298,37 +269,43 @@ python backend/algorithm/main.py "input_video/minvideo.mp4"
 ## 🏗️ 项目结构
 
 ```
-videodevour/
+video-devour/
 ├── 📁 backend/
-│   ├── 📁 algorithm/         # 核心处理算法和流程
-│   │   ├── pipeline.py       # 封装了从头到尾的完整处理流程
-│   │   ├── main.py           # 命令行启动入口
-│   │   ├── config.py         # 配置文件
-│   │   ├── data_processor.py   # ASR数据后处理
-│   │   ├── llm_handler.py      # LLM交互处理器
-│   │   ├── vlm_handler.py      # VLM交互处理器
-│   │   ├── image_processor.py  # 图像处理与筛选
-│   │   ├── video_handler.py    # 视频处理
-│   │   └── outline_handler.py  # 大纲处理与报告生成
-│   ├── 📁 api/               # Web API 接口
-│   │   ├── main.py           # FastAPI 主应用
-│   │   ├── routes/           # API 路由
-│   │   └── models/           # 数据模型
-│   └── 📁 devour/
-│       └── asr_engine_paraformer_v2.py # ASR引擎实现
-├── 📁 frontend/              # React 前端应用
+│   ├── 📁 algorithm/            # 核心处理算法和流程
+│   │   ├── pipeline.py          # 端到端完整处理流程
+│   │   ├── main.py              # 命令行启动入口
+│   │   ├── settings_store.py    # 运行时设置（settings.json 读写与注入）
+│   │   ├── report_viz.py        # 思维导图/知识图谱/学习卡片生成
+│   │   ├── config.template.py   # 手动配置参考模板（config.py 被 gitignore）
+│   │   ├── data_processor.py    # ASR 数据后处理
+│   │   ├── llm_handler.py       # LLM 交互（含限流重试/中文输出保障）
+│   │   ├── vlm_handler.py       # VLM 交互
+│   │   ├── image_processor.py   # 帧处理与关键帧选择
+│   │   ├── video_handler.py     # 视频切分与抽帧
+│   │   ├── outline_handler.py   # 大纲处理与报告生成
+│   │   └── text_similarity_matcher.py  # 标题-文本块语义匹配
+│   ├── 📁 api/
+│   │   └── main.py              # FastAPI 主应用（全部 API 端点）
+│   └── 📁 devour/               # 视频获取与 ASR 引擎
+│       ├── video_downloader.py  # 链接下载（B站/YouTube/微信视频号）
+│       ├── asr_factory.py       # ASR 引擎工厂（离线/在线切换）
+│       ├── asr_engine_paraformer_v2.py  # 本地 FunASR 引擎
+│       ├── asr_engine_dashscope.py      # DashScope 在线引擎
+│       ├── asr_engine_stepfun.py        # StepFun 在线引擎
+│       └── ...                  # 其他引擎实现
+├── 📁 frontend/                 # React 前端应用
 │   ├── 📁 src/
-│   │   ├── 📁 components/    # React 组件
-│   │   ├── 📁 api/           # API 调用
-│   │   └── 📁 utils/         # 工具函数
-│   ├── package.json          # 前端依赖配置
-│   └── vite.config.js        # Vite 构建配置
-├── 📁 input_video/            # 存放待处理的视频文件
-├── 📁 output/                 # 存放所有处理结果
-├── 📁 models/                 # (可选) 存放本地ASR/VLM模型文件
-├── 📄 requirements.txt       # Python 依赖
-├── 📄 pyproject.toml         # uv 项目配置
-└── 📄 README.md             # 项目文档
+│   │   ├── 📁 components/       # React 组件（上传/链接/报告/设置等）
+│   │   └── 📁 api/              # API 调用封装
+│   ├── package.json             # 前端依赖配置
+│   └── vite.config.js           # Vite 构建配置
+├── 📁 .agents/skills/videodevour/  # Agent Skill（跨 agent 通用入口）
+├── 📁 docs/                     # 功能说明与使用示例文档
+├── 📁 output/                   # 处理结果输出目录（运行时生成）
+├── 📁 models/                   # (可选) 本地 ASR 模型文件
+├── 📄 pyproject.toml            # uv 项目配置（Python ≥3.12）
+├── 📄 requirements.txt          # pip 依赖（与 pyproject 等价）
+└── 📄 README.md                 # 项目文档
 ```
 
 ## 🤝 贡献指南
