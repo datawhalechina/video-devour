@@ -980,6 +980,19 @@ def _youtube_search(query: str, max_results: int) -> List[Dict]:
     return results
 
 
+def _bgutil_script_path() -> Optional[str]:
+    """探测 bgutil PO Token 生成脚本（YouTube 下载增强，可选安装）"""
+    import os
+    env = os.getenv("BGUTIL_POT_SCRIPT")
+    if env and os.path.exists(env):
+        return env
+    default = os.path.expanduser(
+        "~/bgutil-ytdlp-pot-provider/server/build/generate_once.js")
+    if os.path.exists(default):
+        return default
+    return None
+
+
 def download_video(url: str, target_dir: str, max_height: int = 1080,
                    progress_hook=None) -> Dict:
     """
@@ -1057,6 +1070,13 @@ def download_video(url: str, target_dir: str, max_height: int = 1080,
     cookie_entry = _build_cookiefile()
     if cookie_entry[0]:
         options["cookiefile"] = cookie_entry[0]
+    # YouTube：集成 bgutil PO Token 插件的脚本路径（若已安装，绕过 PO Token 限制）
+    if platform == "youtube":
+        pot_script = _bgutil_script_path()
+        if pot_script:
+            options["extractor_args"] = {
+                "youtubepot-bgutilscript": {"script_path": [pot_script]}}
+            logging.info("已启用 bgutil PO Token 脚本")
 
     info = None
     last_error = None
@@ -1074,6 +1094,14 @@ def download_video(url: str, target_dir: str, max_height: int = 1080,
                     "YouTube 要求登录验证（bot 检查）。请在设置控制台「YouTube cookies」"
                     "粘贴浏览器导出的 cookies.txt（Netscape 格式，需含 youtube.com 的登录 cookie）"
                     "后重试；或设置环境变量 YTDLP_COOKIES_FILE 指向该文件。"
+                )
+            if "needs to be reloaded" in message or "SABR" in message:
+                _remove_cookiefile(cookie_entry)
+                raise ValueError(
+                    "YouTube 对当前网络出口强制启用 SABR 流（常见于数据中心/代理 IP），"
+                    "下载被服务端限制。可尝试：1) 更换网络环境或代理节点后重试；"
+                    "2) 安装 PO Token 支持（scripts/install_yt_pot.sh，详见 README）；"
+                    "3) 更新 yt-dlp 至最新版本。"
                 )
             if "412" in message or "Precondition" in message:
                 wait = 10 * (attempt + 1)   # 10/20/30/40s：412 是分钟级 IP 风控窗口，短退避穿不透

@@ -185,7 +185,7 @@ pip install -r requirements.txt
 
 注意点：
 - ビリビリは未ログインでは約 720p まで。高頻度リクエストはリスク制限を誘発する場合があります（Cookie フィンガープリントと自動リトライを内蔵）
-- YouTube はボット判定あり：メタデータは oEmbed に自動フォールバック。ダウンロードにはブラウザからエクスポートした Cookie（Netscape 形式）を `YTDLP_COOKIES_FILE` で指定
+- YouTube はボット判定あり：メタデータは oEmbed に自動フォールバック。ダウンロードには設定コンソールの「YouTube cookies」が必要（または `YTDLP_COOKIES_FILE` で cookies ファイルを指定）。設定ページの「ブラウザから Cookie を一括取得」で自動取得も可能です。データセンター/プロキシ IP では SABR ストリーミングが強制される場合があり、その際は PO Token サポートを導入してください：`bash scripts/install_yt_pot.sh`（node が必要）、yt-dlp も最新に更新を推奨
 - **WeChat チャンネル**：`weixin.qq.com/sph/...` のシェアリンクを貼るだけ（検索・埋め込みプレビュー非対応）。チャンネルには公開直リンクがないため、以下の 3 経路を優先度順に使用します：
   1. **直接解決（推奨）**：設定画面でテンセント元宝の Cookie を入力（「[WeChat チャンネル Cookie の設定](#wechat-チャンネル-cookie-の設定)」を参照）。バックエンドが元宝パース API で exportId+token を取得 → チャンネル feed API でメディア URL を取得 → `decodeKey` がある場合は先頭 128KB を ISAAC64 でローカル復号（WechatSphDecrypt アルゴリズム、独立実装とクロス検証済み）→ ffprobe で検証。サードパーティサービス不要
   2. **自己ホストのリゾルバ**：`WECHAT_RESOLVER_URL` を設定（Bearer トークン任意）。[ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download) の sph worker と互換

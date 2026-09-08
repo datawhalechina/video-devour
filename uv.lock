@@ -228,6 +228,15 @@ wheels = [
 ]
 
 [[package]]
+name = "bgutil-ytdlp-pot-provider"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/f2/785a5d6a0d69508756a3bf53af430660a47a4143abdd40543089b03108de/bgutil_ytdlp_pot_provider-2.0.0.tar.gz", hash = "sha256:dac2d1aeeac63218efe879e538e978d2efc088ed887124095e6fd6a09c3077df", size = 11688, upload-time = "2026-09-08T00:11:47.482Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/38/fd54194c03f6636488343d4c49e96ce2fe8ecd228c0cf7ce4d024ab7d52b/bgutil_ytdlp_pot_provider-2.0.0-py3-none-any.whl", hash = "sha256:22884c399802771ddfd9275bb05b178d67c89db67a1d5d1e17ed7f681956628e", size = 12358, upload-time = "2026-09-08T00:11:46.305Z" },
+]
+
+[[package]]
 name = "bitarray"
 version = "3.7.2"
 source = { registry = "https://pypi.org/simple" }
@@ -4422,6 +4431,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },
     { name = "aiohttp" },
+    { name = "bgutil-ytdlp-pot-provider" },
     { name = "browser-cookie3" },
     { name = "camel-ai" },
     { name = "curl-cffi" },
@@ -4452,6 +4462,7 @@ dependencies = [
 requires-dist = [
     { name = "aiofiles", specifier = ">=23.2.1" },
     { name = "aiohttp", specifier = ">=3.9.0" },
+    { name = "bgutil-ytdlp-pot-provider", specifier = ">=2.0.0" },
     { name = "browser-cookie3", specifier = ">=0.20.1" },
     { name = "camel-ai", specifier = ">=0.2.75" },
     { name = "curl-cffi", specifier = ">=0.9.0" },
