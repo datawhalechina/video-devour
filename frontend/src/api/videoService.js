@@ -26,8 +26,13 @@ api.interceptors.response.use(
     return response.data;
   },
   (error) => {
+    // FastAPI 错误体是 {detail: ...}，旧代码只读 data.message 会丢掉后端的中文提示
+    const detail = error.response?.data?.detail;
     const message =
-      error.response?.data?.message || error.message || "请求失败";
+      (typeof detail === "string" ? detail : detail?.message) ||
+      error.response?.data?.message ||
+      error.message ||
+      "请求失败";
     return Promise.reject(new Error(message));
   }
 );
