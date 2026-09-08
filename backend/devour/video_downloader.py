@@ -993,6 +993,30 @@ def _bgutil_script_path() -> Optional[str]:
     return None
 
 
+def _youtube_js_runtime() -> Optional[str]:
+    """
+    YouTube 的 n challenge 需要 JS 运行时（yt-dlp EJS）求解：
+    优先 Deno（yt-dlp 默认支持），其次 Node（≥22）。返回运行时名或 None。
+    """
+    import shutil
+    import subprocess
+
+    for name, min_major in (("deno", 2), ("node", 22)):
+        exe = shutil.which(name)
+        if not exe:
+            continue
+        try:
+            out = subprocess.run([exe, "--version"], capture_output=True,
+                                 text=True, timeout=10).stdout.strip()
+            import re as _re
+            m = _re.search(r"(\d+)\.", out)
+            if m and int(m.group(1)) >= min_major:
+                return name
+        except Exception:
+            continue
+    return None
+
+
 def download_video(url: str, target_dir: str, max_height: int = 1080,
                    progress_hook=None) -> Dict:
     """
@@ -1077,6 +1101,11 @@ def download_video(url: str, target_dir: str, max_height: int = 1080,
             options["extractor_args"] = {
                 "youtubepot-bgutilscript": {"script_path": [pot_script]}}
             logging.info("已启用 bgutil PO Token 脚本")
+        # n challenge（EJS）需要 JS 运行时，否则大量格式会被服务端隐藏
+        js_runtime = _youtube_js_runtime()
+        if js_runtime:
+            options["js_runtimes"] = {js_runtime: {}}
+            logging.info(f"YouTube JS challenge 运行时: {js_runtime}")
 
     info = None
     last_error = None

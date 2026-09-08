@@ -446,8 +446,17 @@ async def youtube_env_check():
         or (env_cookies and os.path.exists(env_cookies))
     )
 
-    from backend.devour.video_downloader import _bgutil_script_path
+    from backend.devour.video_downloader import _bgutil_script_path, _youtube_js_runtime
     checks["pot_script"] = bool(_bgutil_script_path())
+
+    # yt-dlp EJS：YouTube n challenge 求解脚本（yt-dlp[default] 自带）
+    try:
+        import importlib.metadata as _md
+        checks["ejs_version"] = _md.version("yt-dlp-ejs")
+    except Exception:
+        checks["ejs_version"] = None
+
+    checks["js_runtime"] = _youtube_js_runtime()
 
     node = shutil.which("node")
     checks["node_available"] = bool(node)
@@ -465,12 +474,16 @@ async def youtube_env_check():
     if not checks["cookies_configured"]:
         suggestions.append("未配置 YouTube cookies：可在本卡片点「一键读取浏览器 Cookie」，"
                            "或手动粘贴浏览器导出的 cookies.txt")
+    if not checks["ejs_version"]:
+        suggestions.append("缺少 yt-dlp EJS 求解脚本：执行 uv sync（或 pip install -U \"yt-dlp[default]\"）")
+    if not checks["js_runtime"]:
+        suggestions.append("缺少 JS 运行时：安装 Deno（推荐）或 Node ≥22，用于解 YouTube 的 n challenge")
     if not checks["pot_script"]:
         suggestions.append("未安装 PO Token 支持：在项目目录执行 bash scripts/install_yt_pot.sh（需要 node）")
     if checks["pot_script"] and not checks["node_available"]:
         suggestions.append("已安装 PO Token 脚本但缺少 node 运行时：请安装 node")
-    if checks["yt_dlp_version"]:
-        suggestions.append("下载报 SABR/刷新页面类错误时，多为网络出口被 YouTube 限制：更换代理节点或网络后重试")
+    if checks["cookies_configured"] and checks["ejs_version"] and checks["js_runtime"]:
+        suggestions.append("环境已就绪。若仍报错，尝试更换网络/代理节点后重试")
     return {"checks": checks, "suggestions": suggestions}
 
 

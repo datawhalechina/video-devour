@@ -188,7 +188,7 @@ pip install -r requirements.txt
 
 说明：
 - B站未登录最高可取 720p 左右画质，高清晰度需自行配置登录态；短时间高频请求可能触发平台风控，服务端已带 cookie 指纹与自动重试
-- YouTube 存在 bot 检查：元数据自动回退 oEmbed 获取；下载需在设置控制台配置「YouTube cookies」（或 `YTDLP_COOKIES_FILE` 指向 cookies 文件），也可在设置页「一键读取浏览器 Cookie」自动获取。部分网络环境（数据中心/代理 IP）会被 YouTube 强制 SABR 流限制，需额外安装 PO Token 支持：`bash scripts/install_yt_pot.sh`（依赖 node），并建议更新 yt-dlp 至最新版
+- YouTube 存在 bot 检查：元数据自动回退 oEmbed 获取；下载需在设置控制台配置「YouTube cookies」（或 `YTDLP_COOKIES_FILE` 指向 cookies 文件），也可在设置页「一键读取浏览器 Cookie」自动获取。下载还需要 yt-dlp 的 EJS 求解脚本与 JS 运行时（uv sync 已包含 `yt-dlp[default]`；需本机有 Deno 或 Node ≥22），可选装 PO Token 支持 `bash scripts/install_yt_pot.sh`。设置页「下载环境自检」可一键检查全部依赖
 - **微信视频号**：粘贴 `weixin.qq.com/sph/...` 分享链接即可（不支持搜索与内嵌预览）。视频号没有公开直链，按优先级走三条链路：
   1. **直连解析（推荐）**：在设置页「微信视频号」填入腾讯元宝 Cookie（配置步骤见下文「[微信视频号 Cookie 配置](#微信视频号-cookie-配置)」），后端调用元宝解析接口换取 exportId+token → 视频号 feed 接口取媒体地址 → 若带 `decodeKey` 则本地 ISAAC64 解密前 128KB（WechatSphDecrypt 算法，已与独立参考实现交叉验证）→ ffprobe 校验。全程无第三方服务
   2. **自建解析服务**：设置页填 `WECHAT_RESOLVER_URL`（可选 Bearer Token），兼容 [ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download) 的 sph worker（支持其 feed 结构返回）
