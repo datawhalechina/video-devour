@@ -21,12 +21,18 @@ from pathlib import Path
 from typing import Dict, List
 
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Optional
 
 DEFAULT_BASE_URL = "https://api.stepfun.com/step_plan/v1"
 
 # 单次上传的音频体积上限：官方限制 100MB，留出 base64 膨胀（约 1.33 倍）
 # 与请求体余量后取 60MB —— 16kHz 单声道 16bit ≈ 32KB/s，即约 32 分钟/段
 MAX_CHUNK_BYTES = 60 * 1024 * 1024
+# 分段并发数（受 StepFun 侧 QPS 限制，过大易触发限流）
+MAX_CONCURRENCY = 4
+# 单段识别失败重试次数（并发下偶发网络抖动）
+MAX_RETRIES = 3
 _SAMPLE_RATE, _CHANNELS, _BYTES_PER_SAMPLE = 16000, 1, 2
 _BYTES_PER_SECOND = _SAMPLE_RATE * _CHANNELS * _BYTES_PER_SAMPLE
 
@@ -172,6 +178,26 @@ class VideoDevourASRStepFun:
                 full_text += event.get("delta", "")
         return full_text.strip()
 
+    def _transcribe_pcm_with_retry(self, pcm_b64: str) -> str:
+        """带退避重试的单段识别（并发下网络抖动/限流时自动重试）"""
+        import time as _time
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                return self._transcribe_pcm(pcm_b64)
+            except Exception as e:
+                last_error = e
+                msg = str(e)
+                # 413/4xx 属请求本身问题，重试无意义
+                if "HTTP 4" in msg and "HTTP 429" not in msg:
+                    raise
+                if attempt < MAX_RETRIES - 1:
+                    wait = 2 * (attempt + 1)
+                    logging.warning(f"[StepFun] 分段识别失败（{msg[:80]}），{wait}s 后重试"
+                                    f"（{attempt + 1}/{MAX_RETRIES}）")
+                    _time.sleep(wait)
+        raise last_error
+
     def _iter_pcm_chunks(self, pcm_path: str, chunk_bytes: int = MAX_CHUNK_BYTES):
         """按字节切分 PCM 文件，yield (base64, 该段起始秒)。字节对齐到采样帧"""
         frame = _BYTES_PER_SAMPLE * _CHANNELS          # 2 字节/帧
@@ -199,15 +225,32 @@ class VideoDevourASRStepFun:
             logging.info(f"[StepFun] 音频时长 {duration / 60:.1f} 分钟，"
                          f"按 {MAX_CHUNK_BYTES / 1024 / 1024:.0f}MB 切分为 {n_chunks} 段识别")
 
+            # 分段并发识别（长音频从 N 倍耗时降为约 1 段耗时）；
+            # 按段序收集结果，保证时间戳与文本顺序正确
+            chunk_list = list(self._iter_pcm_chunks(pcm_path))
+            texts: List[Optional[str]] = [None] * len(chunk_list)
+            with ThreadPoolExecutor(max_workers=min(MAX_CONCURRENCY, len(chunk_list))) as pool:
+                future_map = {
+                    pool.submit(self._transcribe_pcm_with_retry, b64): i
+                    for i, (b64, _) in enumerate(chunk_list)
+                }
+                for future in as_completed(future_map):
+                    i = future_map[future]
+                    start = chunk_list[i][1]
+                    try:
+                        texts[i] = future.result()
+                        logging.info(f"[StepFun] 第 {i + 1}/{len(chunk_list)} 段识别完成"
+                                     f"（起点 {start / 60:.1f} 分钟）")
+                    except Exception as e:
+                        logging.error(f"[StepFun] 第 {i + 1} 段识别失败: {e}")
+                        texts[i] = None
+
             transcript: List[Dict] = []
-            for idx, (chunk_b64, chunk_start) in enumerate(self._iter_pcm_chunks(pcm_path)):
-                chunk_seconds = len(chunk_b64) * 3 / 4 / _BYTES_PER_SECOND
-                logging.info(f"[StepFun] 识别第 {idx + 1}/{n_chunks} 段"
-                             f"（{chunk_start / 60:.1f} - {(chunk_start + chunk_seconds) / 60:.1f} 分钟）...")
-                text = self._transcribe_pcm(chunk_b64)
+            for idx, ((chunk_b64, chunk_start), text) in enumerate(zip(chunk_list, texts)):
                 if not text:
                     logging.warning(f"[StepFun] 第 {idx + 1} 段无识别结果，跳过")
                     continue
+                chunk_seconds = len(chunk_b64) * 3 / 4 / _BYTES_PER_SECOND
                 # 段内时间戳为线性近似，整体加上该段在原始音频中的起始偏移
                 for seg in self.normalize_result(text, chunk_seconds):
                     seg["index"] = len(transcript) + 1

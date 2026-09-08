@@ -4,7 +4,11 @@ import re
 import logging
 import subprocess
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import config
+
+# 视频切分/抽帧并发度（ffmpeg 本身多线程，过高会争抢 CPU，4 段并行较稳妥）
+VIDEO_CONCURRENCY = 4
 
 def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, output_dir=None):
     """
@@ -39,6 +43,7 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
     logging.info(f"视频片段将保存到: {videocut_path}")
     
     video_cut_count = 0
+    cut_jobs = []   # (heading, output_path, ffmpeg_command)
     for i, (level, heading) in enumerate(headings_with_level):
         # 只为二级标题创建视频剪辑
         if level != 2:
@@ -87,17 +92,30 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
                 '-y', output_path
             ]
             
+            cut_jobs.append((heading, output_path, ffmpeg_command))
+
+    # 并行切分所有片段（每段独立 ffmpeg 重编码，互不依赖）
+    if cut_jobs:
+        def _run_cut(job):
+            heading, output_path, cmd = job
             try:
-                subprocess.run(ffmpeg_command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 logging.info(f"成功保存视频片段到: {output_path}")
-                video_cut_count += 1
+                return True
             except subprocess.CalledProcessError as e:
-                logging.error(f"ffmpeg 执行失败，命令为: {' '.join(ffmpeg_command)}")
-                logging.error(f"ffmpeg 错误输出:\\n{e.stderr.decode('utf-8')}")
+                logging.error(f"ffmpeg 执行失败({heading}): {e.stderr.decode('utf-8', errors='ignore')[:300]}")
+                return False
             except FileNotFoundError:
                 logging.error("错误: 'ffmpeg' 未找到。请确保 ffmpeg 已安装并处于系统的 PATH 中。")
-                print("错误: 'ffmpeg' 未找到。视频切分步骤无法执行。")
                 return None
+
+        with ThreadPoolExecutor(max_workers=min(VIDEO_CONCURRENCY, len(cut_jobs))) as pool:
+            for ok in pool.map(_run_cut, cut_jobs):
+                if ok is None:      # ffmpeg 缺失，直接终止
+                    print("错误: 'ffmpeg' 未找到。视频切分步骤无法执行。")
+                    return None
+                if ok:
+                    video_cut_count += 1
 
     if video_cut_count > 0:
         logging.info(f"--- 视频切分完成，共生成 {video_cut_count} 个视频片段 ---")
@@ -204,36 +222,40 @@ def extract_frames_from_videos(videocut_path=None, output_dir=None):
     logging.info(f"从目录读取视频文件: {videocut_path}")
     logging.info(f"找到 {len(video_files)} 个视频文件")
     
-    for video_file in video_files:
+    def _extract_one(video_file):
+        """抽取单个片段的帧，返回 (帧数, 帧目录) 或 (None, None)"""
         video_path = os.path.join(videocut_path, video_file)
         video_name = os.path.splitext(video_file)[0]
-        
-        # 构建帧文件夹名称：frames_视频名
-        frame_folder_name = f"frames_{video_name}"
-        frame_output_dir = os.path.join(output_dir, frame_folder_name)
+        frame_output_dir = os.path.join(output_dir, f"frames_{video_name}")
         os.makedirs(frame_output_dir, exist_ok=True)
-        
         logging.info(f"正在从 '{video_file}' 提取帧到 '{frame_output_dir}'...")
-        
-        ffmpeg_command = [
+        cmd = [
             'ffmpeg', '-i', video_path, '-vf', 'fps=1',
             '-q:v', '2', os.path.join(frame_output_dir, 'frame_%04d.jpg')
         ]
-
         try:
-            subprocess.run(ffmpeg_command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            num_frames = len([f for f in os.listdir(frame_output_dir) if f.endswith('.jpg')])
-            logging.info(f"成功从 '{video_file}' 提取了 {num_frames} 帧。")
-            logging.info(f"帧已保存到: {frame_output_dir}")
-            frame_extraction_count += num_frames
-            frame_dirs.append(frame_output_dir)
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            num = len([f for f in os.listdir(frame_output_dir) if f.endswith('.jpg')])
+            logging.info(f"成功从 '{video_file}' 提取了 {num} 帧。")
+            return num, frame_output_dir
         except subprocess.CalledProcessError as e:
-            logging.error(f"从 '{video_file}' 提取帧失败。")
-            logging.error(f"ffmpeg 错误输出:\\n{e.stderr.decode('utf-8')}")
+            logging.error(f"从 '{video_file}' 提取帧失败: {e.stderr.decode('utf-8', errors='ignore')[:300]}")
+            return None, None
         except FileNotFoundError:
+            return 'no_ffmpeg', None
+
+    # 并行抽帧（每个片段独立，按视频文件名排序保证 frame_dirs 顺序稳定）
+    if video_files:
+        with ThreadPoolExecutor(max_workers=min(VIDEO_CONCURRENCY, len(video_files))) as pool:
+            results = list(pool.map(_extract_one, sorted(video_files)))
+        if any(r[0] == 'no_ffmpeg' for r in results):
             logging.error("错误: 'ffmpeg' 未找到。")
             print("错误: 'ffmpeg' 未找到。帧提取步骤无法执行。")
             return []
+        for num, fdir in results:
+            if num:
+                frame_extraction_count += num
+                frame_dirs.append(fdir)
 
     if frame_extraction_count > 0:
         logging.info(f"--- 帧提取完成，总共提取了 {frame_extraction_count} 帧 ---")

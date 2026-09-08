@@ -1054,7 +1054,12 @@ def download_video(url: str, target_dir: str, max_height: int = 1080,
         ),
         "merge_output_format": "mp4",
         "progress_hooks": [_wrap_hook],
-        "concurrent_fragment_downloads": 4,
+        # 分片流（YouTube DASH/HLS）多线程下载；B站等单文件流不受影响
+        "concurrent_fragment_downloads": 8,
+        # 对支持 Range 的直链启用分块请求，提高单文件吞吐
+        "http_chunk_size": 10485760,   # 10MB
+        "retries": 5,
+        "fragment_retries": 5,
     }
     import time
     import os
