@@ -1,7 +1,13 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Clock, FileText, Image, Download, Edit3, LayoutGrid, FileDown,
-  Timer, Share2, Network, BookOpen } from "lucide-react";
+  Timer, Share2, Network, BookOpen, Link2 } from "lucide-react";
+
+const PLATFORM_LABELS = {
+  bilibili: "B站",
+  youtube: "YouTube",
+  wechat: "微信视频号",
+};
 import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -266,7 +272,7 @@ const ReportViewer = ({ report, onBack }) => {
               <h2 className="text-xl font-semibold text-gray-800 mb-2">
                 {report.video_name || report.fileName || "未知视频"}
               </h2>
-              <div className="flex items-center gap-4 text-gray-600">
+              <div className="flex flex-wrap items-center gap-4 text-gray-600">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4" />
                   <span>时长: {formatDuration(report.duration)}</span>
@@ -275,6 +281,23 @@ const ReportViewer = ({ report, onBack }) => {
                   <FileText className="w-4 h-4" />
                   <span>处理时间: {report.created_at ? new Date(report.created_at).toLocaleString() : "未知"}</span>
                 </div>
+                {report.source_url && (
+                  <div className="flex items-center gap-2">
+                    <Link2 className="w-4 h-4" />
+                    <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">
+                      {PLATFORM_LABELS[report.platform] || "网页"}
+                    </span>
+                    <a
+                      href={report.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={report.source_url}
+                      className="text-primary-600 hover:text-primary-700 hover:underline max-w-[320px] truncate"
+                    >
+                      {report.source_url}
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3">

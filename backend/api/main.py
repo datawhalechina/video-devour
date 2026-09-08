@@ -898,6 +898,18 @@ async def get_task_report(task_id: str):
     # 获取创建时间
     created_at = datetime.fromtimestamp(output_dir.stat().st_ctime).isoformat()
     
+    # 来源链接（链接任务才有）：用于报告页展示原渠道
+    source_url = ""
+    platform = ""
+    task_record = processing_tasks.get(task_id) or {}
+    source_url = task_record.get("source_url") or ""
+    if source_url:
+        try:
+            from backend.devour.video_downloader import detect_platform
+            platform = detect_platform(source_url)
+        except Exception:
+            platform = "other"
+
     return {
         "task_id": task_id,
         "video_name": video_name,
@@ -907,6 +919,8 @@ async def get_task_report(task_id: str):
         "detailed_report": detailed_report,
         "output_dir": output_dir.name,  # 添加输出目录名称
         "created_at": created_at,
+        "source_url": source_url,
+        "platform": platform,
         "status": "completed" if (detailed_outline or final_report) else "processing"
     }
 
