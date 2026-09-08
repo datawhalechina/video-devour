@@ -8,6 +8,35 @@
 import json
 import logging
 
+def _fix_mojibake(text: str) -> str:
+    """
+    修复 UTF-8 被误按 Latin-1 解码产生的乱码（mojibake）。
+
+    典型场景：SSE/HTTP 响应头缺 charset，客户端按 ISO-8859-1 解码
+    UTF-8 中文，得到 'å¦\x82æ\x9e...' 这类字符。此函数尝试逆向还原；
+    还原后若中文字符明显增多则采用，否则原样返回（避免误伤正常文本）。
+    """
+    if not text or not isinstance(text, str):
+        return text
+    # 快速判断：mojibake 的典型特征是出现 Ã/Â/å/æ/ç 等 Latin-1 高位字符
+    suspicious = sum(1 for c in text[:200] if 0x80 <= ord(c) <= 0xff or c in "ÃÂ")
+    if suspicious < max(2, len(text[:200]) // 5):
+        return text
+    try:
+        repaired = text.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
+
+    def _cjk_ratio(s):
+        return sum(1 for c in s if '\u4e00' <= c <= '\u9fff') / max(1, len(s))
+
+    # 修复后中文占比明显提升才认为修复成功
+    if _cjk_ratio(repaired) > _cjk_ratio(text) + 0.1:
+        logging.info("检测到 ASR 文本编码异常（mojibake），已自动修复")
+        return repaired
+    return text
+
+
 class ASRProcessor:
     """
     处理 ASR 结果以创建结构化、分块的对话
@@ -35,6 +64,11 @@ class ASRProcessor:
             else:
                 data_dict = self.data
             
+            # 修复可能的编码乱码（如 StepFun SSE 缺 charset 导致）
+            for seg in (data_dict.get('transcript') or []):
+                if isinstance(seg.get('sentence'), str):
+                    seg['sentence'] = _fix_mojibake(seg['sentence'])
+
             # 尝试加载新格式（Paraformer V2）
             self.transcript = data_dict.get('transcript')
             

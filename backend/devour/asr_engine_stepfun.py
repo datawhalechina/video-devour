@@ -168,9 +168,19 @@ class VideoDevourASRStepFun:
             detail = resp.text[:300]
             raise RuntimeError(f"StepFun 识别失败: HTTP {resp.status_code} {detail}")
 
+        # StepFun 的 SSE 响应头是 'text/event-stream'（不带 charset），
+        # requests 会据此推断 ISO-8859-1，中文会被解码成乱码（mojibake）。
+        # 必须显式指定 UTF-8 解码。
         full_text = ""
-        for raw in resp.iter_lines(decode_unicode=True):
-            if not raw or not raw.startswith("data:"):
+        for raw in resp.iter_lines(decode_unicode=False):
+            if not raw:
+                continue
+            if isinstance(raw, bytes):
+                try:
+                    raw = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    raw = raw.decode("utf-8", errors="replace")
+            if not raw.startswith("data:"):
                 continue
             try:
                 event = json.loads(raw[len("data:"):].strip())
