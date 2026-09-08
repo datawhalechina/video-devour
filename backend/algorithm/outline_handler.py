@@ -251,84 +251,136 @@ def generate_final_report(detailed_outline_path, output_dir, education_level: st
         logging.error(f"生成最终报告时发生未知错误: {e}", exc_info=True)
         return None
 
-def generate_detailed_report(detailed_outline_path, output_dir, education_level: str = None):
+def generate_detailed_report(detailed_outline_path, output_dir, education_level: str = None,
+                             headings_with_level=None, matched_data=None, dialogue=None):
     """
-    生成「详细报告」：每个章节同时呈现【原始内容】与【整理笔记】，便于对照学习。
+    生成「详细报告」：每个章节给出【视频原文】（真·ASR 字幕，带时间戳）与【整理笔记】对照。
 
-    与另外两个产物的区别：
-    - 图文大纲（detailed_outline.md）：标题 + 关键帧 + 原始片段（溯源用）
-    - 精简报告（final_report.md）：标题 + 关键帧 + LLM 提炼要点（快速阅读）
-    - 详细报告（detailed_report.md）：原始片段 + 提炼笔记 对照（精读用）
+    与其他产物的分工：
+    - 图文大纲：目录 + 关键帧（结构速览）
+    - 精简报告：LLM 提炼扩写（快速阅读）
+    - 详细报告：真原文 + 笔记（对照精读，可按时间戳回看视频）
+
+    原文必须来自 ASR transcript（口语原话），而不是大纲的 LLM 复述——
+    大纲是概括文本，用它会得到"概括的概括"，失去对照价值。
 
     Args:
-        detailed_outline_path (str): 含关键帧与原始片段的详细大纲路径
-        output_dir (str): 输出目录
-        education_level (str): 学习阶段
-
-    Returns:
-        str: 详细报告文件路径；失败返回 None
+        detailed_outline_path: 含关键帧链接的详细大纲（用于取每章配图）
+        headings_with_level: [(level, heading)]，用于确定二级章节顺序
+        matched_data: {heading: [{start, end, text}]}，章节的真实时间范围
+        dialogue: ASR 处理后的对话块 [{speaker, text, start, end}]
     """
-    logging.info("--- 步骤 12: 开始生成详细报告（原文+笔记对照）---")
+    logging.info("--- 步骤 12: 开始生成详细报告（视频原文+笔记对照）---")
     try:
         with open(detailed_outline_path, 'r', encoding='utf-8') as f:
             outline_content = f.read()
 
-        # 解析出每个二级章节的：标题、关键帧、原始片段
-        sections = []
-        current = None
+        # 每章关键帧（从详细大纲解析）
+        section_images = {}
+        current_h2 = None
         for line in outline_content.splitlines():
-            h1 = re.match(r'^#\s+(.+)', line)
             h2 = re.match(r'^##\s+(.+)', line)
             img = re.match(r'^!\[.*?\]\((.*?)\)', line.strip())
             if h2:
-                if current:
-                    sections.append(current)
-                current = {"heading": h2.group(1).strip(), "image": None, "raw": []}
-            elif img and current:
-                current["image"] = img.group(1)
-            elif current is not None:
-                # 收集原始片段（引用块 / 正文）
-                stripped = line.strip()
-                if stripped and not h1:
-                    current["raw"].append(stripped)
-        if current:
-            sections.append(current)
+                current_h2 = h2.group(1).strip()
+            elif img and current_h2 and current_h2 not in section_images:
+                section_images[current_h2] = img.group(1)
 
-        if not sections:
-            logging.warning("详细报告：未解析到任何章节，跳过")
+        # 二级章节顺序（缺参时从大纲解析）
+        if headings_with_level:
+            level2 = [h for lvl, h in headings_with_level if lvl == 2]
+        else:
+            level2 = [m.group(1).strip() for m in re.finditer(r'^##\s+(.+)', outline_content, re.MULTILINE)]
+        if not level2:
+            logging.warning("详细报告：未找到二级章节，跳过")
             return None
 
-        # 逐章节调用 LLM 生成「笔记」（基于该章节的原始内容，避免全文重复调用）
+        # 每章时间范围：优先 matched_data 的真实范围；否则按章节顺序均分
+        if not dialogue:
+            logging.warning("详细报告：缺少 ASR 对话数据，无法生成原文对照")
+            return None
+        total_start = min(c["start"] for c in dialogue)
+        total_end = max(c["end"] for c in dialogue)
+        ranges = {}
+        for heading in level2:
+            chunks = (matched_data or {}).get(heading) or []
+            if chunks:
+                ranges[heading] = (min(c["start"] for c in chunks), max(c["end"] for c in chunks))
+        missing = [h for h in level2 if h not in ranges]
+        if missing:
+            # 均分兜底：未匹配章节按顺序瓜分剩余/全部时间轴
+            span = total_end - total_start
+            step = span / len(level2)
+            for i, h in enumerate(level2):
+                if h not in ranges:
+                    ranges[h] = (total_start + step * i, total_start + step * (i + 1))
+
+        def _mmss(sec):
+            m, s = int(sec // 60), int(sec % 60)
+            return f"{m:02d}:{s:02d}"
+
+        def _raw_of(heading):
+            lo, hi = ranges[heading]
+            lines = []
+            for c in dialogue:
+                if c["end"] <= lo or c["start"] >= hi:
+                    continue  # 与本章无交叠
+                text = c["text"]
+                if not text:
+                    continue
+                span = c["end"] - c["start"]
+                if c["start"] >= lo - 0.01 and c["end"] <= hi + 0.01:
+                    # 完全落在本章范围内：整句输出
+                    lines.append(f"[{_mmss(c['start'])}] {text}")
+                elif span > 0:
+                    # 跨越章节边界的句子（如整段一长句的短视频）：
+                    # 按字符占比切出本章片段，时间戳线性近似，避免每章重复全文
+                    f0 = max(0.0, (lo - c["start"]) / span)
+                    f1 = min(1.0, (hi - c["start"]) / span)
+                    seg = text[int(len(text) * f0):int(len(text) * f1)].strip()
+                    if seg:
+                        lines.append(f"[{_mmss(c['start'] + span * f0)}] {seg}")
+            if not lines:  # 仍为空时取最近邻，避免空章节
+                nearest = min(dialogue, key=lambda c: min(abs(c["start"] - lo), abs(c["start"] - hi)))
+                lines = [f"[{_mmss(nearest['start'])}] {nearest['text']}"]
+            return "\n".join(lines)
+
         from llm_handler import LLMHandler, get_level_instruction
         llm = LLMHandler(education_level=education_level)
         level_instruction = get_level_instruction(education_level) or ""
 
-        parts = []
         title_match = re.search(r'^#\s+(.+)', outline_content, re.MULTILINE)
         doc_title = title_match.group(1).strip() if title_match else "详细报告"
-        parts.append(f"# {doc_title}\n")
-        parts.append("> 本报告每个章节同时给出【原始内容】与【整理笔记】，便于对照精读。\n")
 
-        for idx, sec in enumerate(sections, 1):
-            parts.append(f"\n## {sec['heading']}\n")
-            if sec.get("image"):
-                parts.append(f"![关键帧: {sec['heading']}]({sec['image']})\n")
-            # 原始内容
-            raw_text = "\n".join(sec["raw"]).strip()
-            if raw_text:
-                parts.append("### 原始内容\n")
-                parts.append(raw_text + "\n")
-            # 整理笔记
+        parts = [f"# {doc_title}\n",
+                 "> 每个章节先给【视频原文】（带时间戳的语音原话），再给【整理笔记】，对照精读；"
+                 "时间戳可回看视频对应片段。\n"]
+
+        for heading in level2:
+            raw = _raw_of(heading)
+            # 超长章节截断保护（LLM 上下文与可读性）
+            if len(raw) > 6000:
+                raw = raw[:6000] + "\n…（本章原文过长，已截取前段）"
+            parts.append(f"\n## {heading}\n")
+            img = section_images.get(heading)
+            if img:
+                parts.append(f"![关键帧: {heading}]({img})\n")
+            lo, hi = ranges[heading]
+            parts.append(f"*本章对应视频 {_mmss(lo)} - {_mmss(hi)}*\n")
+            parts.append("### 视频原文\n")
+            parts.append(raw + "\n")
+
             prompt = (
-                "你是专业的学习笔记整理者。请把下面这段视频字幕内容整理成要点式笔记。\n\n"
+                "你是专业的学习笔记整理者。下面是视频某个章节的语音原话（带时间戳，口语化），"
+                "请整理成要点式笔记。\n\n"
                 "要求：\n"
-                "1. 先用 1-3 句概括这段话讲了什么；\n"
-                "2. 再用 `-` 列出 2-6 条关键要点（含具体方法、数字或结论）；\n"
-                "3. 只依据给定内容，不添加原文没有的信息；\n"
+                "1. 先用 1-3 句概括这部分讲了什么；\n"
+                "2. 再用 `-` 列出 2-6 条关键要点（保留具体方法、数字、结论）；\n"
+                "3. 只依据原话内容，不添加没有的信息；口语中的重复、语气词请忽略；\n"
                 "4. 使用简体中文（专有名词保留原文）；\n"
-                "5. 只输出笔记正文，不要输出标题、不要解释。\n"
+                "5. 只输出笔记正文，不要标题、不要解释。\n"
                 + (f"6. 学习阶段：{level_instruction}\n" if level_instruction else "")
-                + f"\n章节标题：{sec['heading']}\n\n内容：\n---\n{raw_text or sec['heading']}\n---\n"
+                + f"\n章节标题：{heading}\n\n原话：\n---\n{raw}\n---\n"
             )
             try:
                 notes = llm.get_response(
@@ -336,14 +388,13 @@ def generate_detailed_report(detailed_outline_path, output_dir, education_level:
                     system_message="你是专业的学习笔记整理者，只输出简体中文要点笔记。",
                 ).strip()
             except Exception as e:
-                logging.error(f"详细报告：章节 '{sec['heading']}' 笔记生成失败: {e}")
+                logging.error(f"详细报告：章节 '{heading}' 笔记生成失败: {e}")
                 notes = "（笔记生成失败）"
             parts.append("### 整理笔记\n")
             parts.append(notes + "\n")
 
         report_content = "\n".join(parts)
-
-        # 清理 LLM 编造的外链图片（与最终报告一致）
+        # 清理 LLM 编造的外链图片
         report_content = re.sub(r'!\[[^\]]*\]\(https?://[^)]*\)', '', report_content)
 
         out_path = os.path.join(output_dir, "detailed_report.md")

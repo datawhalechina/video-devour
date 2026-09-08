@@ -532,7 +532,7 @@ const ReportViewer = ({ report, onBack }) => {
                   </button>
                 </div>
                 <p className="text-xs text-gray-400 mb-4">
-                  每个章节同时给出「原始内容」与「整理笔记」，便于对照精读
+                  每个章节给出「视频原文」（带时间戳的语音原话，可回看对应片段）与「整理笔记」对照，适合精读
                 </p>
                 <div className="markdown-content">
                   {report.detailed_report
