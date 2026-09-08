@@ -188,14 +188,31 @@ _NOTES_SYSTEM_PROMPT = (
     "（专有名词保留原文）。只输出笔记正文，不要任何解释。"
 )
 
-_NOTES_PROMPT_TEMPLATE = """请根据以下视频字幕转写内容，整理成一份纯文本学习笔记。
+_NOTES_PROMPT_TEMPLATE = """请根据以下视频字幕转写内容，整理成一份 Markdown 学习笔记。
 
-要求：
-1. 使用简体中文（专有名词、技术术语保留原文）
-2. 要点式笔记，可按主题分节：节标题独立成行，条目用「-」或数字编号
-3. 保留关键概念、论据、结论与重要数字细节；不要添加字幕中没有的内容
-4. 输出纯文本：不要使用任何 Markdown 标记（不用 #、*、` 等符号）
-5. 当前学习阶段为：{level}，请据此调整内容深度
+输出结构（严格遵循）：
+1. 开头用 `# {title}` 作为一级标题
+2. 用 `## 内容概览` 写 2-4 句整体概括
+3. 用 `## 核心要点` 分节：每个主题一个 `### 小标题`，正文用「-」要点式罗列
+4. 用 `## 概念关系图` 输出一个 Mermaid 图，展示概念之间的关系：
+
+```mermaid
+graph TD
+    A[核心概念A] --> B[相关概念B]
+    A --> C[应用场景C]
+    B --> D[具体方法D]
+```
+
+Mermaid 要求：
+- 用 `graph TD`（自上而下）；节点标签用中文，方括号 `[名称]`；关系箭头 `-->` 可加说明 `-->|包含|`
+- 节点 6-14 个，覆盖笔记主要概念；只画字幕中真实出现的关系，不要编造
+- 禁止使用圆括号、方括号、引号等会破坏 Mermaid 语法的字符出现在节点标签内
+
+其他要求：
+1. 全程简体中文（专有名词、技术术语保留原文）
+2. 保留关键概念、论据、结论与重要数字细节；不要添加字幕中没有的内容
+3. 当前学习阶段为：{level}，请据此调整内容深度
+4. 只输出 Markdown 正文，不要额外解释
 
 视频标题：{title}
 
@@ -236,12 +253,29 @@ def generate_subtitle_notes(url: str, platform: str, education_level: str = "自
     from backend.algorithm import settings_store
     output_root = Path(settings_store.PROJECT_ROOT) / "output" / "subtitle_notes"
     output_root.mkdir(parents=True, exist_ok=True)
-    vid = re.sub(r"[\\/:*?\"<>|\s]", "_", meta["title"])[:60] or "notes"
-    file_path = output_root / f"{platform}_{vid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    header = f"标题：{meta['title']}\n来源：{platform} 字幕（{meta['lang']}）\n学习阶段：{education_level}\n{'=' * 40}\n\n"
-    file_path.write_text(header + notes, encoding="utf-8")
-    logging.info(f"字幕笔记已生成: {file_path}")
+    # URL 安全文件名：仅保留中文/字母/数字/-/_，其余（含全角标点、#、空格）一律转下划线，
+    # 否则中文标点会让静态路径需要编码、前端下载/新窗口打开都会失败
+    safe_title = re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9_-]+", "_", meta["title"]).strip("_")[:50] or "notes"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stem = f"{platform}_{safe_title}_{ts}"
+    file_path = output_root / f"{stem}.txt"
+    md_path = output_root / f"{stem}.md"
+
+    # 提示词已要求 LLM 输出以 `# 标题` 开头，这里只补一行来源元信息，避免标题重复
+    meta_line = (f"> 来源：{platform} 字幕（{meta['lang']}） · 学习阶段：{education_level}\n\n")
+    # 纯文本版：去掉 Markdown 标记（供纯文本场景）
+    txt_body = re.sub(r"^#{1,6}\s*", "", notes, flags=re.MULTILINE)
+    txt_body = re.sub(r"```mermaid[\s\S]*?```", "", txt_body)   # 纯文本版去掉 mermaid 代码块
+    file_path.write_text(meta_line.replace("> ", "") + txt_body, encoding="utf-8")
+    # Markdown 版（标题 + 来源 + 正文 + Mermaid 图，笔记工具可直接用）
+    md_path.write_text(meta_line + notes, encoding="utf-8")
+    logging.info(f"字幕笔记已生成: {md_path}")
 
     return {"title": meta["title"], "platform": platform, "lang": meta["lang"],
-            "notes": notes, "file": str(file_path),
-            "file_url": f"/static/subtitle_notes/{file_path.name}"}
+            "notes": notes,
+            "file": str(file_path),
+            "file_url": f"/static/subtitle_notes/{file_path.name}",
+            "md_file": str(md_path),
+            "md_url": f"/api/subtitle-notes/download?name={file_path.stem}&fmt=md",
+            "txt_url": f"/api/subtitle-notes/download?name={file_path.stem}&fmt=txt",
+            "stem": file_path.stem}

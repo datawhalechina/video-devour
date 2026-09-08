@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle, Settings, KeyRound, NotebookPen } from 'lucide-react'
@@ -107,6 +107,48 @@ function LinkProcess() {
     } finally {
       setNotesLoading(false)
     }
+  }
+
+  // 字幕笔记：渲染 Markdown（含 Mermaid 关系图）
+  const notesRef = useRef(null)
+  useEffect(() => {
+    const el = notesRef.current
+    if (!el || !notesResult?.notes) return
+    let cancelled = false
+    const render = async () => {
+      const { marked } = await import('marked')
+      let html = marked.parse(notesResult.notes)
+      // 把 mermaid 代码块转成 <div class="mermaid">，其余保留
+      html = html.replace(
+        /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g,
+        (_, code) => `<div class="mermaid">${code.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')}</div>`
+      )
+      if (cancelled) return
+      el.innerHTML = html
+      if (html.includes('class="mermaid"')) {
+        const mermaid = (await import('mermaid')).default
+        mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose' })
+        await mermaid.run({ nodes: el.querySelectorAll('.mermaid') })
+      }
+    }
+    render().catch(err => console.error('笔记渲染失败:', err))
+    return () => { cancelled = true }
+  }, [notesResult])
+
+  // 新窗口打开：用 Blob URL 而非静态路径（避免中文/特殊字符编码导致打不开）
+  const handleOpenNotesWindow = () => {
+    const win = window.open('', '_blank')
+    if (!win) {
+      alert('浏览器拦截了新窗口，请允许弹窗后重试')
+      return
+    }
+    win.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>${notesResult.title}</title>
+<style>body{max-width:820px;margin:32px auto;padding:0 20px;font:15px/1.8 -apple-system,"PingFang SC",sans-serif;color:#1f2937}
+pre{background:#f6f8fa;padding:12px;border-radius:8px;overflow:auto}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+h1,h2,h3{line-height:1.35}</style>
+</head><body><pre style="white-space:pre-wrap;font-family:inherit;background:none;padding:0">${notesResult.notes.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</pre></body></html>`)
+    win.document.close()
   }
 
   const InfoMeta = ({ item }) => (
@@ -260,27 +302,31 @@ function LinkProcess() {
               </h2>
               <div className="flex items-center gap-2">
                 <a
-                  href={notesResult.file_url}
-                  download
+                  href={notesResult.md_url}
+                  className="px-3 py-1.5 rounded-lg bg-primary-600 text-white text-xs font-bold hover:bg-primary-700"
+                >
+                  下载 Markdown
+                </a>
+                <a
+                  href={notesResult.txt_url}
                   className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50"
                 >
                   下载 .txt
                 </a>
-                <a
-                  href={notesResult.file_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-1.5 rounded-lg bg-primary-600 text-white text-xs font-bold hover:bg-primary-700"
+                <button
+                  onClick={handleOpenNotesWindow}
+                  className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50"
                 >
                   新窗口打开
-                </a>
+                </button>
               </div>
             </div>
             <div className="p-5">
               <p className="text-xs text-gray-400 mb-3">
-                来源：{notesResult.platform === 'bilibili' ? 'B站' : 'YouTube'} 字幕（{notesResult.lang}）· 纯文本笔记
+                来源：{notesResult.platform === 'bilibili' ? 'B站' : 'YouTube'} 字幕（{notesResult.lang}）· Markdown 笔记（含概念关系图）
               </p>
-              <pre className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed font-sans">{notesResult.notes}</pre>
+              <div className="markdown-body text-sm text-gray-800 leading-relaxed"
+                   ref={notesRef} />
             </div>
           </section>
         )}

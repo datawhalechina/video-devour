@@ -71,9 +71,10 @@ LLM 整理为纯文本要点笔记。适合"只要文字内容、要快"的场�
 python3 <skill目录>/scripts/devour.py notes "https://www.bilibili.com/video/BV..." --level 高中
 ```
 
-输出 JSON `{"title", "platform", "lang", "notes", "file", "file_url"}`，`notes` 为笔记全文，
-`file` 为落盘的 .txt 路径。注意：视频没有字幕轨时报错并建议改走 `process` 完整流程；
-YouTube 无 cookies 且被 bot 检查拦截时提示配置「YouTube cookies」（设置控制台）。
+输出 JSON：`notes` 为 Markdown 笔记全文（含 ` ```mermaid ` 概念关系图）、
+`file`（.txt 纯文本）/ `md_file`（.md 含关系图）落盘路径。注意：视频没有字幕轨时
+报错并建议改走 `process` 完整流程；YouTube 无 cookies 或被 bot 检查拦截时提示配置
+「YouTube cookies」（设置控制台，可一键读取浏览器 Cookie）。
 
 ### 5. 一键处理（核心流程）
 

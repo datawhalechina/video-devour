@@ -1161,6 +1161,31 @@ async def export_task_markdown(task_id: str):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
+@app.get("/api/subtitle-notes/download")
+async def download_subtitle_notes(name: str, fmt: str = "md"):
+    """
+    下载字幕笔记（md / txt）。用专用端点而非直接指向 /static，
+    以确保 Content-Disposition 正确、中文文件名不乱码。
+    """
+    from urllib.parse import quote
+    if "/" in name or "\\" in name or ".." in name:
+        raise HTTPException(status_code=400, detail="非法的文件名")
+    fmt = "md" if fmt == "md" else "txt"
+    path = OUTPUT_DIR / "subtitle_notes" / f"{name}.{fmt}"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="笔记文件不存在")
+    media = "text/markdown" if fmt == "md" else "text/plain"
+    # Content-Disposition 头只能是 latin-1：ASCII 回退名 + RFC 5987 UTF-8 名
+    ascii_name = f"subtitle_notes.{fmt}"
+    utf8_name = quote(f"{name}.{fmt}")
+    return Response(
+        content=path.read_bytes(),
+        media_type=f"{media}; charset=utf-8",
+        headers={"Content-Disposition":
+                 f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}"},
+    )
+
+
 @app.get("/api/history")
 async def get_history():
     """
