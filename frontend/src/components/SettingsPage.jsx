@@ -58,6 +58,7 @@ function SettingsPage() {
         wechat_resolver_url: data.wechat_resolver_url || '',
         wechat_resolver_token: data.wechat_resolver_token || '',
         youtube_cookies: data.youtube_cookies || '',
+        bilibili_sessdata: data.bilibili_sessdata || '',
       })
     } catch (err) {
       setError(`加载设置失败: ${err.message}`)
@@ -449,6 +450,28 @@ function SettingsPage() {
                 />
               </div>
             </div>
+          </div>
+        </motion.section>
+
+        {/* B站账号 */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.13 }}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
+        >
+          <h2 className="text-base font-bold text-gray-900 mb-2">B站账号（可选，解锁 AI 字幕）</h2>
+          <p className="text-xs text-gray-500 leading-relaxed mb-4">
+            B站 AI 字幕轨仅对登录态可见：配置 SESSDATA 后「字幕笔记」功能可用（仅保存在本机）。
+            获取：登录 bilibili.com → F12 → Application（应用）→ Cookies → 复制 SESSDATA 的值。
+          </p>
+          <div>
+            <label className={labelClass}>SESSDATA</label>
+            <input
+              type="password"
+              value={form.bilibili_sessdata || ''}
+              onChange={(e) => setField('bilibili_sessdata', e.target.value)}
+              placeholder="粘贴 SESSDATA 的值"
+              className={inputClass}
+            />
           </div>
         </motion.section>
 

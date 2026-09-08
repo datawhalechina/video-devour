@@ -252,6 +252,11 @@ class LinkProcessRequest(BaseModel):
     extras: List[str] = []       # 可选附加产物：mindmap / graph / card
 
 
+class LinkNotesRequest(BaseModel):
+    url: str
+    education_level: str = "自由学习"
+
+
 # 任务完成后可选自动生成的附加产物（默认不生成，按需勾选，节省处理时间）
 VALID_EXTRAS = {"mindmap", "graph", "card"}
 EXTRA_LABELS = {"mindmap": "思维导图", "graph": "知识图谱", "card": "学习卡片"}
@@ -342,6 +347,32 @@ async def search_link_videos(request: LinkSearchRequest):
     except Exception as e:
         logging.error(f"搜索失败: {e}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"搜索失败: {e}")
+
+
+@app.post("/api/video/link/notes")
+async def generate_subtitle_notes(request: LinkNotesRequest):
+    """
+    字幕速记：直接用 B站/YouTube 已有字幕生成纯文本笔记（不下载视频、不走 ASR）
+    """
+    from backend.devour.video_downloader import detect_platform, extract_share_url
+    url = extract_share_url(request.url or "")
+    platform = detect_platform(url)
+    if platform not in ("bilibili", "youtube"):
+        raise HTTPException(status_code=400, detail="字幕笔记仅支持 B站 / YouTube 链接")
+    if request.education_level not in settings_store.EDUCATION_LEVELS:
+        raise HTTPException(status_code=400, detail=f"学习阶段仅支持: {'/'.join(settings_store.EDUCATION_LEVELS)}")
+
+    try:
+        from backend.devour.subtitles import generate_subtitle_notes
+        return await _run_link_probe(
+            generate_subtitle_notes, url=url, platform=platform,
+            education_level=request.education_level,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logging.error(f"字幕笔记生成失败: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"字幕笔记生成失败: {e}")
 
 
 @app.post("/api/video/link", response_model=UploadResponse)

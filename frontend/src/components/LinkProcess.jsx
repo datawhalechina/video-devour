@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle, Settings, KeyRound } from 'lucide-react'
-import { getLinkInfo, searchLinkVideos, processLink } from '../api/videoService'
+import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle, Settings, KeyRound, NotebookPen } from 'lucide-react'
+import { getLinkInfo, searchLinkVideos, processLink, generateSubtitleNotes } from '../api/videoService'
 import ExtrasPicker, { getSelectedExtras } from './ExtrasPicker'
 
 const PLATFORM_TABS = [
@@ -36,6 +36,8 @@ function LinkProcess() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
   const [processing, setProcessing] = useState(false)
+  const [notesLoading, setNotesLoading] = useState(false)
+  const [notesResult, setNotesResult] = useState(null)
   const [error, setError] = useState(null)
 
   const embedUrl = (item) => {
@@ -87,6 +89,23 @@ function LinkProcess() {
     } catch (err) {
       showError(`创建任务失败: ${err.message}`)
       setProcessing(false)
+    }
+  }
+
+  const handleNotes = async () => {
+    const link = url.trim()
+    if (!link || notesLoading) return
+    setNotesLoading(true)
+    setError(null)
+    setNotesResult(null)
+    try {
+      const result = await generateSubtitleNotes(link)
+      setNotesResult(result)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (err) {
+      showError(`字幕笔记生成失败: ${err.message}`)
+    } finally {
+      setNotesLoading(false)
     }
   }
 
@@ -150,6 +169,15 @@ function LinkProcess() {
             >
               {previewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
               <span>预览</span>
+            </button>
+            <button
+              onClick={handleNotes}
+              disabled={notesLoading || !url.trim()}
+              title="不下载视频，直接用平台字幕生成纯文本笔记（仅 B站 / YouTube）"
+              className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-gray-100 border border-gray-300 text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
+            >
+              {notesLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <NotebookPen className="w-4 h-4" />}
+              <span>字幕笔记</span>
             </button>
             <button
               onClick={() => handleProcess(url.trim())}
@@ -220,6 +248,41 @@ function LinkProcess() {
               </button>
             )}
           </div>
+        )}
+
+        {/* 字幕笔记结果 */}
+        {notesResult && (
+          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-base font-bold text-gray-900 flex items-center space-x-2">
+                <NotebookPen className="w-5 h-5 text-primary-600" />
+                <span>字幕笔记：{notesResult.title}</span>
+              </h2>
+              <div className="flex items-center gap-2">
+                <a
+                  href={notesResult.file_url}
+                  download
+                  className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  下载 .txt
+                </a>
+                <a
+                  href={notesResult.file_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-lg bg-primary-600 text-white text-xs font-bold hover:bg-primary-700"
+                >
+                  新窗口打开
+                </a>
+              </div>
+            </div>
+            <div className="p-5">
+              <p className="text-xs text-gray-400 mb-3">
+                来源：{notesResult.platform === 'bilibili' ? 'B站' : 'YouTube'} 字幕（{notesResult.lang}）· 纯文本笔记
+              </p>
+              <pre className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed font-sans">{notesResult.notes}</pre>
+            </div>
+          </section>
         )}
 
         {/* 预览窗口 */}

@@ -14,6 +14,7 @@ VideoDevour skill 入口脚本（跨 agent 通用，遵循 .agents/skills 约定
 用法:
   devour.py search "关键词" [--platform bilibili|youtube] [--max N]
   devour.py info <url>
+  devour.py notes <url> [--level 学习阶段]
   devour.py wechat <视频号分享链接> [--check]
   devour.py process <url|本地视频路径> [--level 高中|初中|小学] [--home 项目目录]
   devour.py mindmap [--latest | --dir 输出目录] [--open] [--level 学习阶段]
@@ -228,6 +229,24 @@ def cmd_wechat(args):
     }, ensure_ascii=False, indent=2))
 
 
+def cmd_notes(args):
+    """字幕速记：直接用 B站/YouTube 已有字幕生成纯文本笔记（秒级，不下载视频）"""
+    home = project_home(args.home)
+    setup_project(home)
+
+    from backend.devour.video_downloader import detect_platform, extract_share_url
+    from backend.devour.subtitles import generate_subtitle_notes
+
+    url = extract_share_url(args.url or "")
+    platform = detect_platform(url)
+    if platform not in ("bilibili", "youtube"):
+        print("错误: 字幕笔记仅支持 B站 / YouTube 链接（可直接粘贴分享文案）", file=sys.stderr)
+        sys.exit(1)
+
+    result = generate_subtitle_notes(url, platform, args.level)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def _resolve_task_dir(home: Path, args) -> Path:
     """定位任务输出目录：--dir 优先，否则取最新 frames_* 目录"""
     if getattr(args, "dir", None):
@@ -314,6 +333,12 @@ def main():
                       help="视频号分享链接（weixin.qq.com/sph/...）或含链接的分享文案")
     p_wx.add_argument("--check", action="store_true", help="检查元宝 Cookie 是否已配置且有效")
     p_wx.set_defaults(func=cmd_wechat)
+
+    p_notes = sub.add_parser("notes", help="字幕速记：用平台字幕生成纯文本笔记（B站/YouTube，秒级）")
+    p_notes.add_argument("url", help="B站/YouTube 视频链接或分享文案")
+    p_notes.add_argument("--level", default="自由学习",
+                         choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
+    p_notes.set_defaults(func=cmd_notes)
 
     p_mm = sub.add_parser("mindmap", help="为任务报告生成思维导图（markmap HTML）")
     p_mm.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")

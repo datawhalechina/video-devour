@@ -186,3 +186,13 @@ export const processLink = async (url, educationLevel = "自由学习", extras =
     throw error;
   }
 };
+
+export const generateSubtitleNotes = async (url, educationLevel = '自由学习') => {
+  try {
+    return await api.post('/video/link/notes', { url, education_level: educationLevel }, { timeout: 180000 });
+  } catch (error) {
+    const message =
+      error.response?.data?.detail || error.message || '字幕笔记生成失败';
+    return Promise.reject(new Error(message));
+  }
+};

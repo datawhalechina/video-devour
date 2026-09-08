@@ -62,7 +62,20 @@ python3 <skill目录>/scripts/devour.py wechat "https://weixin.qq.com/sph/..."
 - `process` 命令同样直接支持视频号链接（自动先下载再处理），`wechat` 用于只要视频文件的场景
 - 直播回放、已过期分享链接无法解析；解析失败会返回中文引导
 
-### 4. 一键处理（核心流程）
+### 4. 字幕速记（B站/YouTube，秒级纯文本笔记）
+
+不下载视频、不走 ASR：直接读取平台已有字幕（B站 AI 字幕轨 / YouTube 手动或自动字幕），
+LLM 整理为纯文本要点笔记。适合"只要文字内容、要快"的场景。
+
+```bash
+python3 <skill目录>/scripts/devour.py notes "https://www.bilibili.com/video/BV..." --level 高中
+```
+
+输出 JSON `{"title", "platform", "lang", "notes", "file", "file_url"}`，`notes` 为笔记全文，
+`file` 为落盘的 .txt 路径。注意：视频没有字幕轨时报错并建议改走 `process` 完整流程；
+YouTube 无 cookies 且被 bot 检查拦截时提示配置「YouTube cookies」（设置控制台）。
+
+### 5. 一键处理（核心流程）
 
 ```bash
 python3 <skill目录>/scripts/devour.py process "https://www.bilibili.com/video/BV..." --level 高中
@@ -78,7 +91,7 @@ python3 <skill目录>/scripts/devour.py process /path/to/video.mp4 --level 初�
   加 `--extras "mindmap,graph,card"`（可任选其一或多个，逗号分隔）在报告完成后一次生成；
   也可事后用 `mindmap` / `graph` 子命令单独生成。**不要在用户未要求时主动生成**
 
-### 5. 生成思维导图与知识图谱（仅用户需要时）
+### 6. 生成思维导图与知识图谱（仅用户需要时）
 
 基于任务报告生成两种知识可视化（LLM 生成、浏览器渲染的交互页面）：
 
@@ -93,7 +106,7 @@ python3 <skill目录>/scripts/devour.py graph --latest --open
 输出 JSON `{"html": "<输出目录>/mindmap.html", ...}`，将 html 路径呈现给用户（浏览器打开即用）。
 若在 `process` 时已用 `--extras` 生成过，直接使用输出 JSON 中 extras 里的路径，无需重复生成。
 
-### 6. 读取报告
+### 7. 读取报告
 
 处理完成后读取打印的 `final_report.md` 路径，向用户呈现报告内容摘要（含关键帧图片的相对路径引用）。
 也可手动查看：
