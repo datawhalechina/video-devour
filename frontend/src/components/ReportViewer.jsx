@@ -496,7 +496,7 @@ const ReportViewer = ({ report, onBack }) => {
           </div>
 
           {/* 内容区域 */}
-          <div className="p-6 max-h-96 overflow-y-auto">
+          <div className="p-6">   {/* 通篇展示：不限制高度内部滚动 */}
             {activeTab === "outline" && (
               <motion.div
                 initial={{ opacity: 0 }}

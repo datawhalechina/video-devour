@@ -272,7 +272,7 @@ export const getCurrentBlockPath = (editor) => {
 /**
  * Markdown 转 Slate 文档
  */
-export const markdownToSlate = (markdown) => {
+export const markdownToSlate = (markdown, imageBaseDir = '') => {
   // 简化版实现，实际项目中应使用专门的转换库
   const lines = markdown.split("\n");
   const nodes = [];
@@ -324,9 +324,14 @@ export const markdownToSlate = (markdown) => {
       // 图片：![alt](url) → 图片块（此前被当普通段落，Slate 渲染时可能异常）
       const img = line.match(/^!\[(.*?)\]\((.*?)\)\s*$/);
       if (img) {
+        // 相对路径图片补上任务输出目录前缀，供 ImageBlock 直接渲染
+        let imgUrl = img[2];
+        if (imageBaseDir && !/^https?:|^\//.test(imgUrl)) {
+          imgUrl = `/static/${imageBaseDir}/${imgUrl}`.replace(/\/\//g, "/");
+        }
         nodes.push({
           type: BLOCK_TYPES.IMAGE,
-          url: img[2],
+          url: imgUrl,
           alt: img[1] || "",
           children: [{ text: "" }],
         });

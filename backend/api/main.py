@@ -963,7 +963,8 @@ async def get_report_file(task_id: str, file_type: str):
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
-        return {"content": content}
+        # 附带输出目录名：编辑器预览需要拼接相对路径图片的静态地址
+        return {"content": content, "output_dir": output_dir.name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"读取文件失败: {str(e)}")
 
@@ -1292,6 +1293,76 @@ async def download_subtitle_notes(name: str, fmt: str = "md"):
         headers={"Content-Disposition":
                  f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}"},
     )
+
+
+@app.get("/api/library/search")
+async def library_search(q: str = "", scope: str = "all"):
+    """
+    个人文档库：跨任务全文检索所有已生成的内容。
+
+    scope: outline（图文大纲）/ report（精简报告）/ detailed（详细报告）/ all
+    返回命中的片段（命中关键词前后各 60 字），按任务时间倒序。
+    """
+    q = (q or "").strip()
+    scope_set = {"outline", "report", "detailed"} if scope != "all" else {"outline", "report", "detailed"}
+    sources = {
+        "outline": ("detailed_outline.md", "图文大纲"),
+        "report": ("final_report.md", "精简报告"),
+        "detailed": ("detailed_report.md", "详细报告"),
+    }
+    results = []
+    if not q:
+        # 无关键词时返回全部文档索引
+        for dir_path in sorted(OUTPUT_DIR.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True):
+            if not (dir_path.is_dir() and dir_path.name.startswith("frames_")):
+                continue
+            task_id = dir_path.name.split("_")[1]
+            task = processing_tasks.get(task_id) or {}
+            for sc in scope_set & set(sources):
+                fname, label = sources[sc]
+                f = dir_path / fname
+                if f.exists() and f.stat().st_size > 0:
+                    results.append({
+                        "task_id": task_id,
+                        "title": task.get("filename") or task_id,
+                        "scope": sc, "label": label,
+                        "snippet": f.read_text(encoding="utf-8")[:120] + "…",
+                        "created_at": datetime.fromtimestamp(f.stat().st_ctime).isoformat(),
+                        "view_url": f"/report/{task_id}",
+                    })
+        return {"query": "", "total": len(results), "results": results[:50]}
+
+    q_lower = q.lower()
+    for dir_path in sorted(OUTPUT_DIR.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True):
+        if not (dir_path.is_dir() and dir_path.name.startswith("frames_")):
+            continue
+        task_id = dir_path.name.split("_")[1]
+        task = processing_tasks.get(task_id) or {}
+        title = task.get("filename") or task_id
+        for sc in scope_set & set(sources):
+            fname, label = sources[sc]
+            f = dir_path / fname
+            if not f.exists() or f.stat().st_size == 0:
+                continue
+            try:
+                text = f.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            if q_lower not in text.lower():
+                continue
+            # 取第一个命中位置做摘要
+            pos = text.lower().find(q_lower)
+            snippet = text[max(0, pos - 60): pos + len(q) + 60].replace("\n", " ")
+            results.append({
+                "task_id": task_id,
+                "title": title,
+                "scope": sc, "label": label,
+                "snippet": f"…{snippet}…",
+                "created_at": datetime.fromtimestamp(f.stat().st_ctime).isoformat(),
+                "view_url": f"/report/{task_id}",
+            })
+    results.sort(key=lambda x: x["created_at"], reverse=True)
+    return {"query": q, "total": len(results), "results": results[:50]}
 
 
 @app.get("/api/history")

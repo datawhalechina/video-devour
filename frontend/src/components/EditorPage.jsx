@@ -17,6 +17,7 @@ function EditorPage() {
   const fileName = searchParams.get('name'); // 文件名
   
   const [content, setContent] = useState('');
+  const [baseDir, setBaseDir] = useState('');   // 任务输出目录（用于拼接图片静态路径）
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -46,8 +47,8 @@ function EditorPage() {
         }
         
         const data = await response.json();
-        // 后端返回的是 {content: "..."} 格式
         setContent(data.content || '');
+        setBaseDir(data.output_dir || '');
       } catch (err) {
         console.error('加载文件内容失败:', err);
         setError(err.message);
@@ -212,6 +213,7 @@ function EditorPage() {
           initialMarkdown={content}
           onSave={handleSave}
           onCancel={handleCancel}
+          imageBaseDir={baseDir}
           showToolbar={false} // 隐藏内置工具栏，使用顶部导航栏
         />
       </div>

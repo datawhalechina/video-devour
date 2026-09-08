@@ -13,9 +13,9 @@ import { Eye, Edit3, Save, X } from 'lucide-react'
  * 左侧：富文本编辑器
  * 右侧：实时 Markdown 预览
  */
-function SplitViewEditor({ initialMarkdown, onSave, onCancel }) {
+function SplitViewEditor({ initialMarkdown, onSave, onCancel, imageBaseDir = '' }) {
   const [editorValue, setEditorValue] = useState(() => {
-    return markdownToSlate(initialMarkdown || '')
+    return markdownToSlate(initialMarkdown || '', imageBaseDir)
   })
   const [isSaving, setIsSaving] = useState(false)
   const [viewMode, setViewMode] = useState('split') // 'split' | 'editor' | 'preview'
@@ -141,14 +141,12 @@ function SplitViewEditor({ initialMarkdown, onSave, onCancel }) {
                         // 如果是相对路径，转换为静态文件路径
                         let imageSrc = src;
                         
-                        // 如果是相对路径，需要构建正确的静态文件路径
+                        // 相对路径 → /static/{任务输出目录}/{相对路径}
+                        // 此前漏了任务目录层，预览时图片全部 404
                         if (!src.startsWith('http') && !src.startsWith('/')) {
-                          // 分离路径和文件名，只对文件名进行编码
-                          const pathParts = src.split('/');
-                          const fileName = pathParts.pop();
-                          const pathPrefix = pathParts.length > 0 ? pathParts.join('/') + '/' : '';
-                          const encodedFileName = encodeURIComponent(fileName);
-                          imageSrc = `/static/${pathPrefix}${encodedFileName}`;
+                          const [prefix, rest] = [src.split('/')[0], src.split('/').slice(1).join('/')];
+                          const encoded = (rest || prefix).split('/').map(encodeURIComponent).join('/');
+                          imageSrc = `/static/${imageBaseDir ? imageBaseDir + '/' : ''}${prefix + '/' + encoded}`.replace('/static//', '/static/');
                         }
                         
                         return (
