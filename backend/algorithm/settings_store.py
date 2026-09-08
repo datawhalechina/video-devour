@@ -51,6 +51,8 @@ DEFAULT_SETTINGS = {
     "youtube_cookies": "",
     # B站登录态（SESSDATA，可选）：AI 字幕轨仅对登录态可见，用于字幕速记
     "bilibili_sessdata": "",
+    # 一键读取浏览器 Cookie 时使用的浏览器（空 = 自动按序尝试）
+    "cookie_browser": "",
 }
 
 # settings 字段 -> config 模块属性 的映射（仅非空时覆盖 config）

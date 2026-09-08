@@ -67,3 +67,11 @@ export const generateMindmap = async (taskId) => {
 export const generateKnowledgeGraph = async (taskId) => {
   return api.post(`/task/${taskId}/knowledge-graph`);
 };
+
+/**
+ * 一键读取本机浏览器中的 B站 / YouTube / 元宝 Cookie 并写入设置
+ * @param {string} browser - 指定浏览器（空 = 自动按序尝试）
+ */
+export const importCookiesFromBrowser = async (browser = "") => {
+  return api.post("/settings/cookies/from-browser", { browser }, { timeout: 180000 });
+};

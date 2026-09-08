@@ -257,6 +257,10 @@ class LinkNotesRequest(BaseModel):
     education_level: str = "自由学习"
 
 
+class BrowserCookieRequest(BaseModel):
+    browser: str = ""   # 空 = 自动按序尝试（chrome/edge/firefox/safari/...）
+
+
 # 任务完成后可选自动生成的附加产物（默认不生成，按需勾选，节省处理时间）
 VALID_EXTRAS = {"mindmap", "graph", "card"}
 EXTRA_LABELS = {"mindmap": "思维导图", "graph": "知识图谱", "card": "学习卡片"}
@@ -373,6 +377,38 @@ async def generate_subtitle_notes(request: LinkNotesRequest):
     except Exception as e:
         logging.error(f"字幕笔记生成失败: {e}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"字幕笔记生成失败: {e}")
+
+
+@app.post("/api/settings/cookies/from-browser")
+async def import_cookies_from_browser(request: BrowserCookieRequest):
+    """
+    一键读取本机浏览器中的 B站 / YouTube / 元宝登录 Cookie 并写入设置。
+
+    仅读取三个目标域的 cookie，不接触浏览器中的其他数据；
+    macOS 首次读取 Chrome/Edge 时会弹钥匙串授权，需点「允许」。
+    """
+    try:
+        from backend.devour.browser_cookies import collect_target_cookies
+        result = await _run_link_probe(collect_target_cookies, browser=request.browser)
+    except Exception as e:
+        logging.error(f"浏览器 Cookie 读取失败: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"读取浏览器 Cookie 失败: {e}")
+
+    fields = result.get("fields") or {}
+    if fields:
+        settings_store.update_settings(fields)
+    found = {k: bool(v) for k, v in fields.items()}
+    labels = {"bilibili_sessdata": "B站 SESSDATA", "youtube_cookies": "YouTube cookies",
+              "wechat_yuanbao_cookie": "元宝 Cookie"}
+    hit = [labels[k] for k in fields if fields.get(k)]
+    if hit:
+        message = f"已从 {result.get('browser_used')} 读取并保存：{'、'.join(hit)}"
+    elif result.get("browser_used"):
+        message = f"已打开 {result.get('browser_used')} 的 cookie 库，但未找到目标站登录 cookie（可能未在浏览器登录）"
+    else:
+        message = "未能读取到浏览器 cookie（原因见读取明细）。请改用手动粘贴，或换一个浏览器重试"
+    return {"browser_used": result.get("browser_used"), "found": found,
+            "attempts": result.get("attempts") or [], "message": message}
 
 
 @app.post("/api/video/link", response_model=UploadResponse)

@@ -28,3 +28,4 @@ requests>=2.31.0
 pydantic>=2.0.0
 aiohttp>=3.9.0
 curl-cffi>=0.9.0
+browser-cookie3>=1.4.0

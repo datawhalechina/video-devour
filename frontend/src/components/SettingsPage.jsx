@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Settings, Save, Radio, HardDriveDownload, KeyRound, CheckCircle, XCircle, Loader2, GraduationCap } from 'lucide-react'
-import { getSettings, updateSettings, testSettings } from '../api/settingsService'
+import { getSettings, updateSettings, testSettings, importCookiesFromBrowser } from '../api/settingsService'
 
 // 供应商预设：点击芯片自动填充接口地址与推荐模型
 const PROVIDER_PRESETS = {
@@ -29,6 +29,7 @@ function SettingsPage() {
   const [saveMessage, setSaveMessage] = useState(null)
   const [testing, setTesting] = useState({})   // { asr: bool, llm: bool, vlm: bool }
   const [testResults, setTestResults] = useState({})  // { asr: {ok, message}, ... }
+  const [cookieImport, setCookieImport] = useState({ loading: false, message: '', attempts: [] })
   const [error, setError] = useState(null)
 
   useEffect(() => {
@@ -59,6 +60,7 @@ function SettingsPage() {
         wechat_resolver_token: data.wechat_resolver_token || '',
         youtube_cookies: data.youtube_cookies || '',
         bilibili_sessdata: data.bilibili_sessdata || '',
+        cookie_browser: data.cookie_browser || '',
       })
     } catch (err) {
       setError(`加载设置失败: ${err.message}`)
@@ -85,6 +87,25 @@ function SettingsPage() {
       setSaveMessage({ ok: false, text: `保存失败: ${err.message}` })
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleImportCookies = async () => {
+    if (cookieImport.loading) return
+    setCookieImport({ loading: true, message: '正在读取浏览器 Cookie…', attempts: [] })
+    try {
+      const result = await importCookiesFromBrowser(form.cookie_browser || '')
+      setCookieImport({ loading: false, message: result.message, attempts: result.attempts || [] })
+      // 读取到的字段由后端直接写入了设置，刷新表单中的脱敏值
+      const data = await getSettings()
+      setForm(prev => ({
+        ...prev,
+        wechat_yuanbao_cookie: data.wechat_yuanbao_cookie || prev.wechat_yuanbao_cookie,
+        youtube_cookies: data.youtube_cookies || prev.youtube_cookies,
+        bilibili_sessdata: data.bilibili_sessdata || prev.bilibili_sessdata,
+      }))
+    } catch (err) {
+      setCookieImport({ loading: false, message: `读取失败: ${err.message}`, attempts: [] })
     }
   }
 
@@ -403,6 +424,58 @@ function SettingsPage() {
             <span>测试 VLM 连通性</span>
           </button>
           <TestResult target="vlm" />
+        </motion.section>
+
+        {/* 一键读取浏览器 Cookie */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.115 }}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
+        >
+          <h2 className="text-base font-bold text-gray-900 mb-2">一键读取浏览器 Cookie（推荐）</h2>
+          <p className="text-xs text-gray-500 leading-relaxed mb-4">
+            在本机浏览器登录过 B站 / YouTube / 元宝后，点击按钮即可自动读取登录 Cookie 并填入下方各卡片
+            （仅读取这三个站的 cookie，本机处理，不上传）。macOS 首次读取 Chrome/Edge 会弹出钥匙串授权，
+            请点「允许」；Windows 下 Chrome/Edge 127+ 受 App-Bound 加密限制可能失败，可改用 Firefox 或手动粘贴。
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={form.cookie_browser || ''}
+              onChange={(e) => setField('cookie_browser', e.target.value)}
+              className="px-3 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">自动检测（按序尝试）</option>
+              <option value="chrome">Chrome</option>
+              <option value="edge">Edge</option>
+              <option value="firefox">Firefox</option>
+              <option value="safari">Safari</option>
+              <option value="brave">Brave</option>
+              <option value="opera">Opera</option>
+              <option value="vivaldi">Vivaldi</option>
+            </select>
+            <button
+              onClick={handleImportCookies}
+              disabled={cookieImport.loading}
+              className="flex items-center space-x-2 px-5 py-2 rounded-lg bg-gradient-to-r from-primary-600 to-purple-600 text-white text-sm font-bold shadow-md hover:shadow-lg disabled:opacity-50"
+            >
+              {cookieImport.loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>{cookieImport.loading ? '读取中…' : '一键读取'}</span>
+            </button>
+          </div>
+          {cookieImport.message && (
+            <p className={`mt-3 text-sm ${cookieImport.attempts.some(a => a.includes('✅')) ? 'text-green-700' : 'text-gray-600'}`}>
+              {cookieImport.message}
+            </p>
+          )}
+          {cookieImport.attempts.length > 0 && (
+            <details className="mt-2">
+              <summary className="text-xs text-gray-400 cursor-pointer">读取明细</summary>
+              <ul className="mt-1 space-y-0.5">
+                {cookieImport.attempts.map((a, i) => (
+                  <li key={i} className="text-xs text-gray-500 font-mono">{a}</li>
+                ))}
+              </ul>
+            </details>
+          )}
         </motion.section>
 
         {/* 微信视频号 */}
