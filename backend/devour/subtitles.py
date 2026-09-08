@@ -133,10 +133,30 @@ def fetch_youtube_transcript(url: str) -> Dict:
     if cookiefile:
         opts["cookiefile"] = cookiefile
         logging.info("使用 YouTube cookies 获取字幕")
-    from yt_dlp import YoutubeDL
+    # 与下载链路保持一致：PO Token 脚本 + JS 运行时（否则 bot 检查/n challenge 会拦）
+    from backend.devour.video_downloader import _bgutil_script_path, _youtube_js_runtime
+    pot_script = _bgutil_script_path()
+    if pot_script:
+        opts["extractor_args"] = {"youtubepot-bgutilscript": {"script_path": [pot_script]}}
+    js_runtime = _youtube_js_runtime()
+    if js_runtime:
+        opts["js_runtimes"] = {js_runtime: {}}
     try:
         with _get_ydl(referer="https://www.youtube.com/", **opts) as ydl:
             info = ydl.extract_info(url, download=True)
+    except Exception as e:
+        msg = str(e)
+        if "Sign in" in msg or "not a bot" in msg:
+            raise ValueError(
+                "YouTube 要求登录验证（bot 检查）。请在设置控制台「YouTube cookies」"
+                "配置 cookies（可用「一键读取浏览器 Cookie」自动获取）后重试。"
+            )
+        if "Requested format is not available" in msg or "needs to be reloaded" in msg:
+            raise ValueError(
+                "YouTube 拒绝了当前网络请求（可能缺少 JS 运行时/PO Token 或网络受限）。"
+                "请在设置页点「下载环境自检」按提示补齐依赖。"
+            )
+        raise
     finally:
         if cookiefile and "yt_notes_cookies_" in str(cookiefile):
             try:
