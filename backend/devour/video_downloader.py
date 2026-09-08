@@ -68,6 +68,8 @@ def _get_ydl(**extra):
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         },
     }
+    # 注：不启用 yt-dlp 的 impersonation（TLS 指纹伪装）——与 B站提取器
+    # 存在兼容问题（No video formats），412 防护依赖指纹 cookie + 退避重试
     options.update(extra)
     return YoutubeDL(options)
 
@@ -798,8 +800,9 @@ def _youtube_thumbnail_fallback(video_id: str) -> str:
 
 def _bilibili_session():
     """
-    带浏览器指纹的 B站会话：先访问主站获取 buvid3 cookie，
-    否则搜索/信息接口会返回 412 Precondition Failed。
+    带浏览器指纹的 B站会话：先访问主站获取 buvid3 cookie，再调用指纹
+    接口补充 buvid3/buvid4（b_3/b_4）——B站 412 风控对这些指纹
+    cookie 的完整性很敏感，只有主站 cookie 时容易被拦。
     """
     import requests
 
@@ -812,6 +815,20 @@ def _bilibili_session():
         session.get("https://www.bilibili.com", timeout=10)
     except Exception as e:
         logging.warning(f"访问B站主站获取 cookie 失败: {e}")
+    try:
+        resp = session.get(
+            "https://api.bilibili.com/x/frontend/finger/spi", timeout=10
+        )
+        payload = resp.json()
+        if payload.get("code") == 0:
+            data = payload.get("data") or {}
+            b3, b4 = data.get("b_3"), data.get("b_4")
+            if b3:
+                session.cookies.set("buvid3", b3, domain=".bilibili.com")
+            if b4:
+                session.cookies.set("buvid4", b4, domain=".bilibili.com")
+    except Exception as e:
+        logging.warning(f"获取B站指纹 cookie 失败: {e}")
     return session
 
 
@@ -1004,17 +1021,46 @@ def download_video(url: str, target_dir: str, max_height: int = 1080,
     }
     import time
     import os
-    cookie_file = _bilibili_cookiefile() if platform == "bilibili" else None
-    if cookie_file:
-        options["cookiefile"] = cookie_file
-    else:
-        # YouTube bot 检查：允许通过环境变量提供浏览器导出的 cookies 文件
+    import tempfile
+
+    def _settings_text(key: str) -> str:
+        try:
+            from backend.algorithm.settings_store import load_settings
+            return (load_settings().get(key) or "").strip()
+        except Exception:
+            return ""
+
+    def _build_cookiefile():
+        """返回 (cookie 文件路径, 是否为本进程生成的临时文件)"""
+        if platform == "bilibili":
+            path = _bilibili_cookiefile()
+            return (path, True) if path else (None, False)
+        # YouTube bot 检查：环境变量 cookies 文件优先，其次设置控制台粘贴的 cookies.txt
         env_cookies = os.getenv("YTDLP_COOKIES_FILE")
         if env_cookies and os.path.exists(env_cookies):
-            options["cookiefile"] = env_cookies
+            return env_cookies, False
+        text = _settings_text("youtube_cookies")
+        if text and "youtube.com" in text.lower():
+            fd, path = tempfile.mkstemp(prefix="yt_cookies_", suffix=".txt")
+            with os.fdopen(fd, "w") as f:
+                f.write(text if text.endswith("\n") else text + "\n")
+            return path, True
+        return None, False
+
+    def _remove_cookiefile(entry):
+        if entry and entry[1]:
+            try:
+                os.remove(entry[0])
+            except Exception:
+                pass
+
+    cookie_entry = _build_cookiefile()
+    if cookie_entry[0]:
+        options["cookiefile"] = cookie_entry[0]
+
     info = None
     last_error = None
-    for attempt in range(3):
+    for attempt in range(4):
         try:
             with _get_ydl(**options) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -1023,22 +1069,25 @@ def download_video(url: str, target_dir: str, max_height: int = 1080,
             last_error = e
             message = str(e)
             if "Sign in" in message or "not a bot" in message:
+                _remove_cookiefile(cookie_entry)
                 raise ValueError(
-                    "YouTube 要求登录验证（bot 检查）。请用浏览器导出 cookies 为 Netscape 格式，"
-                    "并设置环境变量 YTDLP_COOKIES_FILE 指向该文件后重试。"
+                    "YouTube 要求登录验证（bot 检查）。请在设置控制台「YouTube cookies」"
+                    "粘贴浏览器导出的 cookies.txt（Netscape 格式，需含 youtube.com 的登录 cookie）"
+                    "后重试；或设置环境变量 YTDLP_COOKIES_FILE 指向该文件。"
                 )
             if "412" in message or "Precondition" in message:
-                wait = 5 * (attempt + 1)
-                logging.warning(f"触发平台风控(412)，{wait}s 后重试 (第 {attempt + 1}/2 次)")
+                wait = 10 * (attempt + 1)   # 10/20/30/40s：412 是分钟级 IP 风控窗口，短退避穿不透
+                logging.warning(f"触发平台风控(412)，{wait}s 后重试（第 {attempt + 1}/4 次）")
                 time.sleep(wait)
+                # 窗口可能已解除：重新生成指纹 cookie 再试
+                if platform == "bilibili":
+                    _remove_cookiefile(cookie_entry)
+                    cookie_entry = _build_cookiefile()
+                    if cookie_entry[0]:
+                        options["cookiefile"] = cookie_entry[0]
                 continue
             raise
-    if cookie_file:
-        try:
-            import os
-            os.remove(cookie_file)
-        except Exception:
-            pass
+    _remove_cookiefile(cookie_entry)
     if info is None:
         raise last_error
     if "entries" in info:

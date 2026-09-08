@@ -57,6 +57,7 @@ function SettingsPage() {
         wechat_yuanbao_cookie: data.wechat_yuanbao_cookie || '',
         wechat_resolver_url: data.wechat_resolver_url || '',
         wechat_resolver_token: data.wechat_resolver_token || '',
+        youtube_cookies: data.youtube_cookies || '',
       })
     } catch (err) {
       setError(`加载设置失败: ${err.message}`)
@@ -448,6 +449,30 @@ function SettingsPage() {
                 />
               </div>
             </div>
+          </div>
+        </motion.section>
+
+        {/* YouTube cookies */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
+        >
+          <h2 className="text-base font-bold text-gray-900 mb-2">YouTube cookies（下载防 bot 检查）</h2>
+          <p className="text-xs text-gray-500 leading-relaxed mb-4">
+            YouTube 对部分 IP 强制登录验证，未配置 cookies 时下载会失败。获取方法：登录 youtube.com 后，
+            使用浏览器扩展（如 Get cookies.txt LOCALLY）导出 cookies.txt（Netscape 格式），
+            把文件内容完整粘贴到下方（仅保存在本机 settings.json，脱敏显示）。也可通过环境变量
+            YTDLP_COOKIES_FILE 指向 cookies 文件。
+          </p>
+          <div>
+            <label className={labelClass}>cookies.txt 内容（Netscape 格式）</label>
+            <textarea
+              value={form.youtube_cookies || ''}
+              onChange={(e) => setField('youtube_cookies', e.target.value)}
+              placeholder="# Netscape HTTP Cookie File&#10;.youtube.com	TRUE	/	TRUE	0	KEY	VALUE..."
+              rows={6}
+              className={`${inputClass} font-mono text-xs`}
+            />
           </div>
         </motion.section>
 

@@ -47,6 +47,8 @@ DEFAULT_SETTINGS = {
     "wechat_yuanbao_cookie": "",
     "wechat_resolver_url": "",
     "wechat_resolver_token": "",
+    # YouTube cookies.txt 内容（Netscape 格式，绕过下载 bot 检查）
+    "youtube_cookies": "",
 }
 
 # settings 字段 -> config 模块属性 的映射（仅非空时覆盖 config）
@@ -103,7 +105,8 @@ def mask_key(value: str) -> str:
 
 # 需要脱敏的敏感字段
 _SECRET_KEYS = ("dashscope_api_key", "llm_api_key", "vlm_api_key",
-                "stepfun_api_key", "wechat_yuanbao_cookie", "wechat_resolver_token")
+                "stepfun_api_key", "wechat_yuanbao_cookie", "wechat_resolver_token",
+                "youtube_cookies")
 
 
 def get_settings(mask: bool = True) -> dict:
