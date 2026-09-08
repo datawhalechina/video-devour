@@ -192,6 +192,11 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
             outline_handler.generate_final_report(detailed_outline_path, main_output_path,
                                                   education_level=education_level)
 
+        logging.info("--- 步骤 12: 生成详细报告（原文+笔记对照）---")
+        with timing.track("步骤12_生成详细报告"):
+            outline_handler.generate_detailed_report(detailed_outline_path, main_output_path,
+                                                     education_level=education_level)
+
         tracker.write_reports(main_output_path)
         
         logging.info(f"\n" + "="*60)

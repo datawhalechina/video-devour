@@ -321,15 +321,33 @@ export const markdownToSlate = (markdown) => {
     } else if (line.trim() === "") {
       // 空行不添加
     } else {
-      nodes.push({
-        type: BLOCK_TYPES.PARAGRAPH,
-        children: [{ text: line }],
-      });
+      // 图片：![alt](url) → 图片块（此前被当普通段落，Slate 渲染时可能异常）
+      const img = line.match(/^!\[(.*?)\]\((.*?)\)\s*$/);
+      if (img) {
+        nodes.push({
+          type: BLOCK_TYPES.IMAGE,
+          url: img[2],
+          alt: img[1] || "",
+          children: [{ text: "" }],
+        });
+      } else {
+        nodes.push({
+          type: BLOCK_TYPES.PARAGRAPH,
+          children: [{ text: line }],
+        });
+      }
     }
   });
 
-  return nodes.length > 0
-    ? nodes
+  // Slate 要求节点 children 非空且 text 字段存在；做一次规范化兜底
+  const normalize = (n) => {
+    if (!n.children || n.children.length === 0) n.children = [{ text: "" }];
+    n.children = n.children.map((c) => (c.children ? normalize(c) : c));
+    return n;
+  };
+  const normalized = nodes.map(normalize);
+  return normalized.length > 0
+    ? normalized
     : [{ type: BLOCK_TYPES.PARAGRAPH, children: [{ text: "" }] }];
 };
 

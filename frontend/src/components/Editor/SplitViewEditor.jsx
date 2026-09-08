@@ -96,8 +96,6 @@ function SplitViewEditor({ initialMarkdown, onSave, onCancel }) {
           </div>
         </div>
 
-        {/* 块级工具栏（仅在编辑模式显示） */}
-        {(viewMode === 'editor' || viewMode === 'split') && <BlockToolbar />}
       </div>
 
       {/* 主内容区 */}
@@ -115,10 +113,13 @@ function SplitViewEditor({ initialMarkdown, onSave, onCancel }) {
               <DocumentEditor
                 initialValue={editorValue}
                 onChange={handleEditorChange}
+                extraToolbars={
+                  <>
+                    <BlockToolbar />
+                    <SelectionToolbar />
+                  </>
+                }
               />
-              
-              {/* 选区工具栏 */}
-              <SelectionToolbar />
             </motion.div>
           )}
 

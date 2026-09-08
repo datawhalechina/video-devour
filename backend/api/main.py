@@ -825,9 +825,11 @@ async def get_task_report(task_id: str):
     # 读取报告文件
     detailed_outline_path = output_dir / "detailed_outline.md"
     final_report_path = output_dir / "final_report.md"
-    
+    detailed_report_path = output_dir / "detailed_report.md"
+
     detailed_outline = ""
     final_report = ""
+    detailed_report = ""
     duration = "未知"
     video_name = "未知视频"
     
@@ -846,6 +848,14 @@ async def get_task_report(task_id: str):
                 final_report = f.read()
         except Exception as e:
             print(f"读取最终报告失败: {e}")
+
+    # 读取详细报告（原文+笔记对照）
+    if detailed_report_path.exists():
+        try:
+            with open(detailed_report_path, 'r', encoding='utf-8') as f:
+                detailed_report = f.read()
+        except Exception as e:
+            print(f"读取详细报告失败: {e}")
     
     # 优先从任务数据获取原始文件名
     if task_id in processing_tasks:
@@ -894,6 +904,7 @@ async def get_task_report(task_id: str):
         "duration": duration,
         "detailed_outline": detailed_outline,
         "final_report": final_report,
+        "detailed_report": detailed_report,
         "output_dir": output_dir.name,  # 添加输出目录名称
         "created_at": created_at,
         "status": "completed" if (detailed_outline or final_report) else "processing"
@@ -927,6 +938,8 @@ async def get_report_file(task_id: str, file_type: str):
         file_path = output_dir / "detailed_outline.md"
     elif file_type == "final":
         file_path = output_dir / "final_report.md"
+    elif file_type == "detailed_report":
+        file_path = output_dir / "detailed_report.md"
     else:
         raise HTTPException(status_code=400, detail="不支持的文件类型")
     
@@ -968,6 +981,8 @@ async def save_report_file(task_id: str, file_type: str, request: dict):
         file_path = output_dir / "detailed_outline.md"
     elif file_type == "final":
         file_path = output_dir / "final_report.md"
+    elif file_type == "detailed_report":
+        file_path = output_dir / "detailed_report.md"
     else:
         raise HTTPException(status_code=400, detail="不支持的文件类型")
     
@@ -1120,8 +1135,9 @@ async def export_task_markdown(task_id: str, type: str = "all"):
     if not outline_path.exists():
         outline_path = output_dir / "outline.md"
     report_path = output_dir / "final_report.md"
+    detailed_report_path = output_dir / "detailed_report.md"
 
-    if not outline_path.exists() and not report_path.exists():
+    if not outline_path.exists() and not report_path.exists() and not detailed_report_path.exists():
         raise HTTPException(status_code=400, detail="任务尚未完成，无可导出的内容")
 
     def _read(path):
@@ -1150,8 +1166,13 @@ async def export_task_markdown(task_id: str, type: str = "all"):
 
     outline_content = _embed_local_images(_read(outline_path))
     report_content = _embed_local_images(_read(report_path))
+    detailed_content = _embed_local_images(_read(detailed_report_path))
 
-    if type == "outline":
+    if type == "detailed":
+        if not detailed_content:
+            raise HTTPException(status_code=400, detail="该任务没有详细报告")
+        content, filename = detailed_content, f"详细报告_{task_id[:8]}.md"
+    elif type == "outline":
         if not outline_content:
             raise HTTPException(status_code=400, detail="该任务没有图文大纲")
         content, filename = outline_content, f"图文大纲_{task_id[:8]}.md"

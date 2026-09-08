@@ -250,3 +250,108 @@ def generate_final_report(detailed_outline_path, output_dir, education_level: st
     except Exception as e:
         logging.error(f"生成最终报告时发生未知错误: {e}", exc_info=True)
         return None
+
+def generate_detailed_report(detailed_outline_path, output_dir, education_level: str = None):
+    """
+    生成「详细报告」：每个章节同时呈现【原始内容】与【整理笔记】，便于对照学习。
+
+    与另外两个产物的区别：
+    - 图文大纲（detailed_outline.md）：标题 + 关键帧 + 原始片段（溯源用）
+    - 精简报告（final_report.md）：标题 + 关键帧 + LLM 提炼要点（快速阅读）
+    - 详细报告（detailed_report.md）：原始片段 + 提炼笔记 对照（精读用）
+
+    Args:
+        detailed_outline_path (str): 含关键帧与原始片段的详细大纲路径
+        output_dir (str): 输出目录
+        education_level (str): 学习阶段
+
+    Returns:
+        str: 详细报告文件路径；失败返回 None
+    """
+    logging.info("--- 步骤 12: 开始生成详细报告（原文+笔记对照）---")
+    try:
+        with open(detailed_outline_path, 'r', encoding='utf-8') as f:
+            outline_content = f.read()
+
+        # 解析出每个二级章节的：标题、关键帧、原始片段
+        sections = []
+        current = None
+        for line in outline_content.splitlines():
+            h1 = re.match(r'^#\s+(.+)', line)
+            h2 = re.match(r'^##\s+(.+)', line)
+            img = re.match(r'^!\[.*?\]\((.*?)\)', line.strip())
+            if h2:
+                if current:
+                    sections.append(current)
+                current = {"heading": h2.group(1).strip(), "image": None, "raw": []}
+            elif img and current:
+                current["image"] = img.group(1)
+            elif current is not None:
+                # 收集原始片段（引用块 / 正文）
+                stripped = line.strip()
+                if stripped and not h1:
+                    current["raw"].append(stripped)
+        if current:
+            sections.append(current)
+
+        if not sections:
+            logging.warning("详细报告：未解析到任何章节，跳过")
+            return None
+
+        # 逐章节调用 LLM 生成「笔记」（基于该章节的原始内容，避免全文重复调用）
+        from llm_handler import LLMHandler, get_level_instruction
+        llm = LLMHandler(education_level=education_level)
+        level_instruction = get_level_instruction(education_level) or ""
+
+        parts = []
+        title_match = re.search(r'^#\s+(.+)', outline_content, re.MULTILINE)
+        doc_title = title_match.group(1).strip() if title_match else "详细报告"
+        parts.append(f"# {doc_title}\n")
+        parts.append("> 本报告每个章节同时给出【原始内容】与【整理笔记】，便于对照精读。\n")
+
+        for idx, sec in enumerate(sections, 1):
+            parts.append(f"\n## {sec['heading']}\n")
+            if sec.get("image"):
+                parts.append(f"![关键帧: {sec['heading']}]({sec['image']})\n")
+            # 原始内容
+            raw_text = "\n".join(sec["raw"]).strip()
+            if raw_text:
+                parts.append("### 原始内容\n")
+                parts.append(raw_text + "\n")
+            # 整理笔记
+            prompt = (
+                "你是专业的学习笔记整理者。请把下面这段视频字幕内容整理成要点式笔记。\n\n"
+                "要求：\n"
+                "1. 先用 1-3 句概括这段话讲了什么；\n"
+                "2. 再用 `-` 列出 2-6 条关键要点（含具体方法、数字或结论）；\n"
+                "3. 只依据给定内容，不添加原文没有的信息；\n"
+                "4. 使用简体中文（专有名词保留原文）；\n"
+                "5. 只输出笔记正文，不要输出标题、不要解释。\n"
+                + (f"6. 学习阶段：{level_instruction}\n" if level_instruction else "")
+                + f"\n章节标题：{sec['heading']}\n\n内容：\n---\n{raw_text or sec['heading']}\n---\n"
+            )
+            try:
+                notes = llm.get_response(
+                    prompt,
+                    system_message="你是专业的学习笔记整理者，只输出简体中文要点笔记。",
+                ).strip()
+            except Exception as e:
+                logging.error(f"详细报告：章节 '{sec['heading']}' 笔记生成失败: {e}")
+                notes = "（笔记生成失败）"
+            parts.append("### 整理笔记\n")
+            parts.append(notes + "\n")
+
+        report_content = "\n".join(parts)
+
+        # 清理 LLM 编造的外链图片（与最终报告一致）
+        report_content = re.sub(r'!\[[^\]]*\]\(https?://[^)]*\)', '', report_content)
+
+        out_path = os.path.join(output_dir, "detailed_report.md")
+        with open(out_path, 'w', encoding='utf-8') as f:
+            f.write(report_content)
+        logging.info(f"详细报告已生成: {out_path}")
+        print(f"详细报告已生成！已保存至: {out_path}")
+        return out_path
+    except Exception as e:
+        logging.error(f"生成详细报告失败: {e}", exc_info=True)
+        return None

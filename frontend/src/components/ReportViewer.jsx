@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Clock, FileText, Image, Download, Edit3, LayoutGrid, FileDown,
-  Timer, Share2, Network } from "lucide-react";
+  Timer, Share2, Network, BookOpen } from "lucide-react";
 import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -208,12 +208,14 @@ const ReportViewer = ({ report, onBack }) => {
 
   // 开始编辑
   const handleEdit = (type) => {
-    const content = type === "outline" ? report.detailed_outline : report.final_report;
-    const taskId = report.task_id;
-    const fileName = type === "outline" ? "detailed_outline.md" : "final_report.md";
-    
-    // 在当前页面跳转到编辑器
-    const editorUrl = `/editor/${taskId}?file=${type}&name=${encodeURIComponent(fileName)}`;
+    // 前端标签名 → 后端 file_type 映射（后端只认 detailed / final / detailed_report）
+    const map = {
+      outline: ["detailed", "detailed_outline.md"],
+      report: ["final", "final_report.md"],
+      detailed: ["detailed_report", "detailed_report.md"],
+    };
+    const [fileType, fileName] = map[type] || map.outline;
+    const editorUrl = `/editor/${report.task_id}?file=${fileType}&name=${encodeURIComponent(fileName)}`;
     window.location.href = editorUrl;
   };
 
@@ -347,6 +349,14 @@ const ReportViewer = ({ report, onBack }) => {
                 <FileDown className="w-4 h-4" />
                 导出精简报告
               </button>
+              <button
+                onClick={() => handleExportMarkdown("detailed")}
+                title="导出详细报告（原文+笔记对照，图片内嵌）"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
+              >
+                <FileDown className="w-4 h-4" />
+                导出详细报告
+              </button>
             </div>
           </div>
         </motion.div>
@@ -431,6 +441,19 @@ const ReportViewer = ({ report, onBack }) => {
                 精简报告
               </div>
             </button>
+            <button
+              onClick={() => setActiveTab("detailed")}
+              className={`flex-1 px-6 py-4 text-center font-medium transition-colors ${
+                activeTab === "detailed"
+                  ? "bg-blue-500 text-white"
+                  : "text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <BookOpen className="w-4 h-4" />
+                详细报告
+              </div>
+            </button>
           </div>
 
           {/* 内容区域 */}
@@ -475,6 +498,33 @@ const ReportViewer = ({ report, onBack }) => {
                 </div>
                 <div className="markdown-content">
                   {renderMarkdown(report.final_report)}
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === "detailed" && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="prose max-w-none"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">详细报告</h3>
+                  <button
+                    onClick={() => handleEdit("detailed")}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                    编辑报告
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mb-4">
+                  每个章节同时给出「原始内容」与「整理笔记」，便于对照精读
+                </p>
+                <div className="markdown-content">
+                  {report.detailed_report
+                    ? renderMarkdown(report.detailed_report)
+                    : <p className="text-sm text-gray-400">该任务未生成详细报告（旧任务或生成失败）</p>}
                 </div>
               </motion.div>
             )}

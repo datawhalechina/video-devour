@@ -15,7 +15,7 @@ import { HOTKEYS, BLOCK_TYPES } from './editorConfig'
 /**
  * 文档编辑器核心组件
  */
-function DocumentEditor({ initialValue, onChange, readOnly = false }) {
+function DocumentEditor({ initialValue, onChange, readOnly = false , extraToolbars }) {
   const { setDocument, setSelection } = useEditorStore()
   
   // 创建编辑器实例（带历史记录、React 支持和 Markdown 快捷输入）
@@ -178,6 +178,9 @@ function DocumentEditor({ initialValue, onChange, readOnly = false }) {
         
         {/* 斜杠命令菜单 */}
         {!readOnly && <SlashMenu />}
+
+        {/* 外部传入的工具栏（需在 Slate 上下文内才能使用 useSlate） */}
+        {!readOnly && extraToolbars}
       </Slate>
     </div>
   )
