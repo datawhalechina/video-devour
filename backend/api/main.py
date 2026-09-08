@@ -1105,9 +1105,12 @@ async def get_task_card(task_id: str):
 
 
 @app.get("/api/export/{task_id}")
-async def export_task_markdown(task_id: str):
+async def export_task_markdown(task_id: str, type: str = "all"):
     """
-    将任务的大纲与最终报告合并导出为单个 Markdown 文件
+    导出任务的 Markdown。
+
+    type: outline（图文大纲）/ report（精简报告）/ all（两者合并，兼容旧调用）
+    图文大纲与报告结构差异大，分开导出阅读体验更好，故默认前端分别下载。
     """
     output_dir = _find_task_output_dir(task_id)
     if not output_dir:
@@ -1145,20 +1148,32 @@ async def export_task_markdown(task_id: str):
 
         return re.sub(r"!\[([^\]]*)\]\((?!https?://)([^)]+)\)", _replace, md_text)
 
-    parts = []
-    outline_content = _read(outline_path)
-    report_content = _read(report_path)
-    if outline_content:
-        parts.append(f"# 内容大纲\n\n{_embed_local_images(outline_content)}")
-    if report_content:
-        parts.append(f"# 详细报告\n\n{_embed_local_images(report_content)}")
-    full_content = "\n\n---\n\n".join(parts)
+    outline_content = _embed_local_images(_read(outline_path))
+    report_content = _embed_local_images(_read(report_path))
 
-    filename = f"videodevour_{task_id[:8]}.md"
+    if type == "outline":
+        if not outline_content:
+            raise HTTPException(status_code=400, detail="该任务没有图文大纲")
+        content, filename = outline_content, f"图文大纲_{task_id[:8]}.md"
+    elif type == "report":
+        if not report_content:
+            raise HTTPException(status_code=400, detail="该任务没有精简报告")
+        content, filename = report_content, f"精简报告_{task_id[:8]}.md"
+    else:
+        parts = []
+        if outline_content:
+            parts.append(f"# 内容大纲\n\n{outline_content}")
+        if report_content:
+            parts.append(f"# 详细报告\n\n{report_content}")
+        content, filename = "\n\n---\n\n".join(parts), f"videodevour_{task_id[:8]}.md"
+
+    from urllib.parse import quote
     return Response(
-        content=full_content,
-        media_type="text/markdown",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        content=content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition":
+                 f"attachment; filename=\"videodevour.md\"; "
+                 f"filename*=UTF-8''{quote(filename)}"},
     )
 
 @app.get("/api/subtitle-notes/download")

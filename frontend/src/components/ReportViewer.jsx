@@ -101,8 +101,8 @@ const ReportViewer = ({ report, onBack }) => {
     }
   }
 
-  const handleExportMarkdown = () => {
-    window.open(`/api/export/${report.task_id}`, "_blank");
+  const handleExportMarkdown = (type = "all") => {
+    window.open(`/api/export/${report.task_id}?type=${type}`, "_blank");
   };
 
   // 动态更新页面标题
@@ -332,11 +332,20 @@ const ReportViewer = ({ report, onBack }) => {
                 {timingLoading ? "加载中..." : "耗时分析"}
               </button>
               <button
-                onClick={handleExportMarkdown}
+                onClick={() => handleExportMarkdown("outline")}
+                title="导出图文大纲（含关键帧图片，图片内嵌）"
                 className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
               >
                 <FileDown className="w-4 h-4" />
-                导出 Markdown
+                导出图文大纲
+              </button>
+              <button
+                onClick={() => handleExportMarkdown("report")}
+                title="导出精简报告（含关键帧图片，图片内嵌）"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
+              >
+                <FileDown className="w-4 h-4" />
+                导出精简报告
               </button>
             </div>
           </div>
