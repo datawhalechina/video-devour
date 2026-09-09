@@ -18,6 +18,7 @@ from datetime import datetime
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
+from urllib.parse import quote
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1296,73 +1297,76 @@ async def download_subtitle_notes(name: str, fmt: str = "md"):
 
 
 @app.get("/api/library/search")
-async def library_search(q: str = "", scope: str = "all"):
+async def library_search(q: str = "", scope: str = "all", top_k: int = 10):
     """
-    个人文档库：跨任务全文检索所有已生成的内容。
+    个人文档库检索：BM25 相关度排序，返回 top-k 命中（标题/类型/摘要/分数/来源）。
+    q 为空时返回全部文档索引。
+    """
+    from backend.algorithm.document_library import search_library, list_library
+    if scope not in ("all", "outline", "report", "detailed"):
+        raise HTTPException(status_code=400, detail="scope 仅支持 all/outline/report/detailed")
+    try:
+        if (q or "").strip():
+            return await _run_link_probe(search_library, query=q, scope=scope, top_k=max(1, min(top_k, 30)))
+        return await _run_link_probe(list_library, scope=scope)
+    except Exception as e:
+        logging.error(f"文档库检索失败: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"检索失败: {e}")
 
-    scope: outline（图文大纲）/ report（精简报告）/ detailed（详细报告）/ all
-    返回命中的片段（命中关键词前后各 60 字），按任务时间倒序。
-    """
-    q = (q or "").strip()
-    scope_set = {"outline", "report", "detailed"} if scope != "all" else {"outline", "report", "detailed"}
-    sources = {
-        "outline": ("detailed_outline.md", "图文大纲"),
-        "report": ("final_report.md", "精简报告"),
-        "detailed": ("detailed_report.md", "详细报告"),
+
+@app.get("/api/library/article/{doc_id}/{scope}")
+async def library_get_article(doc_id: str, scope: str):
+    """获取单篇文章全文（Markdown），供前端全文预览与 LLM/MCP 取用"""
+    from backend.algorithm.document_library import get_article
+    result = await _run_link_probe(get_article, doc_id=doc_id, scope=scope)
+    if not result:
+        raise HTTPException(status_code=404, detail="文章不存在")
+    doc = result["doc"]
+    return {
+        "doc_id": doc_id,
+        "scope": scope,
+        "label": result["label"],
+        "title": doc["title"],
+        "platform": doc["platform"],
+        "platform_label": doc["platform_label"],
+        "source_url": doc["source_url"],
+        "content": result["content"],
+        "download_url": f"/api/library/article/{doc_id}/{scope}/download",
     }
-    results = []
-    if not q:
-        # 无关键词时返回全部文档索引
-        for dir_path in sorted(OUTPUT_DIR.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True):
-            if not (dir_path.is_dir() and dir_path.name.startswith("frames_")):
-                continue
-            task_id = dir_path.name.split("_")[1]
-            task = processing_tasks.get(task_id) or {}
-            for sc in scope_set & set(sources):
-                fname, label = sources[sc]
-                f = dir_path / fname
-                if f.exists() and f.stat().st_size > 0:
-                    results.append({
-                        "task_id": task_id,
-                        "title": task.get("filename") or task_id,
-                        "scope": sc, "label": label,
-                        "snippet": f.read_text(encoding="utf-8")[:120] + "…",
-                        "created_at": datetime.fromtimestamp(f.stat().st_ctime).isoformat(),
-                        "view_url": f"/report/{task_id}",
-                    })
-        return {"query": "", "total": len(results), "results": results[:50]}
 
-    q_lower = q.lower()
-    for dir_path in sorted(OUTPUT_DIR.iterdir(), key=lambda x: x.stat().st_ctime, reverse=True):
-        if not (dir_path.is_dir() and dir_path.name.startswith("frames_")):
-            continue
-        task_id = dir_path.name.split("_")[1]
-        task = processing_tasks.get(task_id) or {}
-        title = task.get("filename") or task_id
-        for sc in scope_set & set(sources):
-            fname, label = sources[sc]
-            f = dir_path / fname
-            if not f.exists() or f.stat().st_size == 0:
-                continue
-            try:
-                text = f.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            if q_lower not in text.lower():
-                continue
-            # 取第一个命中位置做摘要
-            pos = text.lower().find(q_lower)
-            snippet = text[max(0, pos - 60): pos + len(q) + 60].replace("\n", " ")
-            results.append({
-                "task_id": task_id,
-                "title": title,
-                "scope": sc, "label": label,
-                "snippet": f"…{snippet}…",
-                "created_at": datetime.fromtimestamp(f.stat().st_ctime).isoformat(),
-                "view_url": f"/report/{task_id}",
-            })
-    results.sort(key=lambda x: x["created_at"], reverse=True)
-    return {"query": q, "total": len(results), "results": results[:50]}
+
+@app.get("/api/library/article/{doc_id}/{scope}/download")
+async def library_download_article(doc_id: str, scope: str):
+    """单篇文章下载（.md，附 Content-Disposition）"""
+    from urllib.parse import quote
+    from backend.algorithm.document_library import get_article, ARTICLE_TYPES
+    if scope not in ARTICLE_TYPES:
+        raise HTTPException(status_code=400, detail="不支持的文档类型")
+    result = await _run_link_probe(get_article, doc_id=doc_id, scope=scope)
+    if not result:
+        raise HTTPException(status_code=404, detail="文章不存在")
+    label = ARTICLE_TYPES[scope][1]
+    title = result["doc"]["title"][:40]
+    filename = quote(f"{title}_{label}.md")
+    return Response(
+        content=result["content"],
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition":
+                 f"attachment; filename=\"export.md\"; filename*=UTF-8''{filename}"},
+    )
+
+
+@app.get("/api/library/export")
+async def library_export_all():
+    """整库导出：全部任务的文档（md）+ 关键帧 + manifest.json 打包 ZIP"""
+    from backend.algorithm.document_library import export_library_zip
+    content, filename = await _run_link_probe(export_library_zip)
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={"Content-Disposition":
+                 f"attachment; filename=\"library.zip\"; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
 @app.get("/api/history")

@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, BookOpen, Search, Loader2, FileText, Eye } from 'lucide-react'
+import {
+  ArrowLeft, BookOpen, Search, Loader2, FileText, Eye, Download,
+  X, ExternalLink, Zap,
+} from 'lucide-react'
 
 const SCOPE_TABS = [
   { key: 'all', label: '全部' },
@@ -10,9 +13,14 @@ const SCOPE_TABS = [
   { key: 'detailed', label: '详细报告' },
 ]
 
+const ReactMarkdown = ({ children }) => {
+  // 轻量渲染：marked 已在依赖中；此处用动态加载会造成闪烁，直接交给父级处理
+  return <div className="markdown-body" dangerouslySetInnerHTML={{ __html: children }} />
+}
+
 /**
- * 个人文档库：跨任务检索所有已生成的内容（图文大纲 / 精简报告 / 详细报告）。
- * 输入关键词全文检索，点击结果跳转到对应报告页查看。
+ * 个人文档库：以「单次视频处理」为单位的文章库，支持 BM25 相关度检索。
+ * 瀑布流卡片展示；卡片可展开全文（模态），支持单篇 .md 下载与整库 ZIP 导出。
  */
 function LibraryPage() {
   const navigate = useNavigate()
@@ -21,16 +29,17 @@ function LibraryPage() {
   const [results, setResults] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [fullText, setFullText] = useState(null)      // {title, content, download_url, view_url}
+  const [fullLoading, setFullLoading] = useState(false)
   const debounceRef = useRef(null)
 
   const load = async (q, sc) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/library/search?q=${encodeURIComponent(q)}&scope=${sc}`)
+      const res = await fetch(`/api/library/search?q=${encodeURIComponent(q)}&scope=${sc}&top_k=30`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setResults(data)
+      setResults(await res.json())
     } catch (err) {
       setError(err.message)
     } finally {
@@ -43,7 +52,7 @@ function LibraryPage() {
   const onQueryChange = (v) => {
     setQuery(v)
     clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => load(v, scope), 400)   // 输入防抖
+    debounceRef.current = setTimeout(() => load(v, scope), 400)
   }
 
   const onScopeChange = (key) => {
@@ -51,10 +60,28 @@ function LibraryPage() {
     load(query, key)
   }
 
+  // 打开全文模态（渲染 Markdown 简版：保留换行与图片）
+  const openFullText = async (r) => {
+    setFullText({ title: `${r.label} · ${r.title}`, content: '加载中…', download: null, view: r.view_url })
+    try {
+      const res = await fetch(`/api/library/article/${r.doc_id}/${r.scope}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setFullText({
+        title: `${data.label} · ${data.title}`,
+        content: data.content,
+        download: data.download_url,
+        view: r.view_url,
+      })
+    } catch (err) {
+      setFullText({ title: '加载失败', content: err.message, download: null, view: r.view_url })
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 max-w-6xl flex items-center justify-between">
+      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-40">
+        <div className="container mx-auto px-4 py-4 max-w-7xl flex items-center justify-between">
           <button onClick={() => navigate(-1)} className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition">
             <ArrowLeft className="w-5 h-5" />
             <span>返回</span>
@@ -63,89 +90,140 @@ function LibraryPage() {
             <BookOpen className="w-5 h-5 text-primary-600" />
             <h1 className="text-lg font-bold text-gray-900">个人文档库</h1>
           </div>
-          <div className="w-16" />
+          <button
+            onClick={() => window.open('/api/library/export', '_blank')}
+            title="整库导出（全部任务的 md + 关键帧 + manifest.json）"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-xs font-medium hover:bg-gray-50"
+          >
+            <Download className="w-3.5 h-3.5" />
+            整库导出 ZIP
+          </button>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 max-w-4xl space-y-5">
-        {/* 搜索框 */}
-        <div className="flex items-center gap-3">
-          <div className="flex-1 flex items-center gap-2 px-4 py-3 bg-white rounded-xl border border-gray-200 focus-within:ring-2 focus-within:ring-primary-500">
+      <main className="container mx-auto px-4 py-6 max-w-7xl">
+        {/* 搜索区 */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="flex-1 min-w-[280px] flex items-center gap-2 px-4 py-3 bg-white rounded-xl border border-gray-200 focus-within:ring-2 focus-within:ring-primary-500">
             <Search className="w-5 h-5 text-gray-400" />
             <input
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
-              placeholder="跨任务检索已生成的全部内容，如：新教师、PO Token、3D 课件…"
+              placeholder="BM25 相关度检索：关键词越具体排名越准，如 37 个实操案例 / PO Token / 虚拟讲师…"
               className="flex-1 outline-none text-sm bg-transparent"
             />
             {loading && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
           </div>
+          <div className="flex items-center gap-2">
+            {SCOPE_TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => onScopeChange(t.key)}
+                className={`px-4 py-2 rounded-lg text-xs font-medium transition ${
+                  scope === t.key ? 'bg-primary-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* 范围过滤 */}
-        <div className="flex items-center gap-2">
-          {SCOPE_TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => onScopeChange(t.key)}
-              className={`px-4 py-1.5 rounded-full text-xs font-medium transition ${
-                scope === t.key ? 'bg-primary-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-          {results && (
-            <span className="ml-auto text-xs text-gray-400">
-              {results.query ? `“${results.query}” 命中 ${results.total} 条` : `共 ${results.total} 篇文档`}
-            </span>
-          )}
-        </div>
+        {/* 统计行 */}
+        {results && (
+          <p className="flex items-center gap-2 text-xs text-gray-400 mb-4">
+            <Zap className="w-3.5 h-3.5 text-amber-500" />
+            {results.query
+              ? `“${results.query}” 按相关度命中 ${results.total} 条（BM25 排序）`
+              : `共收录 ${results.total} 篇文章（每个视频任务含图文大纲 / 精简报告 / 详细报告）`}
+          </p>
+        )}
 
-        {/* 结果列表 */}
-        {error ? (
-          <div className="bg-white rounded-xl shadow p-10 text-center text-red-600">{error}</div>
-        ) : loading && !results ? (
+        {/* 错误 / 空态 */}
+        {error && <div className="bg-white rounded-xl shadow p-10 text-center text-red-600">{error}</div>}
+        {loading && !results && (
           <div className="bg-white rounded-xl shadow p-10 text-center">
             <Loader2 className="w-10 h-10 text-primary-500 mx-auto mb-3 animate-spin" />
             <p className="text-gray-500 text-sm">加载中…</p>
           </div>
-        ) : results && results.results.length === 0 ? (
+        )}
+        {results && results.results.length === 0 && (
           <div className="bg-white rounded-xl shadow p-10 text-center">
             <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500 text-sm">{query ? `没有包含“${query}”的内容` : '还没有任何已生成的内容'}</p>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {results?.results.map((r, i) => (
+        )}
+
+        {/* 瀑布流卡片 */}
+        {results && results.results.length > 0 && (
+          <div className="columns-1 sm:columns-2 lg:columns-3 gap-4 [&>*]:break-inside-avoid [&>*]:mb-4">
+            {results.results.map((r, i) => (
               <motion.div
-                key={`${r.task_id}-${r.scope}-${i}`}
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(i * 0.03, 0.3) }}
-                className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow p-5"
+                key={`${r.doc_id}-${r.scope}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i * 0.03, 0.4) }}
+                className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-shadow p-5 cursor-pointer"
+                onClick={() => openFullText(r)}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs font-medium">{r.label}</span>
-                      <span className="text-sm font-semibold text-gray-800 truncate">{r.title}</span>
-                    </div>
-                    <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{r.snippet}</p>
-                    <p className="text-xs text-gray-400 mt-1.5">{new Date(r.created_at).toLocaleString('zh-CN')}</p>
-                  </div>
-                  <a
-                    href={r.view_url}
-                    className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    查看
-                  </a>
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs font-medium">{r.label}</span>
+                  <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 text-xs">{r.platform_label}</span>
+                  {r.query && r.score > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-xs">相关度 {r.score}</span>
+                  )}
+                </div>
+                <h3 className="text-sm font-semibold text-gray-800 mb-2 line-clamp-2">{r.title}</h3>
+                <p className="text-xs text-gray-500 leading-relaxed line-clamp-4">{r.snippet}</p>
+                <div className="flex items-center justify-between mt-3 text-xs text-gray-400">
+                  <span>{new Date(r.created_at).toLocaleString('zh-CN')}</span>
+                  <span className="flex items-center gap-1 text-primary-600">
+                    <Eye className="w-3.5 h-3.5" /> 展开全文
+                  </span>
                 </div>
               </motion.div>
             ))}
           </div>
         )}
       </main>
+
+      {/* 全文模态 */}
+      {fullText && (
+        <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4"
+             onClick={() => setFullText(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full h-full max-w-[95vw] max-h-[92vh] flex flex-col overflow-hidden"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
+              <h3 className="text-base font-bold text-gray-900 truncate">{fullText.title}</h3>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {fullText.download && (
+                  <a href={fullText.download}
+                     className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-1">
+                    <Download className="w-3.5 h-3.5" /> 下载 .md
+                  </a>
+                )}
+                {fullText.view && (
+                  <a href={fullText.view}
+                     className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-1">
+                    <ExternalLink className="w-3.5 h-3.5" /> 报告页
+                  </a>
+                )}
+                <button onClick={() => setFullText(null)}
+                        className="px-3 py-1.5 rounded-lg bg-gray-800 text-white text-xs font-medium hover:bg-gray-900">
+                  关闭
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {fullText.loading ? (
+                <Loader2 className="w-8 h-8 animate-spin text-primary-500 mx-auto mt-10" />
+              ) : (
+                <pre className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed font-sans">{fullText.content}</pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
