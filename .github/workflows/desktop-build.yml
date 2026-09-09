@@ -13,7 +13,7 @@ name: Desktop Build
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, "feat/**", "ci/**"]
     paths:
       - "desktop/**"
       - "requirements-lite.txt"
