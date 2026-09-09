@@ -1,4 +1,4 @@
-; VideoDevour Windows 安装包配置（Inno Setup 6）
+﻿; VideoDevour Windows 安装包配置（Inno Setup 6）
 ;
 ; 构建：iscc.exe desktop\installer.iss
 ; 前置：已执行 desktop\build_win.ps1 生成 desktop\dist\VideoDevour\

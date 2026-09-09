@@ -1,4 +1,4 @@
-<#
+﻿<#
 VideoDevour Windows 构建脚本（x64）
 
 用法（在 Windows 上执行）：
