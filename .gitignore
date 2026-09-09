@@ -30,3 +30,4 @@ settings.json
 # Python 产物
 __pycache__/
 *.pyc
+output/subtitle_notes/
