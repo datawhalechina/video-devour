@@ -1346,11 +1346,34 @@ async def library_download_article(doc_id: str, scope: str):
     result = await _run_link_probe(get_article, doc_id=doc_id, scope=scope)
     if not result:
         raise HTTPException(status_code=404, detail="文章不存在")
+
+    content = result["content"]
+    doc = result["doc"]
+    output_dir = OUTPUT_DIR / doc["dir"]
     label = ARTICLE_TYPES[scope][1]
-    title = result["doc"]["title"][:40]
-    filename = quote(f"{title}_{label}.md")
+
+    # 把 Markdown 里的本地相对路径图片内嵌为 base64：
+    # 单独下载的 .md 脱离了任务的 keyframes 目录，不内嵌图片会全部裂开
+    import base64
+    import mimetypes as _mimetypes
+    import re as _re
+
+    def _embed(match):
+        alt, rel_path = match.group(1), match.group(2)
+        rel_path = rel_path.replace("\\", "/").lstrip("./")
+        img_path = output_dir / rel_path
+        if not img_path.exists():
+            return match.group(0)
+        mime = _mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
+        data = base64.b64encode(img_path.read_bytes()).decode("ascii")
+        return f"![{alt}](data:{mime};base64,{data})"
+
+    content = _re.sub(r"!\[([^\]]*)\]\((?!https?://|data:)([^)]+)\)", _embed, content)
+
+    safe_title = _re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9_-]+", "_", doc["title"])[:40] or "article"
+    filename = quote(f"{safe_title}_{label}.md")
     return Response(
-        content=result["content"],
+        content=content,
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition":
                  f"attachment; filename=\"export.md\"; filename*=UTF-8''{filename}"},
