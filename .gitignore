@@ -41,3 +41,5 @@ desktop/release/*.zip
 
 # macOS
 .DS_Store
+# 视频下载缓存（运行时产物）
+downloads/
