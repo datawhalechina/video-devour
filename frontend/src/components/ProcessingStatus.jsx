@@ -133,7 +133,7 @@ function ProcessingStatus({ taskId, onComplete, onCancel }) {
           <div className="mb-8">
             <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
               <motion.div
-                className="h-full bg-gradient-to-r from-primary-500 to-purple-600"
+                className="h-full bg-primary-600"
                 initial={{ width: 0 }}
                 animate={{ width: `${status.progress}%` }}
                 transition={{ duration: 0.5 }}

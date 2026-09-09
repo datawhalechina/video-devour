@@ -304,7 +304,7 @@ const ReportViewer = ({ report, onBack }) => {
               <button
                 onClick={handleGenerateCard}
                 disabled={cardLoading}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-primary-600 to-purple-600 text-white text-sm font-medium shadow-md hover:shadow-lg transition-shadow disabled:opacity-60"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium shadow-md hover:shadow-lg transition-shadow disabled:opacity-60"
               >
                 <LayoutGrid className="w-4 h-4" />
                 {cardLoading ? "生成中..." : "生成学习卡片"}
@@ -438,7 +438,7 @@ const ReportViewer = ({ report, onBack }) => {
                       </span>
                     </div>
                     <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-primary-500 to-purple-500 rounded-full"
+                      <div className="h-full bg-primary-600 rounded-full"
                            style={{ width: `${Math.max(2, (p.total / maxTotal) * 100)}%` }} />
                     </div>
                   </div>

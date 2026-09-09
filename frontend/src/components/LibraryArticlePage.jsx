@@ -44,8 +44,8 @@ function LibraryArticlePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-40">
+    <div className="workspace-page libraryarticlepage">
+      <header className="page-toolbar">
         <div className="container mx-auto px-4 py-4 max-w-5xl flex items-center justify-between">
           <button
             onClick={() => navigate('/library')}
@@ -82,9 +82,9 @@ function LibraryArticlePage() {
             animate={{ opacity: 1, y: 0 }}
             className="bg-white rounded-xl shadow-lg p-10"
           >
-            <div className="flex items-center gap-2 mb-4 text-xs text-gray-400">
-              <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">{article.label}</span>
-              <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700">{article.platform_label}</span>
+            <div className="article-meta flex items-center gap-2 mb-4 text-xs text-gray-400">
+              <span className="px-2 py-0.5 rounded bg-primary-50 text-primary-700 font-medium">{article.label}</span>
+              <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600">{article.platform_label}</span>
               <a
                 href={article.source_url}
                 target="_blank"

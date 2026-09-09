@@ -206,9 +206,9 @@ function SettingsPage() {
   const labelClass = "block text-sm font-semibold text-gray-700 mb-1.5"
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="workspace-page settingspage">
       {/* 顶部导航 */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
+      <header className="page-toolbar">
         <div className="container mx-auto px-4 py-4 max-w-4xl flex items-center justify-between">
           <button
             onClick={() => navigate(-1)}
@@ -226,6 +226,7 @@ function SettingsPage() {
       </header>
 
       <main className="container mx-auto px-4 py-8 max-w-4xl space-y-6">
+        <div className="page-intro"><div className="eyebrow">MAKE IT YOURS</div><h1>适合你的学习方式。</h1><p>管理语音识别、内容生成和个人偏好，让每次整理更顺手。</p></div>
         {/* ASR 模式 */}
         <motion.section
           initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -262,7 +263,7 @@ function SettingsPage() {
             <div className="mt-5 space-y-4">
               <div>
                 <label className={labelClass}>云端识别提供商</label>
-                <div className="flex items-center space-x-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <button
                     onClick={() => { setField('online_asr_provider', 'dashscope'); setField('online_asr_model', 'fun-asr-realtime') }}
                     className={`px-5 py-2 rounded-lg border-2 text-sm font-medium transition ${form.online_asr_provider === 'dashscope' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
@@ -630,7 +631,7 @@ function SettingsPage() {
             <GraduationCap className="w-5 h-5 text-primary-600" />
             <span>默认学习阶段</span>
           </h2>
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-wrap items-center gap-3">
             {(settings.education_levels || ['小学', '初中', '高中']).map(level => (
               <button
                 key={level}

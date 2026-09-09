@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
-import Header from "./Header";
+
 import VideoUpload from "./VideoUpload";
 import ProcessingStatus from "./ProcessingStatus";
 import ReportViewer from "./ReportViewer";
@@ -55,6 +55,8 @@ function MainApp({ initialView = "upload" }) {
   const [currentView, setCurrentView] = useState(initialView);
   const [currentTask, setCurrentTask] = useState(null);
   const [selectedReport, setSelectedReport] = useState(null);
+
+  useEffect(() => { setCurrentView(initialView) }, [initialView]);
 
   // 组件初始化时从localStorage恢复任务状态或使用URL参数
   useEffect(() => {
@@ -201,15 +203,7 @@ function MainApp({ initialView = "upload" }) {
   }, [currentTask]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 flex flex-col">
-      <Header
-        currentView={currentView}
-        onNavigate={setCurrentView}
-        onBackToUpload={handleBackToUpload}
-        currentTask={currentTask}
-        onBackToProcessing={handleBackToProcessing}
-      />
-
+    <div className="workspace-page flex flex-col">
       <main className="container mx-auto px-4 py-8 max-w-7xl flex-grow">
         <AnimatePresence mode="wait">
           {currentView === "upload" && (
@@ -268,13 +262,7 @@ function MainApp({ initialView = "upload" }) {
         </AnimatePresence>
       </main>
 
-      {/* Footer */}
-      <footer className="mt-auto py-8 border-t border-gray-200 bg-white/50">
-        <div className="text-center text-gray-600 text-sm">
-          <p>🍽️ VideoDevour - 吃掉视频，输出一份报告</p>
-          <p className="mt-2">基于 ASR + VLM 技术的智能视频分析工具</p>
-        </div>
-      </footer>
+
     </div>
   );
 }

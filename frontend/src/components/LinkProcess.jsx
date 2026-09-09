@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle, Settings, KeyRound, NotebookPen } from 'lucide-react'
 import { getLinkInfo, searchLinkVideos, processLink, generateSubtitleNotes } from '../api/videoService'
@@ -28,7 +28,8 @@ function formatDuration(seconds) {
 
 function LinkProcess() {
   const navigate = useNavigate()
-  const [url, setUrl] = useState('')
+  const location = useLocation()
+  const [url, setUrl] = useState(location.state?.url || '')
   const [query, setQuery] = useState('')
   const [platform, setPlatform] = useState('bilibili')
   const [results, setResults] = useState([])
@@ -165,9 +166,9 @@ h1,h2,h3{line-height:1.35}</style>
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="workspace-page linkprocess">
       {/* 顶部导航 */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
+      <header className="page-toolbar">
         <div className="container mx-auto px-4 py-4 max-w-6xl flex items-center justify-between">
           <button onClick={() => navigate(-1)} className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition">
             <ArrowLeft className="w-5 h-5" />
@@ -189,19 +190,21 @@ h1,h2,h3{line-height:1.35}</style>
       </header>
 
       <main className="container mx-auto px-4 py-8 max-w-6xl space-y-6">
+        <div className="page-intro"><div className="eyebrow">FROM VIDEO TO KNOWLEDGE</div><h1>发现值得留下的内容。</h1><p>粘贴视频链接，或搜索感兴趣的主题，开始整理你的下一份笔记。</p></div>
         {/* 链接输入 + 搜索区 */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
           <div className="flex items-center space-x-2">
             <Link2 className="w-5 h-5 text-primary-600" />
             <h2 className="text-base font-bold text-gray-900">粘贴视频链接</h2>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="link-input-row">
             <input
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleProbe()}
-              placeholder="支持 B站 / YouTube / 微信视频号分享链接（weixin.qq.com/sph/...），可直接粘贴分享文案"
+              aria-label="视频链接或分享文案"
+              placeholder="粘贴 B站 / YouTube / 微信视频号链接或分享文案"
               className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
             />
             <button
@@ -224,10 +227,10 @@ h1,h2,h3{line-height:1.35}</style>
             <button
               onClick={() => handleProcess(url.trim())}
               disabled={processing || !url.trim()}
-              className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-gradient-to-r from-primary-600 to-purple-600 text-white text-sm font-bold shadow-md hover:shadow-lg disabled:opacity-50"
+              className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-primary-600 text-white text-sm font-bold shadow-md hover:shadow-lg disabled:opacity-50"
             >
               {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              <span>一键下载处理</span>
+              <span>生成图文报告</span>
             </button>
           </div>
 
@@ -245,6 +248,7 @@ h1,h2,h3{line-height:1.35}</style>
                 {PLATFORM_TABS.map((t) => (
                   <button
                     key={t.key}
+                    aria-pressed={platform === t.key}
                     onClick={() => setPlatform(t.key)}
                     className={`px-4 py-1.5 rounded-full text-xs font-medium transition ${
                       platform === t.key ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -343,10 +347,10 @@ h1,h2,h3{line-height:1.35}</style>
                 <button
                   onClick={() => handleProcess(preview.webpage_url)}
                   disabled={processing}
-                  className="flex items-center space-x-2 px-5 py-2 rounded-lg bg-gradient-to-r from-primary-600 to-purple-600 text-white text-sm font-bold shadow-md hover:shadow-lg disabled:opacity-50"
+                  className="flex items-center space-x-2 px-5 py-2 rounded-lg bg-primary-600 text-white text-sm font-bold shadow-md hover:shadow-lg disabled:opacity-50"
                 >
                   {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                  <span>一键下载处理</span>
+                  <span>生成图文报告</span>
                 </button>
               )}
             </div>
@@ -372,7 +376,7 @@ h1,h2,h3{line-height:1.35}</style>
                       <MessageCircle className="w-12 h-12" />
                       <p className="text-sm font-medium text-gray-300">微信视频号内容不支持网页内嵌预览</p>
                       <p className="text-xs text-gray-500 leading-relaxed">
-                        点击右上角“一键下载处理”将调用解析服务下载；
+                        点击右上角“生成图文报告”将调用解析服务下载；
                         若解析失败（链接过期/服务限流），请用本地工具下载后到“上传视频”页上传处理
                       </p>
                     </div>

@@ -38,6 +38,7 @@ export default function ExtrasPicker() {
           <button
             key={key}
             type="button"
+            aria-pressed={active}
             onClick={() => toggle(key)}
             title={active ? '点击取消，完成后不生成' : '点击勾选，报告完成后自动生成'}
             className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg border-2 text-sm font-medium transition ${

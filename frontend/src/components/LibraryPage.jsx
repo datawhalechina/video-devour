@@ -12,9 +12,17 @@ const SCOPE_TABS = [
   { key: 'detailed', label: '详细报告' },
 ]
 
+const cleanSnippet = (value = '') => value
+  .replace(/!\[[^\]]*\]\([^)]*(?:\)|$)/g, '')
+  .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+  .replace(/(^|\s)#{1,6}\s/g, '$1')
+  .replace(/\*\*|__|`/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+
 /**
  * 个人文档库：以「单次视频处理」为单位的文章库，支持 BM25 相关度检索。
- * 瀑布流卡片展示；卡片点击进入文章子页（Markdown 渲染 + 图片 + 下载），
+ * 响应式卡片展示；卡片点击进入文章子页（Markdown 渲染 + 图片 + 下载），
  * 另支持单篇 .md 下载与整库 ZIP 导出。
  */
 function LibraryPage() {
@@ -25,30 +33,35 @@ function LibraryPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const debounceRef = useRef(null)
+  const requestRef = useRef(0)
 
   const load = async (q, sc) => {
+    const request = ++requestRef.current
     setLoading(true)
     setError(null)
     try {
       const res = await fetch(`/api/library/search?q=${encodeURIComponent(q)}&scope=${sc}&top_k=30`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setResults(await res.json())
+      const data = await res.json()
+      if (request === requestRef.current) setResults(data)
     } catch (err) {
-      setError(err.message)
+      if (request === requestRef.current) setError(err.message)
     } finally {
-      setLoading(false)
+      if (request === requestRef.current) setLoading(false)
     }
   }
 
-  useEffect(() => { load('', 'all') }, [])
+  useEffect(() => { load('', 'all'); return () => { clearTimeout(debounceRef.current); requestRef.current++ } }, [])
 
   const onQueryChange = (v) => {
+    requestRef.current++
     setQuery(v)
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => load(v, scope), 400)
   }
 
   const onScopeChange = (key) => {
+    clearTimeout(debounceRef.current)
     setScope(key)
     load(query, key)
   }
@@ -59,8 +72,8 @@ function LibraryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-40">
+    <div className="workspace-page librarypage">
+      <header className="page-toolbar">
         <div className="container mx-auto px-4 py-4 max-w-7xl flex items-center justify-between">
           <button onClick={() => navigate(-1)} className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition">
             <ArrowLeft className="w-5 h-5" />
@@ -82,14 +95,16 @@ function LibraryPage() {
       </header>
 
       <main className="container mx-auto px-4 py-6 max-w-7xl">
+        <div className="page-intro"><div className="eyebrow">YOUR KNOWLEDGE, CONNECTED</div><h1>每次学习，都有迹可循。</h1><p>在这里重读、检索和导出你的视频笔记。</p></div>
         {/* 搜索区 */}
-        <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="library-search flex flex-wrap items-center gap-3 mb-4">
           <div className="flex-1 min-w-[280px] flex items-center gap-2 px-4 py-3 bg-white rounded-xl border border-gray-200 focus-within:ring-2 focus-within:ring-primary-500">
             <Search className="w-5 h-5 text-gray-400" />
             <input
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
-              placeholder="BM25 相关度检索：关键词越具体排名越准，如 37 个实操案例 / PO Token / 虚拟讲师…"
+              aria-label="搜索知识库"
+              placeholder="搜索标题、关键词或你记得的某个观点…"
               className="flex-1 outline-none text-sm bg-transparent"
             />
             {loading && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
@@ -98,6 +113,7 @@ function LibraryPage() {
             {SCOPE_TABS.map((t) => (
               <button
                 key={t.key}
+                aria-pressed={scope === t.key}
                 onClick={() => onScopeChange(t.key)}
                 className={`px-4 py-2 rounded-lg text-xs font-medium transition ${
                   scope === t.key ? 'bg-primary-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
@@ -114,54 +130,55 @@ function LibraryPage() {
           <p className="flex items-center gap-2 text-xs text-gray-400 mb-4">
             <Zap className="w-3.5 h-3.5 text-amber-500" />
             {results.query
-              ? `“${results.query}” 按相关度命中 ${results.total} 条（BM25 排序）`
+              ? `“${results.query}” 按相关度命中 ${results.total} 条`
               : `共收录 ${results.total} 篇文章（每个视频任务含图文大纲 / 精简报告 / 详细报告）`}
           </p>
         )}
 
         {/* 错误 / 空态 */}
-        {error && <div className="bg-white rounded-xl shadow p-10 text-center text-red-600">{error}</div>}
+        {error && <div role="alert" className="bg-white rounded-xl border p-10 text-center"><p className="text-red-600">加载失败：{error}</p><button onClick={() => load(query, scope)} className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg">重新加载</button></div>}
         {loading && !results && (
           <div className="bg-white rounded-xl shadow p-10 text-center">
             <Loader2 className="w-10 h-10 text-primary-500 mx-auto mb-3 animate-spin" />
             <p className="text-gray-500 text-sm">加载中…</p>
           </div>
         )}
-        {results && results.results.length === 0 && (
+        {!error && !loading && results && results.results.length === 0 && (
           <div className="bg-white rounded-xl shadow p-10 text-center">
             <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500 text-sm">{query ? `没有包含“${query}”的内容` : '还没有任何已生成的内容'}</p>
           </div>
         )}
 
-        {/* 瀑布流卡片 */}
+        {/* 知识卡片 */}
         {results && results.results.length > 0 && (
-          <div className="columns-1 sm:columns-2 lg:columns-3 gap-4 [&>*]:break-inside-avoid [&>*]:mb-4">
+          <div className="library-grid">
             {results.results.map((r, i) => (
-              <motion.div
+              <motion.button
+                type="button"
                 key={`${r.doc_id}-${r.scope}`}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i * 0.03, 0.4) }}
-                className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-shadow p-5 cursor-pointer"
+                className="library-card"
                 onClick={() => openArticle(r)}
               >
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs font-medium">{r.label}</span>
-                  <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 text-xs">{r.platform_label}</span>
+                  <span className="px-2 py-0.5 rounded bg-primary-50 text-primary-700 text-xs font-medium">{r.label}</span>
+                  <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-500 text-xs">{r.platform_label}</span>
                   {r.query && r.score > 0 && (
                     <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-xs">相关度 {r.score}</span>
                   )}
                 </div>
                 <h3 className="text-sm font-semibold text-gray-800 mb-2 line-clamp-2">{r.title}</h3>
-                <p className="text-xs text-gray-500 leading-relaxed line-clamp-4">{r.snippet}</p>
+                <p className="text-xs text-gray-500 leading-relaxed line-clamp-4">{cleanSnippet(r.snippet)}</p>
                 <div className="flex items-center justify-between mt-3 text-xs text-gray-400">
                   <span>{new Date(r.created_at).toLocaleString('zh-CN')}</span>
                   <span className="flex items-center gap-1 text-primary-600">
                     <Eye className="w-3.5 h-3.5" /> 阅读全文
                   </span>
                 </div>
-              </motion.div>
+              </motion.button>
             ))}
           </div>
         )}

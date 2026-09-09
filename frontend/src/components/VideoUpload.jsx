@@ -1,12 +1,11 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, ArrowLeft, Play, GraduationCap, Tv, Sparkles } from 'lucide-react'
-import { useNavigate, Link } from 'react-router-dom'
+import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, Play, GraduationCap, Tv, Sparkles } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { uploadVideo } from '../api/videoService'
 import ExtrasPicker, { getSelectedExtras } from './ExtrasPicker'
 
 function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProcessing }) {
-  const navigate = useNavigate()
   const [selectedFiles, setSelectedFiles] = useState([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({})
@@ -124,34 +123,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
 
   return (
     <div className="max-w-4xl mx-auto">
-      {/* 返回主页按钮 */}
-      <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        className="mb-6"
-      >
-        <button
-          onClick={() => navigate('/')}
-          className="group flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-primary-600 transition-all"
-        >
-          <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-          <span className="font-medium">返回主页</span>
-        </button>
-      </motion.div>
-
-      {/* 极简标题 */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="text-center mb-12"
-      >
-        <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-          将视频转化为结构化报告
-        </h2>
-        <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-          上传视频，使用 AI 技术自动提取语音内容、生成大纲、筛选关键帧，并输出一份图文并茂的分析报告
-        </p>
-      </motion.div>
+      <div className="page-intro"><div className="eyebrow">IMPORT YOUR VIDEO</div><h1>让视频里的知识，留下来。</h1><p>上传课程、会议或访谈，整理成一份可阅读的图文报告。</p></div>
 
       {/* 正在处理任务提示 */}
       {currentTask && (
@@ -192,46 +164,8 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="bg-white rounded-3xl shadow-2xl p-10 border border-gray-100"
+        className="upload-panel bg-white rounded-3xl border border-gray-100"
       >
-        {/* 学习阶段选择 */}
-        <div className="mb-4 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <GraduationCap className="w-5 h-5 text-primary-600" />
-            <div>
-              <p className="text-sm font-semibold text-gray-900">学习阶段</p>
-              <p className="text-xs text-gray-500">自由学习为通用模式，其余阶段将调整内容深度</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {['自由学习', '小学', '初中', '高中', '大学', '硕士', '博士', '深入研究', '垂直领域研究'].map((level) => (
-              <button
-                key={level}
-                onClick={() => setEducationLevel(level)}
-                className={`px-5 py-2 rounded-lg border-2 text-sm font-medium transition ${
-                  educationLevel === level
-                    ? 'border-primary-500 bg-primary-50 text-primary-700'
-                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                }`}
-              >
-                {level}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 附加产物（可选）：勾选后任务完成时自动生成，不勾最省时间 */}
-        <div className="mb-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Sparkles className="w-5 h-5 text-purple-500" />
-            <div>
-              <p className="text-sm font-semibold text-gray-900">完成后生成（可选）</p>
-              <p className="text-xs text-gray-500">默认不生成；勾选后报告完成时自动产出对应内容，报告页也可随时手动生成</p>
-            </div>
-          </div>
-          <ExtrasPicker />
-        </div>
-
         {/* 在线链接入口 */}
         <div className="mb-4 flex justify-end">
           <Link
@@ -245,13 +179,17 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
 
         {/* 拖拽上传区 */}
         <div
-          className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer group ${
+          className={`upload-dropzone relative border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer group ${
             dragActive
               ? 'border-primary-500 bg-primary-50 scale-[1.02]'
               : selectedFiles.length > 0
               ? 'border-green-300 bg-gradient-to-br from-green-50 to-emerald-50'
               : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
           }`}
+          role={selectedFiles.length ? undefined : 'button'}
+          tabIndex={uploading || selectedFiles.length ? -1 : 0}
+          aria-label="选择视频文件，支持多选"
+          onKeyDown={(event) => { if (event.target === event.currentTarget && !uploading && ['Enter', ' '].includes(event.key)) { event.preventDefault(); fileInputRef.current?.click() } }}
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
           onDragOver={handleDrag}
@@ -277,7 +215,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
               >
                 <Upload className="w-20 h-20 text-gray-400 mx-auto group-hover:text-gray-500 transition-colors" />
                 <motion.div
-                  className="absolute inset-0 bg-gradient-to-r from-primary-400 to-purple-400 rounded-full blur-xl opacity-0 group-hover:opacity-20 transition-opacity"
+                  className="absolute inset-0 bg-primary-600 rounded-full blur-xl opacity-0 group-hover:opacity-20 transition-opacity"
                   initial={false}
                 />
               </motion.div>
@@ -368,6 +306,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
                       </div>
                       {!uploading && fileItem.status === 'pending' && (
                         <button
+                          aria-label={`移除 ${fileItem.file.name}`}
                           onClick={() => removeFile(fileItem.id)}
                           className="ml-2 text-gray-400 hover:text-red-500 transition-colors"
                         >
@@ -400,6 +339,49 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
             </div>
           )}
         </div>
+
+        <details className="upload-config">
+          <summary>处理偏好 <span>{educationLevel} · 可选附加内容</span></summary>
+        {/* 学习阶段选择 */}
+        <div className="upload-options mb-4 bg-white rounded-2xl border border-gray-100 p-5 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <GraduationCap className="w-5 h-5 text-primary-600" />
+            <div>
+              <p className="text-sm font-semibold text-gray-900">学习阶段</p>
+              <p className="text-xs text-gray-500">自由学习为通用模式，其余阶段将调整内容深度</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {['自由学习', '小学', '初中', '高中', '大学', '硕士', '博士', '深入研究', '垂直领域研究'].map((level) => (
+              <button
+                key={level}
+                aria-pressed={educationLevel === level}
+                onClick={() => setEducationLevel(level)}
+                className={`px-5 py-2 rounded-lg border-2 text-sm font-medium transition ${
+                  educationLevel === level
+                    ? 'border-primary-500 bg-primary-50 text-primary-700'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                {level}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 附加产物（可选）：勾选后任务完成时自动生成，不勾最省时间 */}
+        <div className="upload-extras mb-6 bg-white rounded-2xl border border-gray-100 p-5 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Sparkles className="w-5 h-5 text-primary-500" />
+            <div>
+              <p className="text-sm font-semibold text-gray-900">完成后生成（可选）</p>
+              <p className="text-xs text-gray-500">默认不生成；勾选后报告完成时自动产出对应内容，报告页也可随时手动生成</p>
+            </div>
+          </div>
+          <ExtrasPicker />
+        </div>
+
+        </details>
 
         {/* 错误提示 */}
         {error && (
@@ -435,7 +417,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
               </motion.button>
               <motion.button
                 onClick={handleUploadAll}
-                className="px-10 py-4 rounded-xl font-bold text-white bg-gradient-to-r from-primary-600 via-purple-600 to-indigo-600 hover:shadow-2xl transition-all shadow-xl relative overflow-hidden group"
+                className="px-10 py-4 rounded-xl font-bold text-white bg-primary-600 hover:shadow-2xl transition-all shadow-xl relative overflow-hidden group"
                 whileHover={{ scale: 1.05, y: -2 }}
                 whileTap={{ scale: 0.95 }}
               >
@@ -445,35 +427,11 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                   </svg>
                 </span>
-                <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <div className="absolute inset-0 bg-primary-700 opacity-0 group-hover:opacity-100 transition-opacity" />
               </motion.button>
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
-
-      {/* 功能特性 */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6"
-      >
-        <FeatureCard
-          icon="🎙️"
-          title="语音识别"
-          description="高精度 ASR 技术提取视频语音内容"
-        />
-        <FeatureCard
-          icon="📝"
-          title="智能大纲"
-          description="AI 自动生成结构化内容大纲"
-        />
-        <FeatureCard
-          icon="🖼️"
-          title="关键帧提取"
-          description="VLM 技术筛选重要视频画面"
-        />
       </motion.div>
 
       {/* 处理时间提示 */}
@@ -485,7 +443,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
       >
         <Clock className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
         <div className="text-sm text-blue-800">
-          <p className="font-bold mb-1">⏱️ 预计处理时间</p>
+          <p className="font-bold mb-1">预计处理时间</p>
           <p className="text-blue-700">视频长度 × 0.5 - 1.5 倍（例如：10分钟视频需要 5-15 分钟处理）</p>
         </div>
       </motion.div>
@@ -501,19 +459,6 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
         查看历史处理记录 →
       </motion.button>
     </div>
-  )
-}
-
-function FeatureCard({ icon, title, description }) {
-  return (
-    <motion.div
-      whileHover={{ y: -4, scale: 1.02 }}
-      className="bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all border border-gray-100"
-    >
-      <div className="text-4xl mb-3">{icon}</div>
-      <h3 className="text-lg font-bold text-gray-900 mb-2">{title}</h3>
-      <p className="text-sm text-gray-600">{description}</p>
-    </motion.div>
   )
 }
 
