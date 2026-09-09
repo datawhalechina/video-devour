@@ -390,6 +390,9 @@ const serialize = (node) => {
       return `> ${children}`;
     case BLOCK_TYPES.CODE:
       return `\`\`\`\n${children}\n\`\`\``;
+    case BLOCK_TYPES.IMAGE:
+      // 图片：序列化回 Markdown（否则保存时图片全部丢失）
+      return `![${node.alt || ""}](${node.url || ""})`;
     case BLOCK_TYPES.PARAGRAPH:
       return children;
     default:
