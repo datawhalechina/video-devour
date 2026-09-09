@@ -1,9 +1,11 @@
 import { motion } from 'framer-motion'
-import { Video, Upload, History, FileText, ArrowLeft, Clock, Play } from 'lucide-react'
+import { Video, Upload, History, FileText, ArrowLeft, Clock, Play, BookOpen } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { getTaskStatus } from '../api/videoService'
 
 function Header({ currentView, onNavigate, onBackToUpload, currentTask, onBackToProcessing }) {
+  const navigate = useNavigate()
   const [taskInfo, setTaskInfo] = useState(null)
 
   // 获取任务详情
@@ -85,6 +87,14 @@ function Header({ currentView, onNavigate, onBackToUpload, currentTask, onBackTo
               active={currentView === 'history'}
               onClick={() => onNavigate('history')}
             />
+            <button
+              onClick={() => navigate('/library')}
+              title="个人文档库（跨任务检索）"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:border-primary-400 hover:text-primary-600 transition-colors text-sm font-medium"
+            >
+              <BookOpen className="w-4 h-4" />
+              文档库
+            </button>
           </nav>
         </div>
       </div>
