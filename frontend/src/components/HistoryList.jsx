@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { 
-  ArrowLeft, 
+  ArrowRight,
+  Plus,
   Calendar, 
   Clock, 
   FileText,
   Loader2,
   Trash2,
-  Eye,
   AlertCircle
 } from 'lucide-react'
 import { getHistory, deleteReport } from '../api/videoService'
@@ -34,6 +34,7 @@ function HistoryList({ onViewReport, onBack, onBackToProcessing, currentTask }) 
   const loadHistory = async () => {
     try {
       setLoading(true)
+      setError(null)
       const data = await getHistory()
       setHistory(data)
     } catch (err) {
@@ -93,65 +94,37 @@ function HistoryList({ onViewReport, onBack, onBackToProcessing, currentTask }) 
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
-      {/* 头部 */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between mb-6"
-      >
-        <button
-          onClick={() => {
-            if (currentTask) {
-              // 直接跳转到处理页面URL
-              window.location.href = `/processing/${currentTask}`;
-            } else {
-              onBack();
-            }
-          }}
-          className="flex items-center space-x-2 text-gray-600 hover:text-gray-800 transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          <span>{currentTask ? '返回处理' : '返回'}</span>
-        </button>
-
-        <h2 className="text-2xl font-bold text-gray-800">历史记录</h2>
-        
-        <div className="w-20"></div> {/* 占位符，保持布局平衡 */}
-      </motion.div>
+    <div className="history-page">
+      <div className="history-heading">
+        <div className="page-intro"><div className="eyebrow">YOUR VIDEO JOURNEY</div><h1>每一次探索，都在这里。</h1><p>查看视频处理进度，或回到已经整理好的知识。</p></div>
+        <button onClick={onBack} className="report-primary-button"><Plus size={16} /> 添加视频</button>
+      </div>
+      {!loading && !error && history.length > 0 && (
+        <div className="history-summary"><h2>处理记录 <span>{history.length}</span></h2><div><span className="history-status-dot" /> {history.filter(item => item.status === 'completed').length} 份报告已完成</div></div>
+      )}
 
       {/* 内容 */}
       {loading ? (
-        <div className="bg-white rounded-xl shadow-md p-12 text-center">
-          <Loader2 className="w-12 h-12 text-primary-500 mx-auto mb-4 animate-spin" />
-          <p className="text-gray-600">加载中...</p>
+        <div className="history-empty">
+          <Loader2 className="history-empty-icon animate-spin" />
+          <p>加载中…</p>
         </div>
       ) : error ? (
-        <div className="bg-white rounded-xl shadow-md p-12 text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <p className="text-red-600">{error}</p>
-          <button
-            onClick={loadHistory}
-            className="mt-4 px-6 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
-          >
-            重试
-          </button>
+        <div className="history-empty">
+          <AlertCircle className="history-empty-icon is-error" />
+          <p className="is-error">{error}</p>
+          <button onClick={loadHistory} className="report-primary-button">重试</button>
         </div>
       ) : history.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-md p-12 text-center">
-          <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-600 mb-4">暂无处理记录</p>
-          <button
-            onClick={onBack}
-            className="px-6 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
-          >
-            去上传视频
-          </button>
+        <div className="history-empty">
+          <FileText className="history-empty-icon" />
+          <p>暂无处理记录</p>
+          <button onClick={onBack} className="report-primary-button">去上传视频</button>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="history-list">
           {history.some(item => item.status === 'processing') && (
-            <p className="flex items-center space-x-2 text-xs text-gray-400 px-1">
+            <p className="history-refresh-note">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
               <span>有任务正在处理，进度每 5 秒自动刷新…</span>
             </p>
@@ -181,19 +154,19 @@ function HistoryCard({ item, index, onView, onDelete, onOpenProcessing, formatDa
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05 }}
-      className="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow p-6"
+      transition={{ delay: Math.min(index * 0.03, 0.18) }}
+      className="history-card"
     >
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
+      <div className="history-card-layout">
+        <div className="history-card-info">
           {/* 标题 */}
-          <h3 className="text-lg font-bold text-gray-800 mb-2 flex items-center space-x-2">
-            <FileText className="w-5 h-5 text-primary-500" />
+          <h3 className="history-card-title">
+            <FileText className="history-document-icon" />
             <span>{item.videoName}</span>
           </h3>
 
           {/* 信息行 */}
-          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+          <div className="history-card-meta">
             <div className="flex items-center space-x-1">
               <Calendar className="w-4 h-4" />
               <span>{formatDate(item.createdAt)}</span>
@@ -208,7 +181,7 @@ function HistoryCard({ item, index, onView, onDelete, onOpenProcessing, formatDa
               item.status === 'completed'
                 ? 'bg-green-100 text-green-700'
                 : isProcessing
-                ? 'bg-blue-100 text-blue-700'
+                ? 'bg-primary-50 text-primary-700'
                 : 'bg-red-100 text-red-700'
             }`}>
               {item.status === 'completed' ? '已完成' :
@@ -218,53 +191,49 @@ function HistoryCard({ item, index, onView, onDelete, onOpenProcessing, formatDa
 
           {/* 处理中：实时进度条与阶段消息 */}
           {isProcessing && (
-            <div className="mt-3">
-              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                <span className="flex items-center space-x-1">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary-500" />
+            <div className="history-progress">
+              <div className="history-progress-head">
+                <span>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   <span>{item.message || '正在处理…'}</span>
                 </span>
-                <span className="font-medium text-primary-600">{progress}%</span>
+                <span>{progress}%</span>
               </div>
-              <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-primary-500 to-purple-500 rounded-full transition-all duration-500"
-                  style={{ width: `${progress}%` }}
-                />
+              <div className="history-progress-track">
+                <div className="history-progress-bar" style={{ width: `${progress}%` }} />
               </div>
             </div>
           )}
 
           {/* 失败：错误信息 */}
           {isFailed && item.message && (
-            <p className="mt-3 text-sm text-red-600">{item.message}</p>
+            <p className="history-error">{item.message}</p>
           )}
 
           {/* 描述 */}
           {item.description && (
-            <p className="mt-3 text-sm text-gray-600 line-clamp-2">
-              {item.description}
-            </p>
+            <p className="history-card-meta" style={{ paddingLeft: 32, marginTop: 10 }}>{item.description}</p>
           )}
         </div>
 
         {/* 操作按钮 */}
-        <div className="flex items-center space-x-2 ml-4">
+        <div className="history-card-actions">
           {item.status === 'completed' && (
             <motion.button
               onClick={onView}
-              className="p-2 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-100 transition-colors"
+              className="history-open-button"
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               title="查看报告"
+              aria-label={`查看报告：${item.videoName}`}
             >
-              <Eye className="w-5 h-5" />
+              <span>查看报告</span><ArrowRight size={15} />
             </motion.button>
           )}
           {isProcessing && onOpenProcessing && (
             <motion.button
               onClick={onOpenProcessing}
-              className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-xs font-medium"
+              className="history-action-button"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               title="查看处理详情"
@@ -274,10 +243,11 @@ function HistoryCard({ item, index, onView, onDelete, onOpenProcessing, formatDa
           )}
           <motion.button
             onClick={onDelete}
-            className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+            className="history-delete-button"
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
-            title="删除"
+            title="删除记录"
+            aria-label={`删除记录：${item.videoName}`}
           >
             <Trash2 className="w-5 h-5" />
           </motion.button>

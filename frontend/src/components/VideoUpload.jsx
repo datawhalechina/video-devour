@@ -132,11 +132,11 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
         >
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6">
+          <div className="bg-primary-50 border border-primary-200 rounded-2xl p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
-                <div className="p-3 bg-blue-100 rounded-xl">
-                  <Play className="w-6 h-6 text-blue-600" />
+                <div className="p-3 bg-primary-100 rounded-xl">
+                  <Play className="w-6 h-6 text-primary-600" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-blue-900 mb-1">
@@ -439,10 +439,10 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.3 }}
-        className="mt-8 flex items-start space-x-3 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl"
+        className="mt-8 flex items-start space-x-3 p-5 bg-primary-50 border border-primary-200 rounded-2xl"
       >
-        <Clock className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
-        <div className="text-sm text-blue-800">
+        <Clock className="w-6 h-6 text-primary-600 flex-shrink-0 mt-0.5" />
+        <div className="text-sm text-primary-700">
           <p className="font-bold mb-1">预计处理时间</p>
           <p className="text-blue-700">视频长度 × 0.5 - 1.5 倍（例如：10分钟视频需要 5-15 分钟处理）</p>
         </div>

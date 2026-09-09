@@ -469,7 +469,7 @@ function SettingsPage() {
             <button
               onClick={handleImportCookies}
               disabled={cookieImport.loading}
-              className="flex items-center space-x-2 px-5 py-2 rounded-lg bg-gradient-to-r from-primary-600 to-purple-600 text-white text-sm font-bold shadow-md hover:shadow-lg disabled:opacity-50"
+              className="flex items-center space-x-2 px-5 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold shadow-md hover:shadow-lg disabled:opacity-50"
             >
               {cookieImport.loading && <Loader2 className="w-4 h-4 animate-spin" />}
               <span>{cookieImport.loading ? '读取中…' : '一键读取'}</span>
@@ -659,7 +659,7 @@ function SettingsPage() {
             disabled={saving}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="flex items-center space-x-2 px-8 py-3 rounded-xl font-bold text-white bg-gradient-to-r from-primary-600 to-purple-600 shadow-lg disabled:opacity-50"
+            className="flex items-center space-x-2 px-8 py-3 rounded-xl font-bold text-white bg-primary-600 hover:bg-primary-700 shadow-lg disabled:opacity-50"
           >
             {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
             <span>保存设置</span>

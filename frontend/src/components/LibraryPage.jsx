@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  ArrowLeft, BookOpen, Search, Loader2, FileText, Eye, Download, Zap,
+  ArrowLeft, BookOpen, Search, Loader2, FileText, Eye, Download, Zap, AlertCircle,
 } from 'lucide-react'
 
 const SCOPE_TABS = [
@@ -86,7 +86,7 @@ function LibraryPage() {
           <button
             onClick={() => window.open('/api/library/export', '_blank')}
             title="整库导出（全部任务的 md + 关键帧 + manifest.json）"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-xs font-medium hover:bg-gray-50"
+            className="report-tool-button"
           >
             <Download className="w-3.5 h-3.5" />
             整库导出 ZIP
@@ -98,7 +98,7 @@ function LibraryPage() {
         <div className="page-intro"><div className="eyebrow">YOUR KNOWLEDGE, CONNECTED</div><h1>每次学习，都有迹可循。</h1><p>在这里重读、检索和导出你的视频笔记。</p></div>
         {/* 搜索区 */}
         <div className="library-search flex flex-wrap items-center gap-3 mb-4">
-          <div className="flex-1 min-w-[280px] flex items-center gap-2 px-4 py-3 bg-white rounded-xl border border-gray-200 focus-within:ring-2 focus-within:ring-primary-500">
+          <div className="library-search-field">
             <Search className="w-5 h-5 text-gray-400" />
             <input
               value={query}
@@ -109,15 +109,13 @@ function LibraryPage() {
             />
             {loading && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="library-filters">
             {SCOPE_TABS.map((t) => (
               <button
                 key={t.key}
                 aria-pressed={scope === t.key}
                 onClick={() => onScopeChange(t.key)}
-                className={`px-4 py-2 rounded-lg text-xs font-medium transition ${
-                  scope === t.key ? 'bg-primary-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
-                }`}
+                className={`library-filter ${scope === t.key ? 'is-active' : ''}`}
               >
                 {t.label}
               </button>
@@ -127,8 +125,8 @@ function LibraryPage() {
 
         {/* 统计行 */}
         {results && (
-          <p className="flex items-center gap-2 text-xs text-gray-400 mb-4">
-            <Zap className="w-3.5 h-3.5 text-amber-500" />
+          <p className="library-stats">
+            <Zap className="w-3.5 h-3.5" />
             {results.query
               ? `“${results.query}” 按相关度命中 ${results.total} 条`
               : `共收录 ${results.total} 篇文章（每个视频任务含图文大纲 / 精简报告 / 详细报告）`}
@@ -136,17 +134,23 @@ function LibraryPage() {
         )}
 
         {/* 错误 / 空态 */}
-        {error && <div role="alert" className="bg-white rounded-xl border p-10 text-center"><p className="text-red-600">加载失败：{error}</p><button onClick={() => load(query, scope)} className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg">重新加载</button></div>}
+        {error && (
+          <div role="alert" className="history-empty">
+            <AlertCircle className="history-empty-icon is-error" />
+            <p className="is-error">加载失败：{error}</p>
+            <button onClick={() => load(query, scope)} className="report-primary-button">重新加载</button>
+          </div>
+        )}
         {loading && !results && (
-          <div className="bg-white rounded-xl shadow p-10 text-center">
-            <Loader2 className="w-10 h-10 text-primary-500 mx-auto mb-3 animate-spin" />
-            <p className="text-gray-500 text-sm">加载中…</p>
+          <div className="history-empty">
+            <Loader2 className="history-empty-icon animate-spin" />
+            <p>加载中…</p>
           </div>
         )}
         {!error && !loading && results && results.results.length === 0 && (
-          <div className="bg-white rounded-xl shadow p-10 text-center">
-            <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 text-sm">{query ? `没有包含“${query}”的内容` : '还没有任何已生成的内容'}</p>
+          <div className="history-empty">
+            <FileText className="history-empty-icon" />
+            <p>{query ? `没有包含“${query}”的内容` : '还没有任何已生成的内容'}</p>
           </div>
         )}
 
@@ -163,18 +167,18 @@ function LibraryPage() {
                 className="library-card"
                 onClick={() => openArticle(r)}
               >
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <span className="px-2 py-0.5 rounded bg-primary-50 text-primary-700 text-xs font-medium">{r.label}</span>
-                  <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-500 text-xs">{r.platform_label}</span>
+                <div className="library-card-tags">
+                  <span className="library-tag is-type">{r.label}</span>
+                  <span className="library-tag">{r.platform_label}</span>
                   {r.query && r.score > 0 && (
-                    <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-xs">相关度 {r.score}</span>
+                    <span className="library-tag is-score">相关度 {r.score}</span>
                   )}
                 </div>
-                <h3 className="text-sm font-semibold text-gray-800 mb-2 line-clamp-2">{r.title}</h3>
-                <p className="text-xs text-gray-500 leading-relaxed line-clamp-4">{cleanSnippet(r.snippet)}</p>
-                <div className="flex items-center justify-between mt-3 text-xs text-gray-400">
+                <h3 className="line-clamp-2">{r.title}</h3>
+                <p className="line-clamp-4">{cleanSnippet(r.snippet)}</p>
+                <div className="library-card-foot">
                   <span>{new Date(r.created_at).toLocaleString('zh-CN')}</span>
-                  <span className="flex items-center gap-1 text-primary-600">
+                  <span className="library-card-open">
                     <Eye className="w-3.5 h-3.5" /> 阅读全文
                   </span>
                 </div>

@@ -166,7 +166,7 @@ function EditorPage() {
               
               {/* 标题区域 */}
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
                   <span className="text-white text-lg">📝</span>
                 </div>
                 <div>

@@ -37,7 +37,7 @@ function Header({ currentView, onNavigate, onBackToUpload, currentTask, onBackTo
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
-            <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-purple-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-primary-600 rounded-xl flex items-center justify-center">
               <Video className="w-7 h-7 text-white" />
             </div>
             <div>
