@@ -73,6 +73,33 @@ def _run_asr_and_process(video_path: str, video_name: str, main_output_path: str
     logging.info("--- ASR数据处理完成 ---")
     return processed_dialogue
 
+def _resolve_use_semantic() -> bool:
+    """
+    解析大纲匹配策略（settings.json 的 outline_match_strategy）。
+
+    - string:   强制字符串匹配，不加载 sentence-transformers/torch（轻量包推荐）
+    - semantic: 强制语义匹配（依赖缺失时由 matcher 自行降级）
+    - auto:     依赖可用则语义匹配，否则字符串匹配（默认）
+    """
+    try:
+        strategy = settings_store.load_settings().get("outline_match_strategy", "auto")
+    except Exception as e:
+        logging.warning(f"读取匹配策略失败，回退 auto: {e}")
+        strategy = "auto"
+
+    if strategy == "string":
+        logging.info("大纲匹配策略: string（纯字符串匹配，不加载本地语义模型）")
+        return False
+    if strategy == "semantic":
+        logging.info("大纲匹配策略: semantic（强制语义匹配）")
+        return True
+
+    from backend.algorithm.text_similarity_matcher import is_semantic_available
+    use_semantic = is_semantic_available()
+    logging.info(f"大纲匹配策略: auto（语义匹配{'可用' if use_semantic else '不可用，回退字符串匹配'}）")
+    return use_semantic
+
+
 def _generate_and_match_outline(processed_dialogue: list, main_output_path: str, education_level: str = None):
     """Generates an outline and matches dialogue chunks to its headings."""
     logging.info("--- 步骤 2, 3, 4: 生成大纲并匹配文本块 ---")
@@ -88,7 +115,10 @@ def _generate_and_match_outline(processed_dialogue: list, main_output_path: str,
     headings = [title for level, title in headings_with_level]
     headings_with_content = outline_handler.parse_headings_with_content(outline)
     
-    matcher = TextSimilarityMatcher(similarity_threshold=0.90, use_semantic=True)
+    matcher = TextSimilarityMatcher(
+        similarity_threshold=0.90,
+        use_semantic=_resolve_use_semantic(),
+    )
     matcher.initialize_headings(headings_with_content)
     
     matched_data = {heading: [] for heading in headings}

@@ -24,6 +24,7 @@ import requests
 from backend.algorithm import timing
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
+from backend.runtime import paths as _rt_paths
 
 DEFAULT_BASE_URL = "https://api.stepfun.com/step_plan/v1"
 
@@ -69,7 +70,7 @@ class VideoDevourASRStepFun:
         fd, pcm_path = tempfile.mkstemp(prefix="videodevour_step_", suffix=".pcm")
         os.close(fd)
         command = [
-            "ffmpeg", "-i", video_path,
+            _rt_paths.ffmpeg_path(), "-i", video_path,
             "-ac", "1", "-ar", "16000",
             "-f", "s16le", "-vn", "-y", pcm_path,
         ]

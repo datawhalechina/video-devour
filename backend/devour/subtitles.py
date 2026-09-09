@@ -251,7 +251,8 @@ def generate_subtitle_notes(url: str, platform: str, education_level: str = "自
 
     # 落盘到 output/subtitle_notes/，可通过 /static/subtitle_notes/ 访问
     from backend.algorithm import settings_store
-    output_root = Path(settings_store.PROJECT_ROOT) / "output" / "subtitle_notes"
+    from backend.runtime import paths as _rt_paths
+    output_root = _rt_paths.data_root() / "output" / "subtitle_notes"
     output_root.mkdir(parents=True, exist_ok=True)
     # URL 安全文件名：仅保留中文/字母/数字/-/_，其余（含全角标点、#、空格）一律转下划线，
     # 否则中文标点会让静态路径需要编码、前端下载/新窗口打开都会失败

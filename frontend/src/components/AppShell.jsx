@@ -22,7 +22,7 @@ export default function AppShell({ children }) {
         <Link to="/" className="brand-lockup" aria-label="VideoDevour 工作台"><span className="brand-mark"><Play size={19} fill="currentColor" /></span><span>VideoDevour<span className="brand-caption">让视频成为你的知识</span></span></Link>
         <Link to="/link" className="sidebar-create"><Plus size={18} /> 新建解析 <span>+</span></Link>
         <div className="nav-caption">工作空间</div>
-        <nav className="workspace-nav" aria-label="主导航">{navigation.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} aria-label={label} title={label} className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}><Icon size={18} /><span>{label}</span></NavLink>)}</nav>
+        <nav className="workspace-nav" aria-label="主导航">{navigation.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} aria-label={label} title={label} className={({ isActive }) => `nav-item ${isActive || (to === '/history' && ['report', 'processing', 'editor'].includes(section)) ? 'is-active' : ''}`}><Icon size={18} /><span>{label}</span></NavLink>)}</nav>
         <div className="sidebar-bottom">
           <div className="sidebar-note"><span className="note-line" /><p>少一点反复观看，<br />多一点真正理解。</p><span>WATCH. LEARN. KEEP.</span></div>
           <NavLink aria-label="偏好设置" title="偏好设置" to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}><Settings size={18} /><span>偏好设置</span></NavLink>

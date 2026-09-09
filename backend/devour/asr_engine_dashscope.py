@@ -20,6 +20,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
+from backend.runtime import paths as _rt_paths
 
 
 class VideoDevourASRDashScope:
@@ -53,7 +54,7 @@ class VideoDevourASRDashScope:
         fd, wav_path = tempfile.mkstemp(prefix="videodevour_asr_", suffix=".wav")
         os.close(fd)
         command = [
-            "ffmpeg", "-i", video_path,
+            _rt_paths.ffmpeg_path(), "-i", video_path,
             "-ac", "1",          # 单声道
             "-ar", "16000",      # 16kHz，识别接口要求
             "-vn",               # 去掉视频流

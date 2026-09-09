@@ -1,0 +1,153 @@
+name: Desktop Build
+
+# 桌面客户端样包构建（阶段 A3/A4 验证 + 后续发行）
+#
+# 触发：
+#   - 手动触发（workflow_dispatch）
+#   - 推送 desktop/ 或依赖清单变更
+#   - 打 tag（v*）时构建并上传产物
+#
+# 说明：Windows 打包必须在真实 Windows runner 上验证
+#（方案 6.1：不在单平台成功后才发现另一平台的打包约束）。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "requirements-lite.txt"
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/desktop-build.yml"
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "requirements-lite.txt"
+
+jobs:
+  build-macos:
+    name: macOS arm64
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-lite.txt pyinstaller pywebview
+
+      - name: 构建前端
+        run: |
+          cd frontend
+          npm ci || npm install
+          npm run build
+
+      - name: 获取静态 ffmpeg（arm64）
+        run: |
+          mkdir -p desktop/bin
+          curl -fL -o desktop/bin/ffmpeg \
+            https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/ffmpeg-darwin-arm64
+          curl -fL -o desktop/bin/ffprobe \
+            https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/ffprobe-darwin-arm64
+          chmod +x desktop/bin/ffmpeg desktop/bin/ffprobe
+          file desktop/bin/ffmpeg
+
+      - name: 打包 .app
+        run: |
+          chmod +x desktop/build_mac.sh
+          PYTHON=python ./desktop/build_mac.sh --sign
+
+      - name: 冒烟测试（后端启动 + health）
+        run: |
+          ./desktop/dist/VideoDevour.app/Contents/Resources/VideoDevour --backend-only \
+            --port 0 --data-dir "$RUNNER_TEMP/vd-data" \
+            --handshake-file "$RUNNER_TEMP/hs.json" > /dev/null 2>&1 &
+          for i in $(seq 1 60); do [ -f "$RUNNER_TEMP/hs.json" ] && break; sleep 1; done
+          PORT=$(python -c "import json;print(json.load(open('$RUNNER_TEMP/hs.json'))['port'])")
+          curl -f "http://127.0.0.1:$PORT/api/health"
+          curl -f -o /dev/null "http://127.0.0.1:$PORT/"
+
+      - name: 记录体积
+        run: du -sh desktop/dist/VideoDevour.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoDevour-macos-arm64
+          path: desktop/dist/VideoDevour.app
+          retention-days: 14
+
+  build-windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-lite.txt pyinstaller pywebview
+
+      - name: 构建前端
+        run: |
+          cd frontend
+          npm ci || npm install
+          npm run build
+
+      - name: 获取静态 ffmpeg（win64）
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path desktop/bin | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/ffmpeg-win32-x64" -OutFile "desktop/bin/ffmpeg.exe"
+          Invoke-WebRequest -Uri "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/ffprobe-win32-x64" -OutFile "desktop/bin/ffprobe.exe"
+
+      - name: 打包
+        shell: pwsh
+        run: |
+          $env:PYTHON = "python"
+          powershell -ExecutionPolicy Bypass -File desktop/build_win.ps1
+
+      - name: 冒烟测试（后端启动 + health）
+        shell: pwsh
+        run: |
+          $hs = "$env:RUNNER_TEMP\hs.json"
+          $data = "$env:RUNNER_TEMP\vd-data"
+          $p = Start-Process -FilePath "desktop\dist\VideoDevour\VideoDevour.exe" `
+            -ArgumentList "--backend-only","--port","0","--data-dir",$data,"--handshake-file",$hs `
+            -PassThru -NoNewWindow
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) { if (Test-Path $hs) { $ok = $true; break }; Start-Sleep 1 }
+          if (-not $ok) { throw "后端未输出握手文件" }
+          $port = (Get-Content $hs | ConvertFrom-Json).port
+          Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/health" | ConvertTo-Json
+          Invoke-WebRequest -Uri "http://127.0.0.1:$port/" -UseBasicParsing | Out-Null
+          Stop-Process -Id $p.Id -Force
+
+      - name: 记录体积
+        shell: pwsh
+        run: |
+          $size = (Get-ChildItem -Recurse desktop/dist/VideoDevour | Measure-Object -Property Length -Sum).Sum
+          Write-Host ("未压缩体积: {0:N1} MB" -f ($size / 1MB))
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoDevour-windows-x64
+          path: desktop/dist/VideoDevour
+          retention-days: 14

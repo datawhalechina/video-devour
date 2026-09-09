@@ -11,6 +11,7 @@
 说明：请仅对拥有版权或已获授权的内容进行下载处理。
 """
 import logging
+from backend.runtime import paths as _rt_paths
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -528,7 +529,7 @@ def _validate_video_file(path: Path) -> bool:
         return False
     try:
         proc = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+            [_rt_paths.ffprobe_path(), "-v", "error", "-select_streams", "v:0",
              "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(path)],
             capture_output=True, timeout=30,
         )
@@ -749,7 +750,7 @@ def _download_wechat_video(url: str, target_dir: str, progress_hook=None) -> Dic
             if media_url.lower().split("?")[0].endswith(".m3u8"):
                 # 未加密 HLS 由 ffmpeg 直接合成；加密流会失败进入下一候选
                 proc = subprocess.run(
-                    ["ffmpeg", "-y", "-i", media_url, "-c", "copy",
+                    [_rt_paths.ffmpeg_path(), "-y", "-i", media_url, "-c", "copy",
                      "-bsf:a", "aac_adtstoasc", str(final_path)],
                     capture_output=True, timeout=600,
                 )

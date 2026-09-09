@@ -6,6 +6,7 @@ import subprocess
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import config
+from backend.runtime import paths as _rt_paths
 
 # 视频切分/抽帧并发度（ffmpeg 本身多线程，过高会争抢 CPU，4 段并行较稳妥）
 VIDEO_CONCURRENCY = 4
@@ -85,7 +86,7 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
             # -c:a aac: 使用 AAC 编码音频
             # -avoid_negative_ts make_zero: 避免负时间戳问题
             ffmpeg_command = [
-                'ffmpeg', '-i', input_video_path,
+                _rt_paths.ffmpeg_path(), '-i', input_video_path,
                 '-ss', str(start_time), '-to', str(end_time),
                 '-c:v', 'libx264', '-c:a', 'aac',
                 '-avoid_negative_ts', 'make_zero',
@@ -143,7 +144,7 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
                 safe_heading = re.sub(r'[\\/*?:"<>|]', "", heading).replace(" ", "_")
                 output_path = os.path.join(videocut_path, f"{i+1:02d}_{safe_heading}.mp4")
                 ffmpeg_command = [
-                    'ffmpeg', '-i', input_video_path,
+                    _rt_paths.ffmpeg_path(), '-i', input_video_path,
                     '-ss', f"{seg_start:.2f}", '-to', f"{seg_end:.2f}",
                     '-c:v', 'libx264', '-c:a', 'aac',
                     '-avoid_negative_ts', 'make_zero',
@@ -166,7 +167,7 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
                 safe_heading = re.sub(r'[\\/*?:"<>|]', "", heading).replace(" ", "_")
                 output_path = os.path.join(videocut_path, f"01_{safe_heading}.mp4")
                 ffmpeg_command = [
-                    'ffmpeg', '-i', input_video_path,
+                    _rt_paths.ffmpeg_path(), '-i', input_video_path,
                     '-ss', str(start_time), '-to', str(end_time),
                     '-c:v', 'libx264', '-c:a', 'aac',
                     '-avoid_negative_ts', 'make_zero',
@@ -230,7 +231,7 @@ def extract_frames_from_videos(videocut_path=None, output_dir=None):
         os.makedirs(frame_output_dir, exist_ok=True)
         logging.info(f"正在从 '{video_file}' 提取帧到 '{frame_output_dir}'...")
         cmd = [
-            'ffmpeg', '-i', video_path, '-vf', 'fps=1',
+            _rt_paths.ffmpeg_path(), '-i', video_path, '-vf', 'fps=1',
             '-q:v', '2', os.path.join(frame_output_dir, 'frame_%04d.jpg')
         ]
         try:

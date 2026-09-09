@@ -27,6 +27,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # settings_store 先于 pipeline 导入：负责引导 config 模块（config.py 缺失时自动构建）
+from backend.runtime import paths as _rt_paths
 from backend.algorithm import settings_store
 settings_store.apply_to_config()
 
@@ -53,15 +54,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 配置目录
-UPLOAD_DIR = PROJECT_ROOT / "uploads"
-OUTPUT_DIR = PROJECT_ROOT / "output"
+# 配置目录（可写数据统一走运行时路径解析：客户端模式指向用户数据目录）
+DATA_ROOT = _rt_paths.data_root()
+UPLOAD_DIR = DATA_ROOT / "uploads"
+OUTPUT_DIR = DATA_ROOT / "output"
+TASKS_FILE = DATA_ROOT / "tasks.json"
+
+# 先确保目录存在，再挂载 StaticFiles：
+# StaticFiles 在构造时校验目录，若 output/ 不存在会直接抛 RuntimeError 导致服务无法启动
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # 挂载静态文件服务，用于访问output目录中的图片
 app.mount("/static", StaticFiles(directory=str(OUTPUT_DIR)), name="static")
-TASKS_FILE = PROJECT_ROOT / "tasks.json"
-UPLOAD_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# 前端静态产物托管（同源）
+# ---------------------------------------------------------------------------
+# 桌面客户端由本进程同时服务前端，避免再起一个 dev server。
+# 查找顺序：环境变量 VIDEO_DEVOUR_FRONTEND_DIST → 资源目录下的 frontend/dist。
+# 注意：SPA catch-all 路由必须在文件末尾注册，否则会拦截先于它匹配的 /api 路由。
+def _resolve_frontend_dist():
+    env = os.getenv("VIDEO_DEVOUR_FRONTEND_DIST")
+    candidates = []
+    if env:
+        candidates.append(Path(env))
+    candidates.append(_rt_paths.resource_root() / "frontend" / "dist")
+    candidates.append(_rt_paths.source_root() / "frontend" / "dist")
+    for cand in candidates:
+        if (cand / "index.html").exists():
+            return cand
+    return None
+
+
+FRONTEND_DIST = _resolve_frontend_dist()
+
+if FRONTEND_DIST:
+    # 静态资源（js/css/图片）挂载在 /assets 下，与 Vite 产物结构一致
+    assets_dir = FRONTEND_DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="frontend-assets")
+else:
+    logging.warning("未找到前端构建产物（frontend/dist），仅提供 API 服务")
+
 
 # 内存中的任务存储
 processing_tasks: Dict[str, Dict] = {}
@@ -107,15 +143,22 @@ save_tasks()
 async def startup_event():
     """
     按 ASR 模式初始化引擎：
-    - offline: 预加载本地 Paraformer 模型
-    - online:  无需预加载，启动即用（任务时通过 DashScope 云端调用）
+    - online: 无需预加载，启动即用（任务时通过云端调用）
+    - offline: 默认不在启动时加载本地模型（preload_asr_on_startup=false），
+      避免首启即拉起 torch/funasr 并触发模型下载；首个任务再按需加载。
+      如需旧行为，可在 settings.json 设 preload_asr_on_startup=true。
     """
     global asr_engine
     settings_store.apply_to_config()
-    mode = settings_store.load_settings().get("asr_mode", "offline")
+    settings = settings_store.load_settings()
+    mode = settings.get("asr_mode", "offline")
     if mode == "online":
         asr_engine = None
-        logging.info("当前为在线 ASR 模式（DashScope），跳过本地模型预加载")
+        logging.info("当前为在线 ASR 模式，跳过本地模型预加载")
+        return
+    if not settings.get("preload_asr_on_startup", False):
+        asr_engine = None
+        logging.info("离线 ASR 模式：跳过启动预加载（任务执行时按需加载）")
         return
     try:
         logging.info("正在预加载 ASR 模型...")
@@ -145,7 +188,11 @@ class UploadResponse(BaseModel):
 
 @app.get("/")
 async def root():
-    """根路径，返回 API 信息"""
+    """
+    根路径：有前端构建产物时返回页面（客户端/同源部署），否则返回 API 信息。
+    """
+    if FRONTEND_DIST:
+        return FileResponse(str(FRONTEND_DIST / "index.html"))
     return {
         "message": "VideoDevour API is running",
         "version": "1.0.0",
@@ -154,8 +201,38 @@ async def root():
 
 @app.get("/api/health")
 async def health_check():
-    """健康检查接口"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    """
+    健康检查接口。
+
+    区分"服务就绪"与"各能力状态"，健康检查不下载模型、不调用付费服务：
+    - 服务可用不以 ASR 已加载为条件
+    - 能力状态取值：unconfigured / available / loading / error
+    """
+    settings = settings_store.load_settings()
+    asr_mode = settings.get("asr_mode", "offline")
+    if asr_mode == "online":
+        provider = settings.get("online_asr_provider", "dashscope")
+        key = settings.get("stepfun_api_key") if provider == "stepfun" else settings.get("dashscope_api_key")
+        asr_capability = "available" if key else "unconfigured"
+        asr_detail = f"在线识别（{provider}）"
+    else:
+        if asr_engine is not None:
+            asr_capability, asr_detail = "available", "本地 Paraformer 已加载"
+        else:
+            # 离线模式未预加载属正常状态：任务执行时按需加载
+            asr_capability, asr_detail = "unconfigured", "本地 Paraformer 未加载（任务执行时按需加载）"
+
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0.0",
+        "capabilities": {
+            "asr": {"state": asr_capability, "detail": asr_detail, "mode": asr_mode},
+            "llm": {"state": "available" if settings.get("llm_api_key") else "unconfigured"},
+            "vlm": {"state": "available" if settings.get("vlm_api_key") else "unconfigured"},
+            "subtitle_notes": {"state": "available", "detail": "B站 / YouTube 字幕速记"},
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +253,8 @@ class SettingsUpdateRequest(BaseModel):
     vlm_api_url: Optional[str] = None
     vlm_model_type: Optional[str] = None
     default_education_level: Optional[str] = None
+    outline_match_strategy: Optional[str] = None   # auto | semantic | string
+    preload_asr_on_startup: Optional[bool] = None
 
 
 class SettingsTestRequest(BaseModel):
@@ -208,6 +287,8 @@ async def update_app_settings(request: SettingsUpdateRequest):
         raise HTTPException(status_code=400, detail="online_asr_provider 仅支持 dashscope 或 stepfun")
     if updates.get("default_education_level") not in (None,) + tuple(settings_store.EDUCATION_LEVELS):
         raise HTTPException(status_code=400, detail="default_education_level 取值非法")
+    if updates.get("outline_match_strategy") not in (None, "auto", "semantic", "string"):
+        raise HTTPException(status_code=400, detail="outline_match_strategy 仅支持 auto / semantic / string")
 
     old_mode = settings_store.load_settings().get("asr_mode", "offline")
     settings = settings_store.update_settings(updates)
@@ -558,12 +639,12 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
                 # 非 mp4 容器（如 webm/vp9）转码为 mp4，copy 失败时回退到重编码
                 import subprocess
                 proc = subprocess.run(
-                    ["ffmpeg", "-y", "-i", str(downloaded_path), "-c", "copy", str(file_path)],
+                    [_rt_paths.ffmpeg_path(), "-y", "-i", str(downloaded_path), "-c", "copy", str(file_path)],
                     capture_output=True,
                 )
                 if proc.returncode != 0:
                     subprocess.run(
-                        ["ffmpeg", "-y", "-i", str(downloaded_path),
+                        [_rt_paths.ffmpeg_path(), "-y", "-i", str(downloaded_path),
                          "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", str(file_path)],
                         check=True, capture_output=True,
                     )
@@ -1720,6 +1801,30 @@ async def run_pipeline_with_progress(video_path: str, task_id: str, education_le
     except Exception as e:
         update_progress(0, f"处理失败: {str(e)}", "error")
         raise e
+
+# ---------------------------------------------------------------------------
+# SPA fallback（必须最后注册：catch-all 路由会拦截其后定义的路由）
+# ---------------------------------------------------------------------------
+if FRONTEND_DIST:
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str):
+        """
+        SPA fallback：前端已知路由刷新时返回 index.html。
+
+        仅接管 GET，且不吞掉 /api、/static、/assets：
+        - 未注册的 /api 路径应返回 404（避免前端把 404 当成功解析）
+        - 缺失的静态资源也应 404，不能回退成 HTML
+        """
+        if full_path.startswith(("api/", "static/", "assets/", "docs", "openapi.json")):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        candidate = FRONTEND_DIST / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(str(candidate))
+
+        # 根路径与前端路由一律返回入口 HTML
+        return FileResponse(str(FRONTEND_DIST / "index.html"))
+
 
 if __name__ == "__main__":
     import uvicorn

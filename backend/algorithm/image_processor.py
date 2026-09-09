@@ -13,8 +13,15 @@ try:
     IMAGE_LIBS_AVAILABLE = True
 except ImportError:
     IMAGE_LIBS_AVAILABLE = False
-def cv2_imread(filepath, flags=cv2.IMREAD_COLOR):
-    """opencv中文路径读取"""
+
+
+def cv2_imread(filepath, flags=None):
+    """opencv中文路径读取（flags 缺省时取 cv2.IMREAD_COLOR，避免导入期依赖 cv2）"""
+    if not IMAGE_LIBS_AVAILABLE:
+        logging.error("图像处理库（opencv/skimage/numpy）不可用，无法读取图片")
+        return None
+    if flags is None:
+        flags = cv2.IMREAD_COLOR
     try:
         return cv2.imdecode(np.fromfile(filepath, dtype=np.uint8), flags)
     except Exception as e:

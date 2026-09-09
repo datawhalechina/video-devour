@@ -55,6 +55,8 @@ function MainApp({ initialView = "upload" }) {
   const [currentView, setCurrentView] = useState(initialView);
   const [currentTask, setCurrentTask] = useState(null);
   const [selectedReport, setSelectedReport] = useState(null);
+  const [reportError, setReportError] = useState(null);
+  const [reportRetry, setReportRetry] = useState(0);
 
   useEffect(() => { setCurrentView(initialView) }, [initialView]);
 
@@ -147,20 +149,23 @@ function MainApp({ initialView = "upload" }) {
     }
   };
 
-  // 当URL包含taskId且当前视图是report时，自动加载报告
+  // Report loads have an explicit error state and can be retried without leaving the page.
   useEffect(() => {
-    if (urlTaskId && initialView === 'report') {
-      const loadReport = async () => {
-        try {
-          const detailedReport = await getTaskReport(urlTaskId);
-          setSelectedReport(detailedReport);
-        } catch (error) {
-          console.error('加载报告失败:', error);
-        }
-      };
-      loadReport();
-    }
-  }, [urlTaskId, initialView]);
+    if (!urlTaskId || initialView !== 'report') return;
+    let cancelled = false;
+    setReportError(null);
+    setSelectedReport(null);
+    const loadReport = async () => {
+      try {
+        const detailedReport = await getTaskReport(urlTaskId);
+        if (!cancelled) setSelectedReport(detailedReport);
+      } catch (error) {
+        if (!cancelled) setReportError(error.message || '请稍后重试');
+      }
+    };
+    loadReport();
+    return () => { cancelled = true; };
+  }, [urlTaskId, initialView, reportRetry]);
 
   const handleBackToUpload = () => {
     setCurrentView("upload");
@@ -239,7 +244,7 @@ function MainApp({ initialView = "upload" }) {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.3 }}
             >
-              <ReportViewer report={selectedReport} onBack={handleBackToUpload} />
+              <ReportViewer report={selectedReport} onBack={handleViewHistory} error={reportError} onRetry={() => setReportRetry(value => value + 1)} />
             </motion.div>
           )}
 

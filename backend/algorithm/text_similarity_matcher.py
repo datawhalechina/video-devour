@@ -8,13 +8,32 @@
 import logging
 from difflib import SequenceMatcher
 
-try:
-    from sentence_transformers import SentenceTransformer
-    import numpy as np
-    SENTENCE_TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    SENTENCE_TRANSFORMERS_AVAILABLE = False
-    logging.warning("sentence-transformers 库未安装，将使用基于字符串的相似度计算")
+# sentence-transformers 与 numpy 采用惰性导入：仅当实际启用语义匹配时才加载。
+# 若在模块顶层导入，任何 import 本模块的路径（如 pipeline）都会连带拉起 torch，
+# 使"仅字符串匹配"的轻量链路无法脱离本地 ML 依赖运行。
+_SEMANTIC_BACKEND_CACHE = {}
+
+
+def _load_semantic_backend():
+    """惰性加载语义匹配依赖，返回 (SentenceTransformer, numpy) 或 (None, None)。"""
+    if "loaded" not in _SEMANTIC_BACKEND_CACHE:
+        try:
+            from sentence_transformers import SentenceTransformer
+            import numpy as np
+            _SEMANTIC_BACKEND_CACHE.update(
+                {"loaded": True, "st": SentenceTransformer, "np": np}
+            )
+        except ImportError as e:
+            logging.warning(
+                f"sentence-transformers 不可用，将使用基于字符串的相似度计算: {e}"
+            )
+            _SEMANTIC_BACKEND_CACHE.update({"loaded": True, "st": None, "np": None})
+    return _SEMANTIC_BACKEND_CACHE["st"], _SEMANTIC_BACKEND_CACHE["np"]
+
+
+def is_semantic_available() -> bool:
+    """语义匹配依赖是否可用（会触发一次惰性探测）。"""
+    return _load_semantic_backend()[0] is not None
 
 
 class TextSimilarityMatcher:
@@ -34,21 +53,27 @@ class TextSimilarityMatcher:
             use_semantic (bool): 是否使用语义相似度（需要sentence-transformers）
         """
         self.similarity_threshold = similarity_threshold
-        self.use_semantic = use_semantic and SENTENCE_TRANSFORMERS_AVAILABLE
+        self._np = None
         self.model = None
         self.headings_content = {}
         self.headings_embeddings = {}
-        
-        if self.use_semantic:
-            try:
-                logging.info("正在加载轻量级语义模型...")
-                self.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-                logging.info("语义模型加载成功")
-            except Exception as e:
-                logging.error(f"加载语义模型失败: {e}")
-                self.model = None
-                self.use_semantic = False
-        
+
+        # 仅在显式启用语义匹配时才加载 sentence-transformers/torch
+        if use_semantic:
+            SentenceTransformer, np_module = _load_semantic_backend()
+            if SentenceTransformer is not None:
+                self._np = np_module
+                try:
+                    logging.info("正在加载轻量级语义模型...")
+                    self.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+                    logging.info("语义模型加载成功")
+                except Exception as e:
+                    logging.error(f"加载语义模型失败: {e}")
+                    self.model = None
+            else:
+                logging.info("语义匹配依赖不可用，将使用基于字符串的相似度计算")
+        self.use_semantic = self.model is not None
+
         if not self.use_semantic:
             logging.info("将使用基于字符串的相似度计算（更快，准确度略低）")
     
@@ -175,9 +200,9 @@ class TextSimilarityMatcher:
             # 计算余弦相似度
             similarities = []
             for outline_embedding in embeddings:
-                dot_product = np.dot(chunk_embedding, outline_embedding)
-                norm1 = np.linalg.norm(chunk_embedding)
-                norm2 = np.linalg.norm(outline_embedding)
+                dot_product = self._np.dot(chunk_embedding, outline_embedding)
+                norm1 = self._np.linalg.norm(chunk_embedding)
+                norm2 = self._np.linalg.norm(outline_embedding)
                 
                 if norm1 > 0 and norm2 > 0:
                     similarity = dot_product / (norm1 * norm2)

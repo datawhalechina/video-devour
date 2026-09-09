@@ -31,3 +31,12 @@ settings.json
 __pycache__/
 *.pyc
 output/subtitle_notes/
+
+# 桌面客户端构建产物（体积大，由 build_mac.sh / build_win.ps1 生成）
+desktop/dist/
+desktop/build/
+desktop/bin/
+*.spec.bak
+
+# macOS
+.DS_Store

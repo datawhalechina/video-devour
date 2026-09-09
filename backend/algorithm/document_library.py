@@ -26,8 +26,11 @@ from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from backend.runtime import paths as _rt_paths
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-OUTPUT_DIR = PROJECT_ROOT / "output"
+DATA_ROOT = _rt_paths.data_root()
+OUTPUT_DIR = DATA_ROOT / "output"
 
 # 文章维度 → 文件名 / 中文名
 ARTICLE_TYPES = {
@@ -126,7 +129,7 @@ class BM25Index:
 
 def _load_task_meta(task_id: str) -> Dict:
     """从 tasks.json 读取任务元信息（标题/来源/学习阶段）"""
-    tasks_file = PROJECT_ROOT / "tasks.json"
+    tasks_file = DATA_ROOT / "tasks.json"
     try:
         tasks = json.loads(tasks_file.read_text(encoding="utf-8"))
         return tasks.get(task_id) or {}
@@ -359,7 +362,7 @@ def export_library_zip() -> Tuple[bytes, str]:
                 except Exception as e:
                     logging.warning(f"整库导出：读取 {art['file']} 失败: {e}")
             # 关键帧图片
-            kf = PROJECT_ROOT / "output" / doc["dir"] / "keyframes"
+            kf = DATA_ROOT / "output" / doc["dir"] / "keyframes"
             if kf.exists():
                 for img in sorted(kf.iterdir()):
                     if img.is_file():

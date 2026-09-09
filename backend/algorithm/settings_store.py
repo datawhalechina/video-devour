@@ -21,7 +21,12 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ALGORITHM_DIR = Path(__file__).resolve().parent
-SETTINGS_FILE = PROJECT_ROOT / "settings.json"
+
+# 可写数据目录统一走运行时路径解析（冻结/客户端模式下指向用户数据目录，
+# 开发模式下仍为源码根，行为不变）。见 backend/runtime/paths.py。
+from backend.runtime import paths as _rt_paths
+
+SETTINGS_FILE = _rt_paths.data_root() / "settings.json"
 
 DEFAULT_SETTINGS = {
     # ASR 模式：offline = 本地 FunASR Paraformer（需下载模型）；
@@ -42,6 +47,14 @@ DEFAULT_SETTINGS = {
     "vlm_model_type": "qwen-vl-max",
     # 默认学习阶段
     "default_education_level": "自由学习",
+    # 大纲-文本块匹配策略：
+    #   auto     = 有本地语义模型则用语义匹配，否则回退字符串匹配（默认，行为同旧版）
+    #   semantic = 强制语义匹配（需要 sentence-transformers/torch）
+    #   string   = 强制字符串匹配（无需本地 ML 依赖，轻量包推荐）
+    "outline_match_strategy": "auto",
+    # 启动时是否预加载离线 ASR 模型。默认 false：避免轻量/客户端场景首启即拉起
+    # torch/funasr 并下载模型；离线模式下首个任务再按需加载。
+    "preload_asr_on_startup": False,
     # 微信视频号：元宝网页 Cookie 用于分享链接解析（见设置页说明）；
     # 也可选配自建解析服务（ltaoo/wx_channels_download 的 sph worker）
     "wechat_yuanbao_cookie": "",
@@ -139,7 +152,7 @@ def _build_default_config_module() -> types.ModuleType:
     """构建一个默认的 config 模块（用于用户尚未创建 config.py 的场景）"""
     module = types.ModuleType("config")
     module.PROJECT_ROOT = str(PROJECT_ROOT)
-    module.OUTPUT_DIR = str(PROJECT_ROOT / "output")
+    module.OUTPUT_DIR = str(_rt_paths.data_root() / "output")
     module.LLM_MODEL_TYPE = "deepseek-chat"
     module.LLM_API_URL = "https://api.deepseek.com"
     module.LLM_API_KEY = os.getenv("LLM_API_KEY", "")

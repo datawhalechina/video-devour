@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Clock, FileText, Image, Download, Edit3, LayoutGrid, FileDown,
+import { ArrowLeft, Clock, FileText, Image, Edit3, LayoutGrid, FileDown, ChevronDown, ArrowUpRight, Check,
   Timer, Share2, Network, BookOpen, Link2 } from "lucide-react";
 
 const PLATFORM_LABELS = {
@@ -11,14 +11,10 @@ const PLATFORM_LABELS = {
 import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import SplitViewEditor from './Editor/SplitViewEditor';
 
-const ReportViewer = ({ report, onBack }) => {
+
+const ReportViewer = ({ report, onBack, error, onRetry }) => {
   const [activeTab, setActiveTab] = useState("outline");
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingContent, setEditingContent] = useState("");
-  const [editingType, setEditingType] = useState(""); // "outline" or "report"
-  const [cardHtml, setCardHtml] = useState("");
   const [cardLoading, setCardLoading] = useState(false)
   const [timing, setTiming] = useState(null)
   const [timingLoading, setTimingLoading] = useState(false);
@@ -27,7 +23,6 @@ const ReportViewer = ({ report, onBack }) => {
   // 思维导图 / 知识图谱 / 学习卡片：统一用页面内模态预览。
   // 不用 window.open——应用内浏览器/弹窗拦截会导致静默失败（用户只看到 alert）。
   const [preview, setPreview] = useState(null)   // { title, url }
-  const [cardLoadingInline, setCardLoadingInline] = useState(false)
 
   const handleOpenHtml = async (kind) => {
     if (htmlLoading[kind]) return;
@@ -88,6 +83,26 @@ const ReportViewer = ({ report, onBack }) => {
     setExportMenu(null);
   };
 
+  const exportRef = useRef(null);
+  useEffect(() => {
+    if (!exportMenu) return;
+    const closeOutside = (event) => {
+      if (!exportRef.current?.contains(event.target)) setExportMenu(null);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") {
+        setExportMenu(null);
+        exportRef.current?.querySelector('button')?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [exportMenu]);
+
   // 动态更新页面标题
   useEffect(() => {
     if (report && report.video_name) {
@@ -98,14 +113,20 @@ const ReportViewer = ({ report, onBack }) => {
     
     // 组件卸载时恢复默认标题
     return () => {
-      document.title = "🍽️ VideoDevour | 智能视频分析工具";
+      document.title = "VideoDevour · 视频知识工作台";
     };
   }, [report]);
 
+  if (error) {
+    return <div className="report-empty" role="alert"><FileText size={28} /><h2>暂时无法加载报告</h2><p>{error}</p><button className="report-primary-button mt-5" onClick={onRetry}>重新加载</button></div>;
+  }
+
   if (!report) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-gray-500">暂无报告数据</div>
+      <div className="report-loading" role="status" aria-live="polite">
+        <div className="eyebrow">VIDEO NOTES</div>
+        <p>正在加载视频报告…</p>
+        <div className="report-skeleton" /><div className="report-skeleton short" />
       </div>
     );
   }
@@ -202,174 +223,77 @@ const ReportViewer = ({ report, onBack }) => {
     window.location.href = editorUrl;
   };
 
-  // 保存编辑
-  const handleSave = async (markdown) => {
-    try {
-      // 这里可以添加保存到后端的逻辑
-      console.log("保存内容:", markdown);
-      
-      // 更新本地状态（实际项目中应该调用API更新后端数据）
-      if (editingType === "outline") {
-        report.detailed_outline = markdown;
-      } else {
-        report.final_report = markdown;
-      }
-      
-      setIsEditing(false);
-      setEditingContent("");
-      setEditingType("");
-    } catch (error) {
-      console.error("保存失败:", error);
-    }
-  };
-
-  // 取消编辑
-  const handleCancel = () => {
-    setIsEditing(false);
-    setEditingContent("");
-    setEditingType("");
-  };
-
-  // 如果正在编辑，显示编辑器
-  if (isEditing) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-        <SplitViewEditor
-          initialMarkdown={editingContent}
-          onSave={handleSave}
-          onCancel={handleCancel}
-        />
-      </div>
-    );
-  }
+  const tabs = [
+    { key: "outline", label: "图文大纲", icon: Image, content: report.detailed_outline, description: "沿着核心观点，快速回顾视频内容。" },
+    { key: "report", label: "精简报告", icon: FileText, content: report.final_report, description: "提炼重点，留下值得记住的内容。" },
+    { key: "detailed", label: "详细报告", icon: BookOpen, content: report.detailed_report, description: "对照视频原文与整理笔记，深入理解每一个观点。" },
+  ];
+  const currentTab = tabs.find(tab => tab.key === activeTab);
+  const sourceTitle = report.video_name || report.fileName || "视频分析报告";
+  const topicTags = [...sourceTitle.matchAll(/(?:^|\s)(#[^\s#]+)/g)].map(match => match[1]);
+  const displayTitle = sourceTitle.replace(/(?:^|\s)#[^\s#]+/g, '').trim() || sourceTitle;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="container mx-auto px-4 py-8">
-        {/* 头部 */}
-        <div className="flex items-center justify-between mb-8">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            返回
-          </button>
-          <h1 className="text-2xl font-bold text-gray-800">
-            {report.video_name ? `${report.video_name} - 分析报告` : "视频分析报告"}
-          </h1>
-          <div className="w-20"></div> {/* 占位符保持居中 */}
-        </div>
+    <div className="report-page">
+      <div className="report-navigation">
+        <button onClick={onBack} className="report-back"><ArrowLeft size={16} /> 返回处理记录</button>
+        <span className="report-complete"><Check size={13} /> 已完成解析</span>
+      </div>
 
-        {/* 视频信息卡片 */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-xl shadow-lg p-6 mb-8"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-800 mb-2">
-                {report.video_name || report.fileName || "未知视频"}
-              </h2>
-              <div className="flex flex-wrap items-center gap-4 text-gray-600">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4" />
-                  <span>时长: {formatDuration(report.duration)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4" />
-                  <span>处理时间: {report.created_at ? new Date(report.created_at).toLocaleString() : "未知"}</span>
-                </div>
-                {report.source_url && (
-                  <div className="flex items-center gap-2">
-                    <Link2 className="w-4 h-4" />
-                    <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">
-                      {PLATFORM_LABELS[report.platform] || "网页"}
-                    </span>
-                    <a
-                      href={report.source_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      title={report.source_url}
-                      className="text-primary-600 hover:text-primary-700 hover:underline max-w-[320px] truncate"
-                    >
-                      {report.source_url}
-                    </a>
-                  </div>
-                )}
+      <header className="report-heading">
+        <div className="eyebrow">VIDEO NOTES / 视频报告</div>
+        <h1>{displayTitle}</h1>
+        {topicTags.length > 0 && <div className="report-title-tags">{topicTags.map((tag, index) => <span key={`${tag}-${index}`}>{tag}</span>)}</div>}
+        <div className="report-metadata">
+          <span className="report-platform">{PLATFORM_LABELS[report.platform] || "本地视频"}</span>
+          <span><Clock size={14} /> {formatDuration(report.duration)}</span>
+          <span><FileText size={14} /> {report.created_at ? new Date(report.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : "时间未知"}</span>
+          {report.source_url && (
+            <a href={report.source_url} target="_blank" rel="noreferrer" title={report.source_url}>
+              <Link2 size={14} /> 查看原视频 <ArrowUpRight size={12} />
+            </a>
+          )}
+        </div>
+      </header>
+
+      <section className="report-tools" aria-label="报告工具">
+        <div className="report-tool-group">
+          <span className="report-tool-label">拓展学习</span>
+          <button onClick={handleGenerateCard} disabled={cardLoading} className="report-tool-button">
+            <LayoutGrid size={16} /> {cardLoading ? "生成中…" : "学习卡片"}
+          </button>
+          <button onClick={() => handleOpenHtml("mindmap")} disabled={htmlLoading.mindmap} className="report-tool-button">
+            <Share2 size={16} /> {htmlLoading.mindmap ? "生成中…" : "思维导图"}
+          </button>
+          <button onClick={() => handleOpenHtml("graph")} disabled={htmlLoading.graph} className="report-tool-button">
+            <Network size={16} /> {htmlLoading.graph ? "生成中…" : "知识图谱"}
+          </button>
+        </div>
+        <div className="report-tool-group report-file-tools">
+          <button onClick={handleShowTiming} disabled={timingLoading} className="report-tool-button report-timing-button">
+            <Timer size={16} /> {timingLoading ? "加载中…" : "耗时分析"}
+          </button>
+          <div className="report-export" ref={exportRef}>
+            <button onClick={() => setExportMenu(exportMenu ? null : activeTab)} aria-expanded={!!exportMenu} aria-controls="report-export-options" className="report-primary-button">
+              <FileDown size={16} /> 导出报告 <ChevronDown size={14} />
+            </button>
+            {exportMenu && (
+              <div id="report-export-options" className="report-export-panel">
+                <label htmlFor="export-document-type">选择导出内容</label>
+                <select id="export-document-type" value={exportMenu} onChange={event => setExportMenu(event.target.value)}>
+                  {tabs.map(tab => <option key={tab.key} value={tab.key}>{tab.label}</option>)}
+                </select>
+                <button onClick={() => doExport(exportMenu, "inline")}>
+                  <FileText size={18} /><span><strong>Markdown 单文件</strong><small>内嵌图片，便于分享与阅读</small></span><ArrowUpRight size={14} />
+                </button>
+                <button onClick={() => doExport(exportMenu, "zip")}>
+                  <FileDown size={18} /><span><strong>ZIP 原图打包</strong><small>Markdown 与原始图片一并保存</small></span><ArrowUpRight size={14} />
+                </button>
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleGenerateCard}
-                disabled={cardLoading}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium shadow-md hover:shadow-lg transition-shadow disabled:opacity-60"
-              >
-                <LayoutGrid className="w-4 h-4" />
-                {cardLoading ? "生成中..." : "生成学习卡片"}
-              </button>
-              <button
-                onClick={() => handleOpenHtml("mindmap")}
-                disabled={htmlLoading.mindmap}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 text-white text-sm font-medium shadow-md hover:shadow-lg transition-shadow disabled:opacity-60"
-              >
-                <Share2 className="w-4 h-4" />
-                {htmlLoading.mindmap ? "生成中..." : "思维导图"}
-              </button>
-              <button
-                onClick={() => handleOpenHtml("graph")}
-                disabled={htmlLoading.graph}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-medium shadow-md hover:shadow-lg transition-shadow disabled:opacity-60"
-              >
-                <Network className="w-4 h-4" />
-                {htmlLoading.graph ? "生成中..." : "知识图谱"}
-              </button>
-              <button
-                onClick={handleShowTiming}
-                disabled={timingLoading}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition disabled:opacity-60"
-              >
-                <Timer className="w-4 h-4" />
-                {timingLoading ? "加载中..." : "耗时分析"}
-              </button>
-              {[
-                { type: "outline", label: "导出图文大纲" },
-                { type: "report", label: "导出精简报告" },
-                { type: "detailed", label: "导出详细报告" },
-              ].map(({ type, label }) => (
-                <div key={type} className="relative">
-                  <button
-                    onClick={() => setExportMenu(exportMenu === type ? null : type)}
-                    title="选择导出方式（内嵌单文件 / ZIP 原图打包）"
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition"
-                  >
-                    <FileDown className="w-4 h-4" />
-                    {label}
-                  </button>
-                  {exportMenu === type && (
-                    <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-20 overflow-hidden">
-                      <button
-                        onClick={() => doExport(type, "inline")}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100"
-                      >
-                        <p className="text-sm font-medium text-gray-800">内嵌图片（单文件 .md）</p>
-                        <p className="text-xs text-gray-500 mt-0.5">图片压缩后内嵌，随处可看</p>
-                      </button>
-                      <button
-                        onClick={() => doExport(type, "zip")}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50"
-                      >
-                        <p className="text-sm font-medium text-gray-800">ZIP 打包（原图 + md）</p>
-                        <p className="text-xs text-gray-500 mt-0.5">保留原图画质，兼容所有查看器</p>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+            )}
           </div>
-        </motion.div>
+        </div>
+      </section>
 
         {/* 内嵌预览模态（思维导图 / 知识图谱 / 学习卡片） */}
         {preview && (
@@ -404,7 +328,7 @@ const ReportViewer = ({ report, onBack }) => {
         {timing && (
           <motion.div
             initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-            className="mt-4 bg-white rounded-xl shadow-lg p-6"
+            className="report-timing-panel bg-white rounded-xl border border-gray-200 p-6"
           >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
@@ -451,128 +375,42 @@ const ReportViewer = ({ report, onBack }) => {
           </motion.div>
         )}
 
-        {/* 标签页 */}
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-          <div className="flex border-b">
-            <button
-              onClick={() => setActiveTab("outline")}
-              className={`flex-1 px-6 py-4 text-center font-medium transition-colors ${
-                activeTab === "outline"
-                  ? "bg-blue-500 text-white"
-                  : "text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2">
-                <Image className="w-4 h-4" />
-                图文大纲
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab("report")}
-              className={`flex-1 px-6 py-4 text-center font-medium transition-colors ${
-                activeTab === "report"
-                  ? "bg-blue-500 text-white"
-                  : "text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2">
-                <FileText className="w-4 h-4" />
-                精简报告
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab("detailed")}
-              className={`flex-1 px-6 py-4 text-center font-medium transition-colors ${
-                activeTab === "detailed"
-                  ? "bg-blue-500 text-white"
-                  : "text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2">
-                <BookOpen className="w-4 h-4" />
-                详细报告
-              </div>
-            </button>
+      <section className="report-reader">
+        <div className="report-reader-toolbar">
+          <div className="report-tabs" role="tablist" aria-label="报告内容" onKeyDown={event => {
+            const directions = { ArrowRight: 1, ArrowLeft: -1 };
+            let index = tabs.findIndex(tab => tab.key === activeTab);
+            if (event.key in directions) index = (index + directions[event.key] + tabs.length) % tabs.length;
+            else if (event.key === 'Home') index = 0;
+            else if (event.key === 'End') index = tabs.length - 1;
+            else return;
+            event.preventDefault();
+            setActiveTab(tabs[index].key);
+            setExportMenu(null);
+            event.currentTarget.querySelectorAll('[role="tab"]')[index].focus();
+          }}>
+            {tabs.map(({ key, label, icon: Icon }) => (
+              <button key={key} id={`report-tab-${key}`} role="tab" aria-selected={activeTab === key}
+                aria-controls="report-content" tabIndex={activeTab === key ? 0 : -1}
+                onClick={() => { setActiveTab(key); setExportMenu(null); }}>
+                <Icon size={16} /><span>{label}</span>
+              </button>
+            ))}
           </div>
-
-          {/* 内容区域 */}
-          <div className="p-6">   {/* 通篇展示：不限制高度内部滚动 */}
-            {activeTab === "outline" && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="prose max-w-none"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-800">图文大纲</h3>
-                  <button
-                    onClick={() => handleEdit("outline")}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    编辑报告
-                  </button>
-                </div>
-                <div className="markdown-content">
-                  {renderMarkdown(report.detailed_outline)}
-                </div>
-              </motion.div>
-            )}
-
-            {activeTab === "report" && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="prose max-w-none"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-800">精简报告</h3>
-                  <button
-                    onClick={() => handleEdit("report")}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    编辑报告
-                  </button>
-                </div>
-                <div className="markdown-content">
-                  {renderMarkdown(report.final_report)}
-                </div>
-              </motion.div>
-            )}
-
-            {activeTab === "detailed" && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="prose max-w-none"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-800">详细报告</h3>
-                  <button
-                    onClick={() => handleEdit("detailed")}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    编辑报告
-                  </button>
-                </div>
-                <p className="text-xs text-gray-400 mb-4">
-                  每个章节给出「视频原文」（带时间戳的语音原话，可回看对应片段）与「整理笔记」对照，适合精读
-                </p>
-                <div className="markdown-content">
-                  {report.detailed_report
-                    ? renderMarkdown(report.detailed_report)
-                    : <p className="text-sm text-gray-400">该任务未生成详细报告（旧任务或生成失败）</p>}
-                </div>
-              </motion.div>
-            )}
-          </div>
+          <button onClick={() => handleEdit(activeTab)} className="report-edit-button"><Edit3 size={15} /> 编辑报告</button>
         </div>
-      </div>
+        <div id="report-content" role="tabpanel" aria-labelledby={`report-tab-${activeTab}`} tabIndex={0} className="report-content">
+          <p className="report-reading-note"><BookOpen size={14} /> {currentTab.description}</p>
+          <article className="report-prose">
+            {currentTab.content ? renderMarkdown(currentTab.content) : (
+              <div className="report-empty"><FileText size={28} /><h2>暂时没有{currentTab.label}</h2><p>该任务尚未生成这份内容，可以先查看其他报告。</p></div>
+            )}
+          </article>
+          <footer className="report-reading-footer"><span>VideoDevour</span><span>从视频中汲取知识，让思考持续生长。</span></footer>
+        </div>
+      </section>
     </div>
   );
 };
 
 export default ReportViewer;
-
