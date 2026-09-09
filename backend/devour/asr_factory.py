@@ -11,6 +11,8 @@ ASR 引擎工厂
 """
 import logging
 
+from backend.algorithm.settings_store import PROVIDER_DEFAULT_ASR_MODEL
+
 
 def get_asr_mode() -> str:
     """读取当前 ASR 模式，默认 offline"""
@@ -44,7 +46,8 @@ def create_asr_engine(mode: str = None):
 
             engine = VideoDevourASRStepFun(
                 api_key=settings.get("stepfun_api_key") or None,
-                model=settings.get("online_asr_model", "stepaudio-2.5-asr"),
+                model=settings.get("online_asr_model")
+                    or PROVIDER_DEFAULT_ASR_MODEL["stepfun"],
             )
             logging.info("已创建在线 ASR 引擎（StepFun 阶跃星辰）")
             return engine
@@ -53,13 +56,22 @@ def create_asr_engine(mode: str = None):
 
         engine = VideoDevourASRDashScope(
             api_key=settings.get("dashscope_api_key") or None,
-            model=settings.get("online_asr_model", "fun-asr-realtime"),
+            model=settings.get("online_asr_model")
+                or PROVIDER_DEFAULT_ASR_MODEL["dashscope"],
         )
         logging.info("已创建在线 ASR 引擎（DashScope）")
         return engine
 
     # offline：重量级依赖（torch/funasr）延迟到真正使用时才导入
-    from backend.devour.asr_engine_paraformer_v2 import VideoDevourASRParaformerV2
+    try:
+        from backend.devour.asr_engine_paraformer_v2 import VideoDevourASRParaformerV2
+    except ImportError as e:
+        # 轻量包不含 torch/funasr：给出可操作提示，而非裸的 ModuleNotFoundError
+        raise RuntimeError(
+            "当前为离线 ASR 模式，但本安装包不包含本地语音识别引擎"
+            "（缺少 torch/funasr）。请在「偏好设置」中切换为在线 ASR，"
+            f"或安装带本地引擎的增强版。（{e}）"
+        ) from e
 
     logging.info("已创建离线 ASR 引擎（本地 Paraformer V2）")
     return VideoDevourASRParaformerV2()

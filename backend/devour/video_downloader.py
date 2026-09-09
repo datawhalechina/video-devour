@@ -54,6 +54,7 @@ def extract_share_url(text: str) -> str:
 
 def _get_ydl(**extra):
     from yt_dlp import YoutubeDL
+    from backend.runtime import paths as _rt_paths
 
     referer = extra.pop("referer", "https://www.bilibili.com/")
     options = {
@@ -62,6 +63,10 @@ def _get_ydl(**extra):
         "noplaylist": True,   # 单视频优先，不展开合集
         "socket_timeout": 20,
         "retries": 3,
+        # yt-dlp 下载高画质时需合并音视频轨，必须知道 ffmpeg 位置；
+        # 不设置则只查系统 PATH，客户端捆绑的 ffmpeg 会被忽略
+        # （表现为 "ffmpeg is not installed. Aborting due to --abort-on-error"）。
+        "ffmpeg_location": _rt_paths.ffmpeg_path(),
         # 浏览器指纹：B站等平台对无 UA/Referer 的请求会返回 412
         "http_headers": {
             "User-Agent": _BROWSER_UA,

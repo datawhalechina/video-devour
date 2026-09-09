@@ -290,6 +290,13 @@ async def update_app_settings(request: SettingsUpdateRequest):
     if updates.get("outline_match_strategy") not in (None, "auto", "semantic", "string"):
         raise HTTPException(status_code=400, detail="outline_match_strategy 仅支持 auto / semantic / string")
 
+    # 切换在线 ASR 提供商时联动模型名：两家模型名不通用，
+    # 残留旧提供商的模型名会导致 "Model not found"（实测）。
+    # 仅当用户未在同一次请求中显式指定模型名时才自动跟随。
+    provider_update = updates.get("online_asr_provider")
+    if provider_update and not updates.get("online_asr_model"):
+        updates["online_asr_model"] = settings_store.PROVIDER_DEFAULT_ASR_MODEL[provider_update]
+
     old_mode = settings_store.load_settings().get("asr_mode", "offline")
     settings = settings_store.update_settings(updates)
     new_mode = settings["asr_mode"]

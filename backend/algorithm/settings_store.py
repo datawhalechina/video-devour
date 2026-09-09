@@ -29,9 +29,11 @@ from backend.runtime import paths as _rt_paths
 SETTINGS_FILE = _rt_paths.data_root() / "settings.json"
 
 DEFAULT_SETTINGS = {
-    # ASR 模式：offline = 本地 FunASR Paraformer（需下载模型）；
-    # online = 云端识别，提供商由 online_asr_provider 决定
-    "asr_mode": "offline",
+    # ASR 模式：offline = 本地 FunASR Paraformer（需下载模型，依赖 torch/funasr）；
+    # online = 云端识别，提供商由 online_asr_provider 决定。
+    # 默认 online：新安装无需下载模型即可使用；本地引擎属增强能力（桌面轻量包不含 torch）。
+    # 已有用户 settings.json 中的 offline 配置会被保留，不会被静默改写。
+    "asr_mode": "online",
     "dashscope_api_key": "",
     "online_asr_model": "fun-asr-realtime",
     "online_asr_provider": "dashscope",   # dashscope | stepfun
@@ -66,6 +68,12 @@ DEFAULT_SETTINGS = {
     "bilibili_sessdata": "",
     # 一键读取浏览器 Cookie 时使用的浏览器（空 = 自动按序尝试）
     "cookie_browser": "",
+}
+
+# 各在线 ASR 提供商的默认模型名（切换 provider 时用于联动，避免模型名串台）
+PROVIDER_DEFAULT_ASR_MODEL = {
+    "dashscope": "fun-asr-realtime",
+    "stepfun": "stepaudio-2.5-asr",
 }
 
 # settings 字段 -> config 模块属性 的映射（仅非空时覆盖 config）

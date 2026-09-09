@@ -44,12 +44,14 @@ Expand-Archive VideoDevour-windows-x64.zip -DestinationPath .
 
 ## 首次使用要配置的东西
 
-轻量包默认**不包含本地语音识别**。启动后需要：
+轻量包默认**不包含本地语音识别**，默认使用**在线 ASR**。启动后需要：
 
 1. 打开左侧「偏好设置」
 2. 配置 **LLM**（必填，用于生成大纲与报告）
 3. 配置 **VLM**（图文报告必填，用于挑选关键帧）
-4. 选 **在线 ASR**（字幕速记不需要；本地文件转写需要，填 DashScope 或 StepFun 的 Key）
+4. 配置 **在线 ASR 的 Key**（DashScope 或 StepFun；字幕速记不需要，上传本地视频需要）
+
+> ⚠️ 不要选「离线」模式——轻量包不含本地引擎，会提示"本安装包不包含本地语音识别引擎"。
 
 配置保存在：
 - macOS：`~/Library/Application Support/VideoDevour/settings.json`
