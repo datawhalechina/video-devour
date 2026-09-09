@@ -6,9 +6,31 @@ import subprocess
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import config
+from backend.runtime import paths as _rt_paths
 
-# 视频切分/抽帧并发度（ffmpeg 本身多线程，过高会争抢 CPU，4 段并行较稳妥）
-VIDEO_CONCURRENCY = 4
+# 视频切分/抽帧并发度。
+# ffmpeg 本身已多线程（libx264 会用满多核），叠加多个 ffmpeg 进程会指数级抢占 CPU：
+# 实测 4 路并发 + 多任务并行把系统 load 打到 80 导致整机卡死。
+# 因此按 CPU 核数保守取值：最多 2 路，可用 VIDEO_DEVOUR_FFMPEG_CONCURRENCY 覆盖。
+# 单个 ffmpeg 进程的编码线程数：核数的一半，给系统留出余量
+FFMPEG_THREADS = max(1, (os.cpu_count() or 4) // 2)
+
+VIDEO_CONCURRENCY = max(1, min(2, int(os.getenv(
+    "VIDEO_DEVOUR_FFMPEG_CONCURRENCY",
+    "2" if (os.cpu_count() or 4) >= 8 else "1",
+))))
+
+def _ffmpeg_cmd(*args):
+    """
+    构造受资源约束的 ffmpeg 命令：
+    - nice 降低优先级（交互式请求优先）
+    - -threads 限制编码线程数（避免多进程叠加打满 CPU）
+    注意 -threads 需放在输入之前作为全局参数。
+    """
+    cmd = ["nice", "-n", "10", _rt_paths.ffmpeg_path(), "-threads", str(FFMPEG_THREADS)]
+    cmd.extend(args)
+    return cmd
+
 
 def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, output_dir=None):
     """
@@ -84,13 +106,13 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
             # -c:v libx264: 使用 H.264 编码视频
             # -c:a aac: 使用 AAC 编码音频
             # -avoid_negative_ts make_zero: 避免负时间戳问题
-            ffmpeg_command = [
-                'ffmpeg', '-i', input_video_path,
+            ffmpeg_command = _ffmpeg_cmd(
+                '-i', input_video_path,
                 '-ss', str(start_time), '-to', str(end_time),
-                '-c:v', 'libx264', '-c:a', 'aac',
+                '-c:v', 'libx264', '-preset', 'veryfast', '-c:a', 'aac',
                 '-avoid_negative_ts', 'make_zero',
                 '-y', output_path
-            ]
+            )
             
             cut_jobs.append((heading, output_path, ffmpeg_command))
 
@@ -143,7 +165,7 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
                 safe_heading = re.sub(r'[\\/*?:"<>|]', "", heading).replace(" ", "_")
                 output_path = os.path.join(videocut_path, f"{i+1:02d}_{safe_heading}.mp4")
                 ffmpeg_command = [
-                    'ffmpeg', '-i', input_video_path,
+                    _rt_paths.ffmpeg_path(), '-i', input_video_path,
                     '-ss', f"{seg_start:.2f}", '-to', f"{seg_end:.2f}",
                     '-c:v', 'libx264', '-c:a', 'aac',
                     '-avoid_negative_ts', 'make_zero',
@@ -165,13 +187,13 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
             if heading:
                 safe_heading = re.sub(r'[\\/*?:"<>|]', "", heading).replace(" ", "_")
                 output_path = os.path.join(videocut_path, f"01_{safe_heading}.mp4")
-                ffmpeg_command = [
-                    'ffmpeg', '-i', input_video_path,
+                ffmpeg_command = _ffmpeg_cmd(
+                    '-i', input_video_path,
                     '-ss', str(start_time), '-to', str(end_time),
-                    '-c:v', 'libx264', '-c:a', 'aac',
+                    '-c:v', 'libx264', '-preset', 'veryfast', '-c:a', 'aac',
                     '-avoid_negative_ts', 'make_zero',
                     '-y', output_path
-                ]
+                )
                 try:
                     subprocess.run(ffmpeg_command, check=True,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -229,10 +251,10 @@ def extract_frames_from_videos(videocut_path=None, output_dir=None):
         frame_output_dir = os.path.join(output_dir, f"frames_{video_name}")
         os.makedirs(frame_output_dir, exist_ok=True)
         logging.info(f"正在从 '{video_file}' 提取帧到 '{frame_output_dir}'...")
-        cmd = [
-            'ffmpeg', '-i', video_path, '-vf', 'fps=1',
+        cmd = _ffmpeg_cmd(
+            '-i', video_path, '-vf', 'fps=1',
             '-q:v', '2', os.path.join(frame_output_dir, 'frame_%04d.jpg')
-        ]
+        )
         try:
             subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             num = len([f for f in os.listdir(frame_output_dir) if f.endswith('.jpg')])
