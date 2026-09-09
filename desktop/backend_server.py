@@ -76,16 +76,19 @@ def _bind_socket(host: str, preferred: int) -> socket.socket:
     return sock
 
 
-def _watch_parent():
+def _watch_parent(parent_pid: int):
     """
-    监测父进程（桌面壳）是否存活。
+    监测指定的父进程（桌面壳）是否存活。
+
+    仅当壳通过 --parent-pid 显式传入 PID 时启用：
+    独立启动（终端调试、CI 冒烟测试）时父进程可能是会立刻退出的 shell，
+    若按 os.getppid() 推断会把正常服务误杀。
 
     壳被 SIGKILL 时无法执行自己的清理逻辑，后端需自行退出，
     否则会变成孤儿进程继续占用端口与内存（方案 4.3 要求的回收机制）。
     """
-    parent_pid = os.getppid()
-    if parent_pid <= 1:
-        return  # 独立启动（源码调试/CI），无需监测
+    if not parent_pid or parent_pid <= 1:
+        return
 
     def _loop():
         while True:
@@ -105,6 +108,7 @@ def main():
     parser.add_argument("--frontend-dist", default=None, help="前端构建产物目录")
     parser.add_argument("--ffmpeg-dir", default=None, help="捆绑的 ffmpeg/ffprobe 所在目录")
     parser.add_argument("--handshake-file", default=None, help="握手信息写入路径（窗口模式下 stdout 不可用）")
+    parser.add_argument("--parent-pid", type=int, default=0, help="桌面壳 PID；设置后壳退出时后端自行终止")
     args = parser.parse_args()
 
     global _HANDSHAKE_FILE
@@ -125,7 +129,7 @@ def main():
         import uvicorn
         from backend.api.main import app
 
-        _watch_parent()
+        _watch_parent(args.parent_pid)
 
         # 先绑定再握手：报告的端口就是实际监听端口，不存在竞争
         sock = _bind_socket(args.host, args.port)

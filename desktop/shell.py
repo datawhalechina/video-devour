@@ -93,6 +93,9 @@ class BackendProcess:
             "--frontend-dist", str(res_root / "frontend" / "dist"),
             "--ffmpeg-dir", str(res_root / "bin"),
             "--handshake-file", str(handshake_file),
+            # 显式传壳的 PID：后端据此在壳被强杀时自行退出。
+            # 不传则后端不做父进程监测（终端调试/CI 场景的父进程可能是会立刻退出的 shell）。
+            "--parent-pid", str(os.getpid()),
         ]
 
         # 后端日志落盘到数据目录，便于诊断启动失败
