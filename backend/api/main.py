@@ -103,6 +103,39 @@ else:
 processing_tasks: Dict[str, Dict] = {}
 running_tasks: Dict[str, asyncio.Task] = {}  # 存储正在运行的异步任务
 
+# 全局处理并发上限：视频处理是 CPU 密集（ffmpeg 重编码 + VLM），
+# 多任务并行会把负载打满（实测 3 任务并发 → load 80，系统卡死），
+# 因此默认串行处理，可用 VIDEO_DEVOUR_MAX_TASKS 覆盖。
+MAX_PARALLEL_TASKS = max(1, int(os.getenv("VIDEO_DEVOUR_MAX_TASKS", "1")))
+task_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _get_task_semaphore() -> asyncio.Semaphore:
+    """惰性创建信号量（需在事件循环内创建）"""
+    global task_semaphore
+    if task_semaphore is None:
+        task_semaphore = asyncio.Semaphore(MAX_PARALLEL_TASKS)
+    return task_semaphore
+
+
+async def _run_with_slot(task_id: str, coro_factory):
+    """
+    在全局并发槽内执行任务。等待时给出排队提示，
+    避免用户看到进度卡在 0% 却不知道在排队。
+    """
+    sem = _get_task_semaphore()
+    if sem.locked():
+        processing_tasks.setdefault(task_id, {})
+        processing_tasks[task_id].update({
+            "stage": "queued",
+            "message": f"排队等待中（当前并发上限 {MAX_PARALLEL_TASKS}，前面任务完成后自动开始）",
+        })
+        save_tasks()
+    async with sem:
+        processing_tasks.get(task_id, {}).update({"message": "开始处理…"})
+        save_tasks()
+        return await coro_factory()
+
 def load_tasks():
     """从文件加载任务数据"""
     global processing_tasks
@@ -609,9 +642,11 @@ async def process_link_video(request: LinkProcessRequest):
     }
     save_tasks()
 
-    task = asyncio.create_task(
-        _download_and_process(task_id, url, file_path, request.education_level, extras_list)
-    )
+    task = asyncio.create_task(_run_with_slot(
+        task_id,
+        lambda: _download_and_process(task_id, url, file_path,
+                                      request.education_level, extras_list),
+    ))
     running_tasks[task_id] = task
 
     return UploadResponse(task_id=task_id, message="链接任务已创建，开始下载", filename=url)
@@ -795,7 +830,10 @@ async def upload_video(file: UploadFile = File(...), education_level: str = Form
         save_tasks()
 
         # 启动后台处理任务并存储任务引用
-        task = asyncio.create_task(process_video_async(task_id, file_path, education_level, extras_list))
+        task = asyncio.create_task(_run_with_slot(
+            task_id,
+            lambda: process_video_async(task_id, file_path, education_level, extras_list),
+        ))
         running_tasks[task_id] = task
         
         return UploadResponse(
