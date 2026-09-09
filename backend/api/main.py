@@ -546,7 +546,25 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
         save_tasks()
 
         from backend.devour.video_downloader import download_video
+        from backend.devour import download_cache
+
         loop = asyncio.get_event_loop()
+
+        # 1) 先查下载缓存：同一视频重复处理时直接复用本地文件，跳过下载
+        cached = await loop.run_in_executor(
+            None, lambda: download_cache.materialize(url, file_path)
+        )
+        if cached:
+            processing_tasks[task_id].update({
+                "progress": 15,
+                "message": f"命中本地缓存，跳过下载（复用 {cached.get('hit_count', 1)} 次）",
+                "filename": cached.get("title") or url,
+            })
+            save_tasks()
+            await process_video_async(task_id, file_path, education_level, extras)
+            return
+
+        # 2) 未命中：正常下载，完成后登记到缓存与映射表
         result = await loop.run_in_executor(
             None, lambda: download_video(url, str(UPLOAD_DIR), progress_hook=_hook)
         )
@@ -575,6 +593,14 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
             "message": "下载完成，开始处理",
         })
         save_tasks()
+
+        # 登记到下载缓存与存储映射表（供后续任务复用）
+        try:
+            await loop.run_in_executor(
+                None, lambda: download_cache.register(url, str(file_path), info=info)
+            )
+        except Exception as e:
+            logging.warning(f"下载缓存登记失败（不影响任务）: {e}")
 
         # 清理下载占位文件后接续标准流程
         await process_video_async(task_id, file_path, education_level, extras)
@@ -1390,6 +1416,32 @@ async def library_export_all():
         media_type="application/zip",
         headers={"Content-Disposition":
                  f"attachment; filename=\"library.zip\"; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
+@app.get("/api/downloads/cache")
+async def get_download_cache():
+    """
+    下载缓存映射表：已缓存的视频列表 + 统计（复用次数/占用空间）。
+    重复处理同一视频时会直接复用，不再下载。
+    """
+    from backend.devour import download_cache
+    return await _run_link_probe(
+        lambda: {"stats": download_cache.stats(), "entries": download_cache.list_entries()}
+    )
+
+
+@app.delete("/api/downloads/cache")
+async def clear_download_cache(max_age_days: int = 0, max_total_mb: int = 0):
+    """
+    清理下载缓存。max_age_days>0 按天数清理最久未用；max_total_mb>0 按总量上限清理。
+    两者都为 0 时不做删除（仅清理失效条目）。
+    """
+    from backend.devour import download_cache
+    return await _run_link_probe(
+        download_cache.prune,
+        max_age_days=max_age_days,
+        max_total_bytes=max_total_mb * 1024 * 1024,
     )
 
 
