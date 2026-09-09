@@ -36,6 +36,7 @@ output/subtitle_notes/
 desktop/dist/
 desktop/build/
 desktop/bin/
+desktop/release/*.zip
 *.spec.bak
 
 # macOS
