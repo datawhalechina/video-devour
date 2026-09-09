@@ -7,6 +7,7 @@ import EditorPage from "./components/EditorPage";
 import SettingsPage from "./components/SettingsPage";
 import LinkProcess from "./components/LinkProcess";
 import LibraryPage from "./components/LibraryPage";
+import LibraryArticlePage from "./components/LibraryArticlePage";
 
 // 全局文档库入口：设置页左侧的悬浮按钮，随时进入检索
 function LibraryButton() {
@@ -56,6 +57,7 @@ function App() {
         <Route path="/report/:taskId" element={<MainApp initialView="report" />} />
         <Route path="/history" element={<MainApp initialView="history" />} />
         <Route path="/library" element={<LibraryPage />} />
+        <Route path="/library/article/:docId/:scope" element={<LibraryArticlePage />} />
         <Route path="/editor/:taskId" element={<EditorPage />} />
         <Route path="/editor-test" element={<EditorTestPage />} />
       </Routes>

@@ -2,8 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  ArrowLeft, BookOpen, Search, Loader2, FileText, Eye, Download,
-  X, ExternalLink, Zap,
+  ArrowLeft, BookOpen, Search, Loader2, FileText, Eye, Download, Zap,
 } from 'lucide-react'
 
 const SCOPE_TABS = [
@@ -13,14 +12,10 @@ const SCOPE_TABS = [
   { key: 'detailed', label: '详细报告' },
 ]
 
-const ReactMarkdown = ({ children }) => {
-  // 轻量渲染：marked 已在依赖中；此处用动态加载会造成闪烁，直接交给父级处理
-  return <div className="markdown-body" dangerouslySetInnerHTML={{ __html: children }} />
-}
-
 /**
  * 个人文档库：以「单次视频处理」为单位的文章库，支持 BM25 相关度检索。
- * 瀑布流卡片展示；卡片可展开全文（模态），支持单篇 .md 下载与整库 ZIP 导出。
+ * 瀑布流卡片展示；卡片点击进入文章子页（Markdown 渲染 + 图片 + 下载），
+ * 另支持单篇 .md 下载与整库 ZIP 导出。
  */
 function LibraryPage() {
   const navigate = useNavigate()
@@ -29,8 +24,6 @@ function LibraryPage() {
   const [results, setResults] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [fullText, setFullText] = useState(null)      // {title, content, download_url, view_url}
-  const [fullLoading, setFullLoading] = useState(false)
   const debounceRef = useRef(null)
 
   const load = async (q, sc) => {
@@ -60,22 +53,9 @@ function LibraryPage() {
     load(query, key)
   }
 
-  // 打开全文模态（渲染 Markdown 简版：保留换行与图片）
-  const openFullText = async (r) => {
-    setFullText({ title: `${r.label} · ${r.title}`, content: '加载中…', download: null, view: r.view_url })
-    try {
-      const res = await fetch(`/api/library/article/${r.doc_id}/${r.scope}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setFullText({
-        title: `${data.label} · ${data.title}`,
-        content: data.content,
-        download: data.download_url,
-        view: r.view_url,
-      })
-    } catch (err) {
-      setFullText({ title: '加载失败', content: err.message, download: null, view: r.view_url })
-    }
+  // 卡片点击 → 进入文章子页（Markdown 渲染 + 图片 + 下载）
+  const openArticle = (r) => {
+    navigate(`/library/article/${r.doc_id}/${r.scope}`)
   }
 
   return (
@@ -164,7 +144,7 @@ function LibraryPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i * 0.03, 0.4) }}
                 className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-shadow p-5 cursor-pointer"
-                onClick={() => openFullText(r)}
+                onClick={() => openArticle(r)}
               >
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs font-medium">{r.label}</span>
@@ -178,7 +158,7 @@ function LibraryPage() {
                 <div className="flex items-center justify-between mt-3 text-xs text-gray-400">
                   <span>{new Date(r.created_at).toLocaleString('zh-CN')}</span>
                   <span className="flex items-center gap-1 text-primary-600">
-                    <Eye className="w-3.5 h-3.5" /> 展开全文
+                    <Eye className="w-3.5 h-3.5" /> 阅读全文
                   </span>
                 </div>
               </motion.div>
@@ -186,44 +166,6 @@ function LibraryPage() {
           </div>
         )}
       </main>
-
-      {/* 全文模态 */}
-      {fullText && (
-        <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4"
-             onClick={() => setFullText(null)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full h-full max-w-[95vw] max-h-[92vh] flex flex-col overflow-hidden"
-               onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
-              <h3 className="text-base font-bold text-gray-900 truncate">{fullText.title}</h3>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {fullText.download && (
-                  <a href={fullText.download}
-                     className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-1">
-                    <Download className="w-3.5 h-3.5" /> 下载 .md
-                  </a>
-                )}
-                {fullText.view && (
-                  <a href={fullText.view}
-                     className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-1">
-                    <ExternalLink className="w-3.5 h-3.5" /> 报告页
-                  </a>
-                )}
-                <button onClick={() => setFullText(null)}
-                        className="px-3 py-1.5 rounded-lg bg-gray-800 text-white text-xs font-medium hover:bg-gray-900">
-                  关闭
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6">
-              {fullText.loading ? (
-                <Loader2 className="w-8 h-8 animate-spin text-primary-500 mx-auto mt-10" />
-              ) : (
-                <pre className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed font-sans">{fullText.content}</pre>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

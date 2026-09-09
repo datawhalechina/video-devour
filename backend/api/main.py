@@ -1330,6 +1330,7 @@ async def library_get_article(doc_id: str, scope: str):
         "platform": doc["platform"],
         "platform_label": doc["platform_label"],
         "source_url": doc["source_url"],
+        "output_dir": doc["dir"],
         "content": result["content"],
         "download_url": f"/api/library/article/{doc_id}/{scope}/download",
     }
