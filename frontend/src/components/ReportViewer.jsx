@@ -79,7 +79,11 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
   const [exportMenu, setExportMenu] = useState(null)   // 当前展开的导出类型
 
   const doExport = (type, mode) => {
-    window.open(`/api/export/${report.task_id}?type=${type}&mode=${mode}`, "_blank");
+    // PDF 是独立格式开关，不是打包模式
+    const url = mode === "pdf"
+      ? `/api/export/${report.task_id}?type=${type}&fmt=pdf`
+      : `/api/export/${report.task_id}?type=${type}&mode=${mode}`;
+    window.open(url, "_blank");
     setExportMenu(null);
   };
 
@@ -288,6 +292,9 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
                 </button>
                 <button onClick={() => doExport(exportMenu, "zip")}>
                   <FileDown size={18} /><span><strong>ZIP 原图打包</strong><small>Markdown 与原始图片一并保存</small></span><ArrowUpRight size={14} />
+                </button>
+                <button onClick={() => doExport(exportMenu, "pdf")}>
+                  <FileDown size={18} /><span><strong>PDF 文档</strong><small>图文排版，适合打印与分享</small></span><ArrowUpRight size={14} />
                 </button>
               </div>
             )}

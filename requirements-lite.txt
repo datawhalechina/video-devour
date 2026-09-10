@@ -39,3 +39,6 @@ Pillow>=10.0.0
 scikit-image>=0.20.0
 aiohttp>=3.9.0
 tqdm
+
+# --- 报告导出 PDF（内置 CID 中文字体，无需外部字体/浏览器）---
+reportlab>=4.0.0
