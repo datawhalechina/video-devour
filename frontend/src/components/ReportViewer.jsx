@@ -1,16 +1,25 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Clock, FileText, Image, Edit3, LayoutGrid, FileDown, ChevronDown, ArrowUpRight, Check,
-  Timer, Share2, Network, BookOpen, Link2 } from "lucide-react";
+  Timer, Share2, Network, BookOpen, Link2, Zap, Newspaper, Sparkles } from "lucide-react";
 
 const PLATFORM_LABELS = {
   bilibili: "B站",
   youtube: "YouTube",
   wechat: "微信视频号",
 };
+
+// 衍生文体：不在处理流程里预生成，点开时按需生成（结果落盘复用）
+const STYLE_TABS = [
+  { key: "quantum", label: "量子速读", icon: Zap, description: "30 秒抓住大意，附一句可直接发朋友圈的话。" },
+  { key: "wechat", label: "公众号文章", icon: Newspaper, description: "图文成稿，可直接发布。" },
+  { key: "xiaohongshu", label: "小红书笔记", icon: Sparkles, description: "图文笔记，含话题标签。" },
+];
+const STYLE_KEYS = STYLE_TABS.map(t => t.key);
 import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { mermaidMarkdownComponents } from './MermaidBlock';
 
 
 const ReportViewer = ({ report, onBack, error, onRetry }) => {
@@ -182,6 +191,7 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
         remarkPlugins={[remarkGfm]}
         className="prose prose-slate max-w-none"
         components={{
+          ...mermaidMarkdownComponents,
           img: ({ src, alt, ...props }) => {
             // 相对路径 -> 后端静态目录。
             // 注意：react-markdown v9 会对 URL 做一次百分号编码，这里必须先解码还原，
