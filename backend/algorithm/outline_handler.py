@@ -180,6 +180,143 @@ def update_detailed_outline_with_keyframes(detailed_outline_path, keyframes):
     except Exception as e:
         logging.error(f"更新详细大纲时出错: {e}", exc_info=True)
 
+_FINAL_REPORT_SYSTEM = (
+    "你是一位专业的知识编辑，擅长把视频内容压缩成高信息密度的速读报告。"
+    "只输出简体中文报告正文（专有名词保留原文），不要任何解释。"
+)
+
+# 精简报告：目标是「3 分钟读完就掌握干货」。事实必须取自大纲中的视频原话
+# （「匹配的文本片段」），章节摘要只是结构参考——否则会写成「概括的概括」，
+# 通篇正确但没有信息量。
+_FINAL_REPORT_PROMPT = """下面是一份视频大纲。每个章节包含：二级标题、关键帧图片链接、
+「匹配的文本片段」（视频原话，是唯一的事实来源）、以及一段章节摘要（仅为结构参考，不要照抄）。
+
+请据此写一份**高信息密度的精简报告**，让读者 3 分钟读完就能掌握这个视频的全部干货。
+
+【最重要的要求】
+1. 事实只来自「匹配的文本片段」里的原话：所有数字、产品名、方法名、技术机制、结论都必须从原话提取。
+   章节摘要段只是告诉你"这节在讲什么"，绝不要基于它写内容——那会写成空泛的复述。
+2. 严禁空泛套话。以下这类没有信息量的表达一律不要出现：
+   「具有重要意义」「值得关注」「核心原因」「明显差异」「不断优化」「越来越受重视」「是…的关键」「为后续做铺垫」。
+   每条要点必须至少含一个具体信息：数字、名称、步骤、机制、对比或明确结论。
+3. 不要写"元描述"：禁止用「本节介绍/本节点明/本节展示/本节讲解/本节梳理了/本章讲述了」这类句式开头，
+   直接给出该节的结论、机制或事实。读者不需要你告诉他"这一段在讲什么"。
+4. 同一信息只说一次，不要在多处重复同义句。
+
+【输出结构（严格遵守）】
+# 原有一级标题（原样保留）
+
+> 一句话总结：用不超过 50 字说清这个视频最核心的结论（要有判断，不要"介绍了…"这种罗列）
+
+## 核心结论
+- 3-5 条。每条一句话，直接把最重要的结论或数据讲清楚。
+- 只读这一段也能抓住要点；不要与后文章节逐字重复。
+
+## 原有二级标题（逐章保留，顺序不变，不得改写或增删）
+![原图片链接](原样保留，紧跟标题下方)
+
+用 2-3 句话直接讲清本节的核心结论与机制，带上原话里的数字、名称或机制；
+不要用「本节介绍/本节梳理了/本节点明/本节展示/本节讲解」开头，也不要写"为后续做铺垫"。
+- 2-4 条要点，每条都是可验证的具体事实（数字、名称、机制、对比、结论）。
+
+## 关键数据与术语
+- 整份报告**最多出现一次**，放在全部章节之后，作为速查表。
+- 仅当视频出现具体数字、产品名或专业术语时输出，每条格式：`- 名称/数字：一句话说明`
+  例：- `150ms`：50 并发压测下创建沙箱的 P99 时延
+- 视频没有任何具体数据时，整节不要输出。
+
+【格式】
+- 只保留一个一级标题；二级标题只用原有章节标题 + 「核心结论」「关键数据与术语」这两个新增小节，不要其他新标题。
+- 不要三级及更深标题；不要代码块；不要加粗（`**`）以外的复杂 Markdown 语法。
+- 段落之间空一行；不要出现「首先/然后/接下来/总之」等口语连接词。
+- 只输出报告正文，不要输出「以下是报告」之类的说明。
+__LEVEL__
+大纲内容：
+-------------------
+__CONTENT__
+"""
+
+
+_DATA_SECTION = "关键数据与术语"
+
+
+def _inline_outline_images(content, markdown):
+    """图片以大纲为准还原：LLM 常改写 alt 文字或漏图，导致关键帧失效。
+
+    按章标题定位大纲中该节的图片，替换报告中该节内的图片行；缺图则补上。
+    """
+    images = {}          # 章节标题 -> [图片 Markdown]
+    current = None
+    for line in content.splitlines():
+        h2 = re.match(r"^##\s+(.+)$", line)
+        img = re.match(r"^\s*(!\[[^\]]*\]\([^)]+\))\s*$", line)
+        if h2:
+            current = h2.group(1).strip()
+        elif img and current:
+            images.setdefault(current, []).append(img.group(1))
+
+    out, current, inserted = [], None, set()
+    for line in (markdown or "").splitlines():
+        h2 = re.match(r"^##\s+(.+)$", line)
+        if h2:
+            current = h2.group(1).strip()
+            out.append(line)
+            # 标题后立即补回该节的图片（报告正文里原有的图片行稍后会被丢弃）
+            if current in images and current not in inserted:
+                out.extend(images[current])
+                inserted.add(current)
+            continue
+        if re.match(r"^\s*!\[", line):
+            continue          # 丢弃 LLM 生成/改写的图片行，统一以大纲为准
+        out.append(line)
+
+    # 大纲里未被插入的章节（标题被 LLM 改写等），在结尾兜底补图
+    for heading, imgs in images.items():
+        if heading not in inserted:
+            out.extend(imgs)
+    return "\n".join(out)
+
+
+def _consolidate_data_section(markdown):
+    """把重复的「关键数据与术语」合并成结尾唯一一节（LLM 有时会输出两次）。"""
+    blocks = []          # [(level, header, [body_lines])]；level=0 表示标题前的引言
+    cur = [0, "", []]
+    for line in (markdown or "").splitlines():
+        m = re.match(r"^(#{1,2})\s+(.*)$", line)
+        if m:
+            blocks.append(cur)
+            cur = [len(m.group(1)), m.group(2).strip(), []]
+        else:
+            cur[2].append(line)
+    blocks.append(cur)
+
+    data_items, seen, kept = [], set(), []
+    for level, header, body in blocks:
+        if level == 2 and _DATA_SECTION in header:
+            for line in body:
+                item = line.strip()
+                if item.startswith(("-", "*")) and item not in seen:
+                    seen.add(item)
+                    data_items.append(item)
+        else:
+            kept.append((level, header, body))
+
+    if not data_items:
+        return markdown
+
+    while kept and not any(x.strip() for x in kept[-1][2]):
+        kept.pop()          # 去掉正文尾部空行，数据小节统一收尾
+
+    out = []
+    for level, header, body in kept:
+        if level:
+            out.append("#" * level + " " + header)
+        out.extend(body)
+    out.extend(["", f"## {_DATA_SECTION}", ""])
+    out.extend(data_items)
+    return "\n".join(out).strip() + "\n"
+
+
 def generate_final_report(detailed_outline_path, output_dir, education_level: str = None):
     """
     使用LLM基于包含关键帧的详细大纲生成最终的图文报告。
@@ -200,33 +337,14 @@ def generate_final_report(detailed_outline_path, output_dir, education_level: st
         from llm_handler import LLMHandler, get_level_instruction
         llm = LLMHandler(education_level=education_level)
 
-        prompt = (
-            "你是一位专业的报告撰写员。请根据下面的 Markdown 大纲（含章节标题、文本摘要与关键帧图片），"
-            "扩写成一份**结构清晰、可直接阅读**的图文报告。\\n\\n"
-            "【必须保留】\\n"
-            "1. 完整保留原有的一级（`#`）与二级（`##`）标题文字，不要新增、删除或改写标题。\\n"
-            "2. 完整保留大纲中所有图片及其原始 Markdown 链接格式，且每张图片紧跟在所属二级标题下方。\\n"
-            "3. 禁止编造图片：只能用大纲中真实存在的链接，绝不添加或替换成外部占位地址"
-            "（如 example.com）；大纲无图时报告中也不出现图片。\\n\\n"
-            "【结构与排版规范】\\n"
-            "1. 每个二级章节的正文按「总—分」展开：先写 2-4 句连贯的引言段落概括本节要点，"
-            "再按需用 `-` 列出 2-5 条关键要点（要点须具体，含数字、方法名或结论）。\\n"
-            "2. 段落之间空一行；不要在一段里堆砌过多信息，单段不超过 5 行。\\n"
-            "3. 不要使用三级及更深标题；不要出现「首先/然后/接下来/总之」等口语连接词。\\n"
-            "4. 不要使用加粗（`**`）以外的复杂 Markdown 语法；不要输出代码块标记。\\n"
-            "5. 全程简体中文（专有名词、技术术语保留原文）。\\n"
-            "6. 只输出报告正文，不要输出「以下是报告」之类的说明文字。\\n\\n"
-        )
         level_instruction = get_level_instruction(education_level)
-        if level_instruction:
-            prompt += f"【学习阶段】{level_instruction}。请根据学习阶段调整报告的语言深度与表达方式。\\n\\n"
-        prompt += (
-            "原始大纲内容如下：\\n"
-            "-------------------\\n"
-            f"{content}"
-        )
-        
-        final_report_content = llm.get_response(prompt)
+        level_block = (f"【学习阶段】{level_instruction}。请据此调整语言深度与表达方式。\n\n"
+                       if level_instruction else "")
+        prompt = (_FINAL_REPORT_PROMPT
+                  .replace("__LEVEL__", level_block)
+                  .replace("__CONTENT__", content))
+        final_report_content = llm.get_response(
+            prompt, system_message=_FINAL_REPORT_SYSTEM)
 
         # 后处理：删除LLM编造的外链图片（只保留本地相对路径图片），
         # 防止报告中出现 example.com 之类无法加载的占位图
@@ -235,6 +353,10 @@ def generate_final_report(detailed_outline_path, output_dir, education_level: st
             '',
             final_report_content,
         )
+        # 关键数据小节去重并统一放到结尾
+        final_report_content = _consolidate_data_section(final_report_content)
+        # 图片以大纲为准还原（LLM 可能改写 alt 或漏图，导致关键帧失效）
+        final_report_content = _inline_outline_images(content, final_report_content)
 
         final_report_path = os.path.join(output_dir, "final_report.md")
         with open(final_report_path, 'w', encoding='utf-8') as f:
