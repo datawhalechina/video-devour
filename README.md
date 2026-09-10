@@ -221,39 +221,60 @@ pip install -r requirements.txt
 
 ### 启动服务
 
-#### 1. 启动后端服务
-在项目根目录下启动后端。
+#### 方式一：一键启动（推荐，局域网可访问）
+
+后端会一并托管前端页面、API 与关键帧图片，**单端口对外服务**，无需另开前端进程。
+
+```bash
+./start.sh            # 监听 0.0.0.0:8000
+PORT=9000 ./start.sh  # 换端口
+./start.sh --dev      # 开发模式：热重载（改后端代码自动生效）
+```
+
+启动后：
+
+| 访问方 | 地址 |
+| --- | --- |
+| 本机 | `http://localhost:8000` |
+| 同一局域网的其他电脑/手机 | `http://<本机IP>:8000` |
+
+macOS 查看本机 IP：`ipconfig getifaddr en0`；Windows：`ipconfig`。
+
+> 服务默认监听 `0.0.0.0`，同一局域网设备可直接打开使用（无需安装）。
+> 注意这会读取 `settings.json` 里配置的 API Key，请只在可信网络下开放。
+
+#### 方式二：手动启动
 
 macOS / Linux：
 ```bash
-# 安装依赖并激活虚拟环境
 uv sync
-source .venv/bin/activate
-
-# 启动后端服务
-uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
+# 后端直接托管前端（需先构建一次：cd frontend && npm install && npm run build）
+uv run python backend/api/main.py                      # 0.0.0.0:8000
+HOST=127.0.0.1 PORT=8000 uv run python backend/api/main.py   # 仅本机
+RELOAD=1 uv run python backend/api/main.py             # 开发热重载
 ```
 
 Windows（PowerShell）：
 ```powershell
 uv sync
-.venv\Scripts\activate
-
-uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
+uv run python backend/api/main.py
 ```
 
-> 提示：不想激活虚拟环境的话，任何平台都可以直接用 `uv run uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000`（uv 会自动使用 `.venv` 中的环境）。Windows CMD 的激活命令为 `.venv\Scripts\activate.bat`。若 PowerShell 提示脚本被禁止运行，先执行 `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`。
+> 提示：也可用 `uv run uvicorn backend.api.main:app --host 0.0.0.0 --port 8000`（uv 自动使用 `.venv`）。
+> Windows CMD 激活命令为 `.venv\Scripts\activate.bat`；PowerShell 若提示脚本被禁止，
+> 先执行 `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`。
 
-后端服务将在 `http://localhost:8000` 启动。
+#### 方式三：前端开发模式（改前端时用）
 
-#### 2. 启动前端服务
-在新的终端窗口中，启动前端开发服务器：
+上面两种方式用的是构建后的前端产物。若要改前端并享受热更新，另开一个终端：
+
 ```bash
 cd frontend
-npm run dev
+npm run dev           # http://localhost:3000
 ```
 
-前端服务将在 `http://localhost:3000` 启动。
+开发服务器监听 `0.0.0.0:3000`，会把 `/api`、`/static` 代理到 `localhost:8000`，
+所以**后端仍需在 8000 端口运行**。局域网访问开发服务器用 `http://<本机IP>:3000`。
 
 ### Web界面使用
 
