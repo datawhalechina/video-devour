@@ -159,6 +159,20 @@ def load_tasks():
                 "message": "服务重启导致任务中断",
                 "error": task.get("error") or "服务重启导致任务中断，请重新提交",
             })
+    _backfill_video_identity()
+
+
+def _backfill_video_identity():
+    """为早期没有 video_key 的历史任务补全视频身份键。
+
+    补全后文档库才能把同一视频的历史任务与新任务归到同一版本链。
+    版本号由文档库按处理先后统一编号（V1、V2…），此处不落盘，避免与库内编号不一致。
+    """
+    for tid, meta in processing_tasks.items():
+        if isinstance(meta, dict) and not meta.get("video_key"):
+            key = _task_video_key(meta)
+            if key:
+                meta["video_key"] = key
 
 def save_tasks():
     """保存任务数据到文件"""
@@ -167,6 +181,26 @@ def save_tasks():
             json.dump(processing_tasks, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"保存任务文件失败: {e}")
+
+
+def _task_video_key(meta: dict) -> str:
+    """任务记录的视频身份：优先已存字段，其次按来源链接/本地文件推导。"""
+    if meta.get("video_key"):
+        return meta["video_key"]
+    from backend.devour.video_identity import video_key
+    return video_key(meta.get("source_url") or "", meta.get("file_path"))
+
+
+def _assign_video_identity(task_id: str, source_url: str = "", file_path=None) -> dict:
+    """为新任务确定视频身份键 video_key（同一视频的多次处理据此归组）。
+
+    V1、V2… 的版本号由文档库按处理先后统一编号，这里不落盘，避免两处编号漂移。
+    """
+    from backend.devour.video_identity import video_key as _vk
+    key = _vk(source_url, file_path)
+    return {"video_key": key} if key else {}
+
+
 
 # 启动时加载任务数据（遗留的未完成任务标记为中断并持久化）
 load_tasks()
@@ -640,6 +674,7 @@ async def process_link_video(request: LinkProcessRequest):
         "extras": extras_list,
         "created_at": datetime.now().isoformat(),
     }
+    processing_tasks[task_id].update(_assign_video_identity(task_id, source_url=url))
     save_tasks()
 
     task = asyncio.create_task(_run_with_slot(
@@ -805,6 +840,8 @@ async def upload_video(file: UploadFile = File(...), education_level: str = Form
             "extras": extras_list,
             "created_at": datetime.now().isoformat()
         }
+        # 本地文件用内容指纹归并同一视频的多次上传（V1/V2…）
+        processing_tasks[task_id].update(_assign_video_identity(task_id, file_path=file_path))
 
         # 保存任务数据
         save_tasks()
@@ -877,23 +914,18 @@ async def get_task_result(task_id: str):
     # 查找输出文件
     output_files = []
     
-    # 查找以frames_开头包含task_id的目录（pipeline生成的实际输出）
-    for dir_path in OUTPUT_DIR.iterdir():
-        if dir_path.is_dir() and dir_path.name.startswith(f"frames_{task_id}"):
-            # 检查是否有final_report.md文件来判断任务状态
-            final_report_path = dir_path / "final_report.md"
-            if not final_report_path.exists():
-                raise HTTPException(status_code=400, detail="任务尚未完成")
-            
-            # 收集所有文件
-            for file_path in dir_path.rglob("*"):
-                if file_path.is_file():
-                    output_files.append({
-                        "name": file_path.name,
-                        "path": str(file_path.relative_to(OUTPUT_DIR)),
-                        "size": file_path.stat().st_size
-                    })
-            break
+    # 重复处理会留下多个 frames_{task_id}_* 目录：取最近一次完成的输出，
+    # 避免新任务的目录缺失时误判为「任务尚未完成」。
+    target_dir = next((d for d in _task_output_dirs(task_id)
+                       if (d / "final_report.md").exists()), None)
+    if target_dir is not None:
+        for file_path in target_dir.rglob("*"):
+            if file_path.is_file():
+                output_files.append({
+                    "name": file_path.name,
+                    "path": str(file_path.relative_to(OUTPUT_DIR)),
+                    "size": file_path.stat().st_size
+                })
     else:
         # 如果没找到frames目录，检查是否有以task_id命名的目录
         task_output_dir = OUTPUT_DIR / task_id
@@ -906,7 +938,7 @@ async def get_task_result(task_id: str):
                         "size": file_path.stat().st_size
                     })
         else:
-            raise HTTPException(status_code=404, detail="任务结果不存在")
+            raise HTTPException(status_code=400, detail="任务尚未完成")
     
     return {
         "task_id": task_id,
@@ -938,14 +970,8 @@ async def get_task_report(task_id: str):
     """
     获取任务的详细报告内容，包括视频时长、图文大纲和精简报告
     """
-    # 查找输出目录
-    output_dir = None
-    
-    # 查找以frames_开头包含task_id的目录
-    for dir_path in OUTPUT_DIR.iterdir():
-        if dir_path.is_dir() and dir_path.name.startswith(f"frames_{task_id}"):
-            output_dir = dir_path
-            break
+    # 查找输出目录（重复处理时取最近一次，避免读到旧版报告）
+    output_dir = _find_task_output_dir(task_id)
     
     if not output_dir:
         # 如果没找到frames目录，检查是否有以task_id命名的目录
@@ -1063,14 +1089,8 @@ async def get_report_file(task_id: str, file_type: str):
     获取单个报告文件内容（用于编辑器）
     file_type: 'detailed' 或 'final'
     """
-    # 查找输出目录
-    output_dir = None
-    
-    # 查找以frames_开头包含task_id的目录
-    for dir_path in OUTPUT_DIR.iterdir():
-        if dir_path.is_dir() and dir_path.name.startswith(f"frames_{task_id}"):
-            output_dir = dir_path
-            break
+    # 查找输出目录（重复处理时取最近一次，避免读到旧版报告）
+    output_dir = _find_task_output_dir(task_id)
     
     if not output_dir:
         # 如果没找到frames目录，检查是否有以task_id命名的目录
@@ -1107,14 +1127,8 @@ async def save_report_file(task_id: str, file_type: str, request: dict):
     保存单个报告文件内容（用于编辑器）
     file_type: 'detailed' 或 'final'
     """
-    # 查找输出目录
-    output_dir = None
-    
-    # 查找以frames_开头包含task_id的目录
-    for dir_path in OUTPUT_DIR.iterdir():
-        if dir_path.is_dir() and dir_path.name.startswith(f"frames_{task_id}"):
-            output_dir = dir_path
-            break
+    # 查找输出目录（重复处理时取最近一次，避免读到旧版报告）
+    output_dir = _find_task_output_dir(task_id)
     
     if not output_dir:
         # 如果没找到frames目录，检查是否有以task_id命名的目录
@@ -1148,11 +1162,22 @@ async def save_report_file(task_id: str, file_type: str, request: dict):
 # 学习卡片与 Markdown 导出（移植自 light 版核心功能）
 # ---------------------------------------------------------------------------
 
+def _task_output_dirs(task_id: str):
+    """任务的 frames_{task_id}_* 输出目录，按最近修改时间倒序（新任务优先）。"""
+    return sorted((d for d in OUTPUT_DIR.iterdir()
+                   if d.is_dir() and d.name.startswith(f"frames_{task_id}")),
+                  key=lambda d: d.stat().st_mtime, reverse=True)
+
+
 def _find_task_output_dir(task_id: str):
-    """查找任务的输出目录（pipeline 生成的 frames_{task_id}_* 目录）"""
-    for dir_path in OUTPUT_DIR.iterdir():
-        if dir_path.is_dir() and dir_path.name.startswith(f"frames_{task_id}"):
-            return dir_path
+    """查找任务的输出目录（pipeline 生成的 frames_{task_id}_* 目录）。
+
+    同一任务可能被重复处理而留下多个 frames_{task_id}_* 目录，必须取最近一次的
+    输出，否则修复后仍会读到旧版报告。
+    """
+    candidates = _task_output_dirs(task_id)
+    if candidates:
+        return candidates[0]
     task_output_dir = OUTPUT_DIR / task_id
     if task_output_dir.exists():
         return task_output_dir
@@ -1268,12 +1293,14 @@ async def get_task_card(task_id: str):
 
 
 @app.get("/api/export/{task_id}")
-async def export_task_markdown(task_id: str, type: str = "all", mode: str = "inline"):
+async def export_task_markdown(task_id: str, type: str = "all", mode: str = "inline",
+                               fmt: str = "md"):
     """
-    导出任务的 Markdown。
+    导出任务的报告。
 
     type: outline（图文大纲）/ report（精简报告）/ detailed（详细报告）/ all（全部合并）
     mode: inline（图片内嵌，单文件可移植）/ zip（md + 原图打包，查看器 100% 兼容）
+    fmt:  md（默认）/ pdf（服务端渲染为 PDF，图片使用原图）
 
     说明：base64 内嵌会让单行超长（25KB+），部分查看器会截断导致图片显示失败，
     因此内嵌模式会把图片压缩到 800px 内、单张控制在约 8KB；追求原图质量用 zip 模式。
@@ -1373,6 +1400,12 @@ async def export_task_markdown(task_id: str, type: str = "all", mode: str = "inl
 
     from urllib.parse import quote
 
+    # ---------- PDF 模式：服务端排版，图片用原图 ----------
+    if fmt == "pdf":
+        joined = "\n\n".join(parts)
+        return _pdf_response(joined, title=base_name, base_dir=output_dir,
+                             extra_roots=(PROJECT_ROOT,))
+
     # ---------- ZIP 模式：md 用相对路径 + 原图一起打包 ----------
     if mode == "zip":
         import zipfile
@@ -1406,13 +1439,19 @@ async def export_task_markdown(task_id: str, type: str = "all", mode: str = "inl
 @app.get("/api/subtitle-notes/download")
 async def download_subtitle_notes(name: str, fmt: str = "md"):
     """
-    下载字幕笔记（md / txt）。用专用端点而非直接指向 /static，
+    下载字幕笔记（md / txt / pdf）。用专用端点而非直接指向 /static，
     以确保 Content-Disposition 正确、中文文件名不乱码。
     """
     from urllib.parse import quote
     if "/" in name or "\\" in name or ".." in name:
         raise HTTPException(status_code=400, detail="非法的文件名")
-    fmt = "md" if fmt == "md" else "txt"
+    if fmt not in ("md", "txt", "pdf"):
+        raise HTTPException(status_code=400, detail="fmt 仅支持 md / txt / pdf")
+    if fmt == "pdf":
+        md_path = OUTPUT_DIR / "subtitle_notes" / f"{name}.md"
+        if not md_path.exists():
+            raise HTTPException(status_code=404, detail="笔记文件不存在")
+        return _pdf_response(md_path.read_text(encoding="utf-8"), title=name)
     path = OUTPUT_DIR / "subtitle_notes" / f"{name}.{fmt}"
     if not path.exists():
         raise HTTPException(status_code=404, detail="笔记文件不存在")
@@ -1428,15 +1467,37 @@ async def download_subtitle_notes(name: str, fmt: str = "md"):
     )
 
 
+@app.get("/api/library/videos")
+async def library_videos():
+    """文档库按视频聚合：每个视频一张卡片（含 V1/V2…版本列表）。"""
+    from backend.algorithm.document_library import list_videos
+    try:
+        return await _run_link_probe(list_videos)
+    except Exception as e:
+        logging.error(f"文档库视频列表失败: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"加载失败: {e}")
+
+
+@app.get("/api/library/video/{video_key}")
+async def library_get_video(video_key: str):
+    """单个视频详情：全部版本与各版本文章清单。"""
+    from backend.algorithm.document_library import get_video
+    result = await _run_link_probe(get_video, identifier=video_key)
+    if not result:
+        raise HTTPException(status_code=404, detail="视频不存在")
+    return result
+
+
 @app.get("/api/library/search")
 async def library_search(q: str = "", scope: str = "all", top_k: int = 10):
     """
     个人文档库检索：BM25 相关度排序，返回 top-k 命中（标题/类型/摘要/分数/来源）。
     q 为空时返回全部文档索引。
     """
-    from backend.algorithm.document_library import search_library, list_library
-    if scope not in ("all", "outline", "report", "detailed"):
-        raise HTTPException(status_code=400, detail="scope 仅支持 all/outline/report/detailed")
+    from backend.algorithm.document_library import search_library, list_library, ARTICLE_TYPES
+    if scope != "all" and scope not in ARTICLE_TYPES:
+        raise HTTPException(status_code=400,
+                            detail=f"scope 仅支持 all/{'/'.join(ARTICLE_TYPES)}")
     try:
         if (q or "").strip():
             return await _run_link_probe(search_library, query=q, scope=scope, top_k=max(1, min(top_k, 30)))
@@ -1446,36 +1507,106 @@ async def library_search(q: str = "", scope: str = "all", top_k: int = 10):
         raise HTTPException(status_code=502, detail=f"检索失败: {e}")
 
 
+@app.post("/api/library/article/{doc_id}/{scope}/generate")
+async def library_generate_style(doc_id: str, scope: str, run_id: str = ""):
+    """按需生成衍生文体（量子速读 / 公众号文章 / 小红书笔记），结果落盘复用。
+
+    这些文体基于已有报告改写，不在处理流程里预生成——用户点开时才算，
+    避免每个任务都多花三次 LLM 调用。
+    """
+    from backend.algorithm.document_library import GENERATABLE_SCOPES
+    from backend.algorithm import style_articles
+    if scope not in GENERATABLE_SCOPES:
+        raise HTTPException(status_code=400, detail=f"该文体不支持按需生成: {scope}")
+
+    video = await _run_link_probe(_find_library_video, doc_id=doc_id)
+    if not video:
+        raise HTTPException(status_code=404, detail="文章不存在")
+    # 定位到「这一次处理」的输出目录：优先 run_id；否则按 doc_id 精确匹配，
+    # 不能直接取最新版本——报告页锁定的可能是历史版本，写错目录会读不到。
+    run = None
+    if run_id:
+        run = next((c for c in video["versions"] if c.get("run_id") == run_id), None)
+    if run is None:
+        matches = [c for c in video["versions"] if c["doc_id"] == doc_id]
+        run = matches[0] if matches else (video["versions"][0] if video["versions"] else None)
+    if run is None:
+        raise HTTPException(status_code=404, detail="版本不存在")
+
+    output_dir = OUTPUT_DIR / run["dir"]
+    try:
+        await _run_link_probe(style_articles.generate_style, output_dir=output_dir, scope=scope,
+                              education_level=run.get("education_level"))
+    except Exception as e:
+        logging.error(f"生成 {scope} 失败: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"生成失败: {e}")
+    return {"doc_id": doc_id, "run_id": run.get("run_id", ""), "scope": scope,
+            "generated": True}
+
+
+def _find_library_video(doc_id: str):
+    """按 doc_id 找文档库视频条目（供生成接口定位输出目录）。"""
+    from backend.algorithm.document_library import get_video
+    return get_video(doc_id)
+
+
 @app.get("/api/library/article/{doc_id}/{scope}")
-async def library_get_article(doc_id: str, scope: str):
-    """获取单篇文章全文（Markdown），供前端全文预览与 LLM/MCP 取用"""
+async def library_get_article(doc_id: str, scope: str, run_id: str = ""):
+    """获取单篇文章全文（Markdown）。run_id 指定版本（同一视频多次处理时）。"""
     from backend.algorithm.document_library import get_article
-    result = await _run_link_probe(get_article, doc_id=doc_id, scope=scope)
+    result = await _run_link_probe(get_article, doc_id=doc_id, scope=scope, run_id=run_id)
     if not result:
         raise HTTPException(status_code=404, detail="文章不存在")
     doc = result["doc"]
     return {
         "doc_id": doc_id,
+        "run_id": doc.get("run_id", ""),
         "scope": scope,
         "label": result["label"],
         "title": doc["title"],
         "platform": doc["platform"],
         "platform_label": doc["platform_label"],
         "source_url": doc["source_url"],
+        "video_key": doc.get("video_key"),
+        "version_label": doc.get("version_label"),
+        "version_count": doc.get("version_count"),
         "output_dir": doc["dir"],
         "content": result["content"],
-        "download_url": f"/api/library/article/{doc_id}/{scope}/download",
+        "download_url": f"/api/library/article/{doc_id}/{scope}/download"
+                        + (f"?run_id={run_id}" if run_id else ""),
     }
 
 
+def _pdf_response(md_text, title, base_dir=None, label="", extra_roots=()):
+    """把 Markdown 渲染为 PDF 并返回下载响应（reportlab，内置中文字体）。"""
+    from urllib.parse import quote
+    from backend.algorithm.pdf_export import markdown_to_pdf, safe_pdf_name
+    pdf_bytes = markdown_to_pdf(md_text, title=title, base_dir=base_dir, extra_roots=extra_roots)
+    filename = quote(safe_pdf_name(title, label))
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition":
+                 f"attachment; filename=\"export.pdf\"; filename*=UTF-8''{filename}"},
+    )
+
+
+def _safe_output_dir(doc):
+    """文章所属任务的输出目录（解析相对路径图片用）。"""
+    d = OUTPUT_DIR / doc.get("dir", "")
+    return d if d.exists() else None
+
+
 @app.get("/api/library/article/{doc_id}/{scope}/download")
-async def library_download_article(doc_id: str, scope: str):
-    """单篇文章下载（.md，附 Content-Disposition）"""
+async def library_download_article(doc_id: str, scope: str, run_id: str = "", fmt: str = "md"):
+    """单篇文章下载：fmt=md（默认，图片内嵌 base64）/ fmt=pdf。"""
     from urllib.parse import quote
     from backend.algorithm.document_library import get_article, ARTICLE_TYPES
     if scope not in ARTICLE_TYPES:
         raise HTTPException(status_code=400, detail="不支持的文档类型")
-    result = await _run_link_probe(get_article, doc_id=doc_id, scope=scope)
+    if fmt not in ("md", "pdf"):
+        raise HTTPException(status_code=400, detail="fmt 仅支持 md / pdf")
+    result = await _run_link_probe(get_article, doc_id=doc_id, scope=scope, run_id=run_id)
     if not result:
         raise HTTPException(status_code=404, detail="文章不存在")
 
@@ -1483,6 +1614,11 @@ async def library_download_article(doc_id: str, scope: str):
     doc = result["doc"]
     output_dir = OUTPUT_DIR / doc["dir"]
     label = ARTICLE_TYPES[scope][1]
+
+    if fmt == "pdf":
+        # PDF 由服务端渲染：图片按输出目录就地读取（原图比内嵌 base64 更清晰）
+        return _pdf_response(content, title=doc["title"], base_dir=output_dir,
+                             label=label, extra_roots=(PROJECT_ROOT,))
 
     # 把 Markdown 里的本地相对路径图片内嵌为 base64：
     # 单独下载的 .md 脱离了任务的 keyframes 目录，不内嵌图片会全部裂开
@@ -1559,8 +1695,21 @@ async def get_history():
     history = []
     seen_task_ids = set()
 
-    # 扫描output目录中的frames_开头的文件夹
+    # 重复处理会为同一 task_id 生成多个 frames_ 目录：每个任务只保留最近一次，
+    # 否则历史列表会出现重复条目，且可能指向旧版报告。
+    newest_dirs = {}
     for dir_path in OUTPUT_DIR.iterdir():
+        if not (dir_path.is_dir() and dir_path.name.startswith("frames_")):
+            continue
+        parts = dir_path.name.split("_")
+        if len(parts) >= 3:
+            tid = parts[1]
+            prev = newest_dirs.get(tid)
+            if prev is None or dir_path.stat().st_mtime > prev.stat().st_mtime:
+                newest_dirs[tid] = dir_path
+
+    # 扫描output目录中的frames_开头的文件夹（每任务取最新）
+    for dir_path in newest_dirs.values():
         if dir_path.is_dir() and dir_path.name.startswith("frames_"):
             try:
                 # 解析目录名获取task_id和时间戳
@@ -1892,11 +2041,17 @@ if FRONTEND_DIST:
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
+    # 默认 0.0.0.0，同一局域网的其他电脑可直接访问 http://<本机IP>:8000。
+    # 可用 HOST / PORT / RELOAD 环境变量覆盖（RELOAD=1 开启热重载，仅开发用）。
+    # 从项目根目录启动：uvicorn 用模块路径导入，保证热重载与 cwd 无关。
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    reload = os.getenv("RELOAD", "").lower() in ("1", "true", "yes")
+    if reload:
+        uvicorn.run("backend.api.main:app", host=host, port=port, reload=True,
+                    log_level="info")
+    else:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+
