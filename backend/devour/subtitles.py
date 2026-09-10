@@ -278,4 +278,5 @@ def generate_subtitle_notes(url: str, platform: str, education_level: str = "自
             "md_file": str(md_path),
             "md_url": f"/api/subtitle-notes/download?name={file_path.stem}&fmt=md",
             "txt_url": f"/api/subtitle-notes/download?name={file_path.stem}&fmt=txt",
+            "pdf_url": f"/api/subtitle-notes/download?name={file_path.stem}&fmt=pdf",
             "stem": file_path.stem}

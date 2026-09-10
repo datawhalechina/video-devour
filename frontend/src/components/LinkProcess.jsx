@@ -317,6 +317,14 @@ h1,h2,h3{line-height:1.35}</style>
                 >
                   下载 .txt
                 </a>
+                {notesResult.pdf_url && (
+                  <a
+                    href={notesResult.pdf_url}
+                    className="px-3 py-1.5 rounded-lg bg-primary-600 text-white text-xs font-bold hover:bg-primary-700"
+                  >
+                    下载 PDF
+                  </a>
+                )}
                 <button
                   onClick={handleOpenNotesWindow}
                   className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50"

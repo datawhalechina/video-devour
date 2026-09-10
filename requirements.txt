@@ -30,3 +30,5 @@ aiohttp>=3.9.0
 curl-cffi>=0.9.0
 browser-cookie3>=1.4.0
 bgutil-ytdlp-pot-provider>=2.0.0
+# 报告导出 PDF（内置 CID 中文字体，无需外部字体/浏览器）
+reportlab>=4.0.0

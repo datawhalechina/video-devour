@@ -1,0 +1,44 @@
+# VideoDevour 轻量包依赖（不含本地 ML 依赖）
+#
+# 用途：桌面客户端轻量首发形态 —— 支持「字幕速记」与「在线 ASR 图文报告」，
+#       不包含 torch / funasr / modelscope / sentence-transformers / moviepy / soundfile。
+#
+# 安装：uv pip install -r requirements-lite.txt
+# 注意：mcp 必须锁定 1.17.0 —— camel-ai 0.2.75 依赖 mcp.server.FastMCP，
+#       mcp 2.x 已移除该导出，版本漂移会导致 import camel.agents 直接失败。
+#       实测依据见 planning/A1-轻量依赖清单.md 第 2.2 节。
+
+# --- Web 服务 ---
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.0.0
+aiofiles>=23.2.1
+
+# --- LLM / VLM（OpenAI 兼容接口）---
+camel-ai>=0.2.75
+openai>=1.40.0
+mcp==1.17.0
+
+# --- 在线 ASR ---
+dashscope>=1.20.0
+
+# --- 下载与字幕 ---
+yt-dlp[default]>=2024.8.6
+requests>=2.31.0
+curl-cffi>=0.9.0
+browser-cookie3>=0.20.1
+bgutil-ytdlp-pot-provider>=2.0.0
+
+# --- 图文报告：画面处理 ---
+# 只保留 headless 版：代码仅用 cv2 基础 API 与 skimage.metrics，
+# 无需 contrib 模块，也不需要 GUI 支持。
+opencv-python-headless>=4.8.0
+numpy>=1.24.0,<2.3.0
+Pillow>=10.0.0
+scikit-image>=0.20.0
+aiohttp>=3.9.0
+tqdm
+
+# --- 报告导出 PDF（内置 CID 中文字体，无需外部字体/浏览器）---
+reportlab>=4.0.0
