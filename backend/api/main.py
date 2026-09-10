@@ -693,22 +693,8 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
         )
         downloaded_path = Path(result["file_path"])
         if downloaded_path.resolve() != file_path.resolve():
-            if downloaded_path.suffix.lower() == ".mp4":
-                downloaded_path.replace(file_path)
-            else:
-                # 非 mp4 容器（如 webm/vp9）转码为 mp4，copy 失败时回退到重编码
-                import subprocess
-                proc = subprocess.run(
-                    [_rt_paths.ffmpeg_path(), "-y", "-i", str(downloaded_path), "-c", "copy", str(file_path)],
-                    capture_output=True,
-                )
-                if proc.returncode != 0:
-                    subprocess.run(
-                        [_rt_paths.ffmpeg_path(), "-y", "-i", str(downloaded_path),
-                         "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", str(file_path)],
-                        check=True, capture_output=True,
-                    )
-                downloaded_path.unlink()
+            # 容器由 ffprobe/ffmpeg 探测；随后统一压缩，避免此处先额外转码一次。
+            downloaded_path.replace(file_path)
 
         info = result.get("info", {})
         processing_tasks[task_id].update({
@@ -717,13 +703,7 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
         })
         save_tasks()
 
-        # 登记到下载缓存与存储映射表（供后续任务复用）
-        try:
-            await loop.run_in_executor(
-                None, lambda: download_cache.register(url, str(file_path), info=info)
-            )
-        except Exception as e:
-            logging.warning(f"下载缓存登记失败（不影响任务）: {e}")
+        # 压缩校验完成后再登记缓存，缓存与任务共用轻量文件。
 
         # 清理下载占位文件后接续标准流程
         await process_video_async(task_id, file_path, education_level, extras)
@@ -1784,16 +1764,6 @@ async def process_video_async(task_id: str, file_path: Path, education_level: st
 
         # 不创建额外的task_id目录，让pipeline自己创建frames_开头的目录
 
-        # 调用核心处理流程
-        processing_tasks[task_id].update({
-            "stage": "asr",
-            "progress": 20,
-            "message": "正在进行语音识别..."
-        })
-        save_tasks()
-
-        # 这里调用实际的处理函数
-        # 注意：run_full_pipeline 可能需要修改以支持异步和进度回调
         result = await run_pipeline_with_progress(str(file_path), task_id, education_level)
 
         # 报告完成后按需生成附加产物（导图/图谱/卡片），未勾选则直接完成
@@ -1840,64 +1810,62 @@ async def process_video_async(task_id: str, file_path: Path, education_level: st
         raise
 
 async def run_pipeline_with_progress(video_path: str, task_id: str, education_level: str = None):
-    """
-    带进度更新的处理流程
-    """
-    def update_progress(progress: int, message: str, stage: str = None):
-        if task_id in processing_tasks:
-            update_data = {
-                "progress": progress,
-                "message": message
-            }
-            if stage:
-                update_data["stage"] = stage
-            processing_tasks[task_id].update(update_data)
+    """将工作线程的真实阶段事件交回事件循环，不再按时间模拟进度。"""
+    import threading
+    loop = asyncio.get_running_loop()
+    cancelled = threading.Event()
+    task_info = dict(processing_tasks.get(task_id, {}))
+
+    def update_progress(progress, message, stage):
+        task = processing_tasks.get(task_id)
+        if task is not None and task.get("status") not in ("cancelled", "failed", "completed"):
+            task.update(progress=progress, message=message, stage=stage)
             save_tasks()
-    
+
+    def report_progress(progress, message, stage):
+        if cancelled.is_set():
+            raise RuntimeError("任务已取消")
+        loop.call_soon_threadsafe(update_progress, progress, message, stage)
+
+    def save_media(profile):
+        task = processing_tasks.get(task_id)
+        if task is not None:
+            task.update(file_path=profile["path"], media_profile=profile)
+            save_tasks()
+
+    def media_ready(profile):
+        if cancelled.is_set():
+            raise RuntimeError("任务已取消")
+        loop.call_soon_threadsafe(save_media, profile)
+        if task_info.get("source_url"):
+            from backend.devour import download_cache
+            try:
+                download_cache.register(
+                    task_info["source_url"], profile["path"],
+                    info={"title": task_info.get("filename")}, processing_profile=profile,
+                )
+            except Exception as exc:
+                logging.warning(f"压缩视频缓存登记失败（不影响任务）: {exc}")
+
+    future = loop.run_in_executor(None, lambda: run_full_pipeline(
+        video_path, asr_engine, education_level, progress_callback=report_progress,
+        media_ready_callback=media_ready, managed_source=True,
+    ))
     try:
-        # 调用真实的处理流程
-        update_progress(10, "初始化处理环境...", "uploading")
-        await asyncio.sleep(0.5)
-        
-        update_progress(20, "开始语音识别...", "asr")
-        await asyncio.sleep(0.5)
-        
-        # 在线程池中运行同步的 pipeline 函数
-        import concurrent.futures
-        loop = asyncio.get_event_loop()
-        
-        # 使用线程池执行器运行同步函数
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            # 在执行过程中定期更新进度
-            future = executor.submit(run_full_pipeline, video_path, asr_engine, education_level)
-            
-            # 模拟进度更新
-            progress_steps = [
-                (30, "正在进行语音识别...", "asr"),
-                (50, "处理ASR数据...", "generating_outline"),
-                (60, "生成大纲...", "generating_outline"),
-                (70, "匹配文本块...", "extracting_frames"),
-                (80, "切分视频...", "extracting_frames"),
-                (90, "处理图像帧...", "vlm_analysis"),
-                (95, "生成最终报告...", "generating_report")
-            ]
-            
-            for progress, message, stage in progress_steps:
-                if not future.done():
-                    update_progress(progress, message, stage)
-                    await asyncio.sleep(2)  # 给处理一些时间
-                else:
-                    break
-            
-            # 等待处理完成
-            result = await loop.run_in_executor(executor, lambda: future.result())
-        
-        update_progress(100, "处理完成", "completed")
+        result = await asyncio.shield(future)
         return {"success": True, "result": result}
-        
-    except Exception as e:
-        update_progress(0, f"处理失败: {str(e)}", "error")
-        raise e
+    except asyncio.CancelledError:
+        cancelled.set()
+        # 等待 worker 在下一个阶段/FFmpeg 进度点退出，期间保留全局并发槽。
+        # 不在事件循环中调用 ThreadPoolExecutor.shutdown(wait=True)。
+        try:
+            await asyncio.shield(future)
+        except Exception:
+            pass
+        raise
+    except Exception as exc:
+        update_progress(0, f"处理失败: {exc}", "error")
+        raise
 
 # ---------------------------------------------------------------------------
 # SPA fallback（必须最后注册：catch-all 路由会拦截其后定义的路由）

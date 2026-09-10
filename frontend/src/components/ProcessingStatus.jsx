@@ -6,6 +6,7 @@ import { getTaskStatus } from '../api/videoService'
 const PROCESSING_STAGES = [
   { key: 'downloading', label: '下载视频', icon: '⬇️' },
   { key: 'uploading', label: '上传视频', icon: '📤' },
+  { key: 'preparing_video', label: '压缩视频', icon: '🎞️' },
   { key: 'extracting_audio', label: '提取音频', icon: '🎵' },
   { key: 'asr', label: '语音识别', icon: '🎙️' },
   { key: 'generating_outline', label: '生成大纲', icon: '📝' },
@@ -221,4 +222,3 @@ function ProcessingStatus({ taskId, onComplete, onCancel }) {
 }
 
 export default ProcessingStatus
-

@@ -6,7 +6,7 @@
 - 先取元数据（标题/封面/时长/作者）供预览确认，再执行下载
 - yt-dlp 统一支持 B 站与 YouTube（含搜索），ffmpeg 负责合成 mp4
 - 微信视频号不支持 yt-dlp：优先走分享链接解析服务换直链，失败时引导本地捕获
-- 合理默认值：单个视频（不展开合集/列表）、最高 1080p、mp4 输出
+- 合理默认值：单个视频（不展开合集/列表）、优先最高 720p H.264、mp4 输出
 
 说明：请仅对拥有版权或已获授权的内容进行下载处理。
 """
@@ -1023,7 +1023,23 @@ def _youtube_js_runtime() -> Optional[str]:
     return None
 
 
-def download_video(url: str, target_dir: str, max_height: int = 1080,
+def _download_format_options(max_height: int = 720) -> Dict:
+    """先限制源画质，缺少低清版本时取最低分辨率，避免回退到无上限 best。"""
+    height = max(1, int(max_height))
+    return {
+        "format": (
+            f"bv*[height<={height}][vcodec~='^(avc|h264)']+ba"
+            f"/b[height<={height}][vcodec~='^(avc|h264)']"
+            f"/bv*[height<={height}]+ba/b[height<={height}]"
+            "/wv*+ba/w/wv*"
+        ),
+        # 确保 worst 兜底先比较分辨率；H.264 更适合后续本地解码和抽帧。
+        "format_sort": ["res", "vcodec:h264", "fps", "size", "br"],
+        "format_sort_force": True,
+    }
+
+
+def download_video(url: str, target_dir: str, max_height: int = 720,
                    progress_hook=None) -> Dict:
     """
     下载视频到指定目录（mp4），返回文件路径与元数据。
@@ -1031,7 +1047,8 @@ def download_video(url: str, target_dir: str, max_height: int = 1080,
     Args:
         url: 视频链接（B站/YouTube/微信视频号分享链接）
         target_dir: 保存目录
-        max_height: 最大分辨率（默认1080p；视频号清晰度由解析服务决定，此参数不生效）
+        max_height: 优先分辨率上限（默认720p；无低清则下载最低分辨率；
+            视频号清晰度由解析服务决定，下载后由统一处理流程压缩）
         progress_hook: 进度回调，接收 dict（downloaded_bytes/total_bytes/status）
 
     Returns:
@@ -1054,10 +1071,7 @@ def download_video(url: str, target_dir: str, max_height: int = 1080,
     options = {
         "referer": referer,
         "outtmpl": str(target / "%(id)s.%(ext)s"),
-        "format": (
-            f"bv*[height<={max_height}][ext=mp4]+ba[ext=m4a]"
-            f"/b[height<={max_height}]/bv*[height<={max_height}]+ba/b"
-        ),
+        **_download_format_options(max_height),
         "merge_output_format": "mp4",
         "progress_hooks": [_wrap_hook],
         # 分片流（YouTube DASH/HLS）多线程下载；B站等单文件流不受影响

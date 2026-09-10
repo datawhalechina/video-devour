@@ -6,13 +6,15 @@ import logging
 import os
 import json
 from datetime import datetime
+from pathlib import Path
+from backend.runtime import paths as runtime_paths
+from backend.algorithm.chapter_alignment import align_outline_chunks
 
 # Local imports from the project
 # settings_store 需最先导入：它负责把 backend/algorithm 加入 sys.path 并引导 config 模块
 from backend.algorithm import settings_store
 from backend.algorithm.data_processor import ASRProcessor
 from backend.algorithm.llm_handler import LLMHandler
-from backend.algorithm.text_similarity_matcher import TextSimilarityMatcher
 import backend.algorithm.outline_handler as outline_handler
 import backend.algorithm.video_handler as video_handler
 import backend.algorithm.image_processor as image_processor
@@ -113,49 +115,21 @@ def _generate_and_match_outline(processed_dialogue: list, main_output_path: str,
         return None, None, None, None
     
     headings = [title for level, title in headings_with_level]
-    headings_with_content = outline_handler.parse_headings_with_content(outline)
-    
-    matcher = TextSimilarityMatcher(
-        similarity_threshold=0.90,
-        use_semantic=_resolve_use_semantic(),
+    matched_data = align_outline_chunks(
+        outline, processed_dialogue, getattr(llm, "chapter_starts", None)
     )
-    matcher.initialize_headings(headings_with_content)
-    
-    matched_data = {heading: [] for heading in headings}
-    last_matched_heading_index = -1
-    for i, chunk in enumerate(processed_dialogue):
-        candidate_headings = headings[last_matched_heading_index + 1:]
-        if not candidate_headings:
-            if last_matched_heading_index != -1:
-                last_matched_heading = headings[last_matched_heading_index]
-                remaining_chunks = processed_dialogue[i:]
-                matched_data[last_matched_heading].extend(remaining_chunks)
-                logging.info(f"将 {len(remaining_chunks)} 个剩余文本块附加到 '{last_matched_heading}'")
-            else:
-                logging.warning("没有候选标题，也没有先前匹配的标题。")
-            break
-        
-        matched_heading, similarity, used_fallback = matcher.match_chunk_with_fallback(
-            chunk['text'], candidate_headings,
-            fallback_heading=headings[last_matched_heading_index] if last_matched_heading_index != -1 else headings[0]
-        )
-        
-        if matched_heading and matched_heading in headings and not used_fallback:
-            last_matched_heading_index = headings.index(matched_heading)
-            matched_data[matched_heading].append(chunk)
-        else:
-            if last_matched_heading_index != -1:
-                previous_heading = headings[last_matched_heading_index]
-                matched_data[previous_heading].append(chunk)
-            elif headings:
-                first_heading = headings[0]
-                matched_data[first_heading].append(chunk)
-    
-    logging.info("--- 文本块匹配完成 ---")
     return matched_data, headings_with_level, headings, outline
 
-def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = None):
-    """Orchestrates the full video processing pipeline."""
+def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = None,
+                      progress_callback=None, media_ready_callback=None, managed_source=False):
+    """处理前统一轻量视频；回调仅在真实阶段发生时触发。"""
+    tracker = None
+    main_output_path = None
+
+    def progress(percent, message, stage):
+        if progress_callback:
+            progress_callback(percent, message, stage)
+
     try:
         # 应用控制台设置（密钥/模型/ASR模式），education_level 缺省取设置中的默认值
         settings_store.apply_to_config()
@@ -169,11 +143,37 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
         # 启动本任务的耗时追踪（落盘到任务输出目录）
         tracker = timing.start_tracking(video_name)
 
+        progress(16, "正在压缩视频（最高 720p / 10 帧）…", "preparing_video")
+        with timing.track("步骤0_视频压缩"):
+            source = Path(video_path)
+            if managed_source:
+                # 仅 API 的 uploads 副本可替换。CLI/外部路径始终保留原件。
+                if source.resolve().parent != (runtime_paths.data_root() / "uploads").resolve():
+                    raise ValueError("只允许替换应用 uploads 目录中的视频副本")
+                destination = source.with_suffix('.mp4')
+            else:
+                destination = Path(main_output_path) / 'processing_video.mp4'
+            prepared = video_handler.prepare_video(
+                source, destination,
+                progress=lambda fraction: progress(
+                    16 + int(14 * fraction), f"视频压缩 {int(fraction * 100)}%（720p / 10 帧）",
+                    "preparing_video"),
+            )
+            video_path = prepared['path']
+            Path(main_output_path, 'media_profile.json').write_text(
+                json.dumps(prepared, ensure_ascii=False, indent=2), encoding='utf-8')
+            if media_ready_callback:
+                media_ready_callback(prepared)
+            if managed_source and source != destination:
+                source.unlink()
+
+        progress(30, "正在进行语音识别…", "asr")
         with timing.track("步骤1-2_ASR与数据处理"):
             processed_dialogue = _run_asr_and_process(video_path, video_name, main_output_path, asr_engine)
         if not processed_dialogue:
             raise ValueError("ASR处理后对话为空，流程中止。")
 
+        progress(45, "正在生成大纲并定位章节…", "generating_outline")
         with timing.track("步骤3-4_大纲生成与匹配"):
             matched_data, headings_with_level, headings, outline = _generate_and_match_outline(
                 processed_dialogue, main_output_path, education_level
@@ -187,24 +187,22 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
                 outline, headings, matched_data, output_dir=main_output_path
             )
 
-        logging.info("--- 步骤 6: 根据大纲切分视频 ---")
-        with timing.track("步骤6_视频切分"):
-            videocut_path = video_handler.cut_videos_by_headings(
-                headings_with_level, matched_data, video_path, output_dir=main_output_path
+        progress(60, "正在按章节直接提取画面…", "extracting_frames")
+        with timing.track("步骤6-7_章节直接抽帧"):
+            video_handler.extract_frames_by_headings(
+                headings_with_level, matched_data, video_path, main_output_path,
+                duration=prepared['duration'],
+                progress=lambda done, total: progress(
+                    60 + int(12 * done / total), f"章节抽帧 {done}/{total}", "extracting_frames"),
             )
 
-        if videocut_path:
-            logging.info("--- 步骤 7: 从视频片段中提取帧 ---")
-            with timing.track("步骤7_帧提取"):
-                video_handler.extract_frames_from_videos(
-                    videocut_path=videocut_path, output_dir=main_output_path
-                )
-
         logging.info("--- 步骤 8: 处理并筛选帧 ---")
+        progress(73, "正在筛选重复画面…", "extracting_frames")
         with timing.track("步骤8_帧去重处理"):
             image_processor.process_all_frames(output_dir=main_output_path)
         
         logging.info("--- 步骤 9: 使用VLM选择关键帧 ---")
+        progress(78, "正在选择关键画面…", "vlm_analysis")
         with timing.track("步骤9_VLM关键帧选择"):
             selected_keyframes = image_processor.select_keyframes_with_vlm(
                 headings_with_level, main_output_path
@@ -218,11 +216,13 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
                 )
 
         logging.info("--- 步骤 11: 生成最终报告 ---")
+        progress(86, "正在生成学习笔记…", "generating_report")
         with timing.track("步骤11_生成最终报告"):
             outline_handler.generate_final_report(detailed_outline_path, main_output_path,
                                                   education_level=education_level)
 
         logging.info("--- 步骤 12: 生成详细报告（视频原文+笔记对照）---")
+        progress(92, "正在生成原文对照报告…", "generating_report")
         with timing.track("步骤12_生成详细报告"):
             outline_handler.generate_detailed_report(
                 detailed_outline_path, main_output_path,
@@ -232,11 +232,12 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
                 dialogue=processed_dialogue,
             )
 
-        tracker.write_reports(main_output_path)
         
         logging.info(f"\n" + "="*60)
         logging.info(f"处理流程成功完成 - 时间戳: {timestamp}")
         logging.info(f"="*60)
+
+        return {"video_path": video_path, "output_dir": main_output_path, "media_profile": prepared}
 
     except Exception as e:
         logging.error(f"处理流程中发生错误: {e}", exc_info=True)
@@ -244,3 +245,7 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
         # 重新抛出：调用方（API/skill）依赖异常区分成败，
         # 吞掉异常会让失败任务被误标为"处理完成"
         raise
+
+    finally:
+        if tracker is not None and main_output_path:
+            tracker.write_reports(main_output_path)

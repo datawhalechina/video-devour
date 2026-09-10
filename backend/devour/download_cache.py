@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import shutil
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -98,7 +99,11 @@ def lookup(url: str, platform: str = "") -> Optional[Dict]:
         if not entry:
             return None
         path = cache_dir() / entry.get("filename", "")
-        if not path.exists() or path.stat().st_size < MIN_VALID_BYTES:
+        size = path.stat().st_size if path.is_file() else 0
+        recorded_size = entry.get("size")
+        # 压缩后的短视频可能不足 100KB；有登记大小时检查完整性，而非拒绝小文件。
+        valid = (size > 0 and size == recorded_size) if recorded_size is not None else size >= MIN_VALID_BYTES
+        if not valid:
             # 缓存失效：清理条目
             index.pop(key, None)
             _save_index(index)
@@ -112,74 +117,99 @@ def lookup(url: str, platform: str = "") -> Optional[Dict]:
         return entry
 
 
-def register(url: str, file_path: str, platform: str = "", info: Dict = None) -> Dict:
+def _publish_snapshot(src: Path, dest: Path):
+    """同盘硬链接、跨盘复制，最后原子发布；从不原地改写已有共享 inode。"""
+    if src.resolve() == dest.resolve() or (dest.exists() and os.path.samefile(src, dest)):
+        return
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=dest.parent)
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        tmp.unlink()
+        try:
+            os.link(src, tmp)
+        except OSError:
+            shutil.copy2(src, tmp)
+        os.replace(tmp, dest)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def register(url: str, file_path: str, platform: str = "", info: Dict = None,
+             processing_profile: Optional[Dict] = None) -> Dict:
     """
     登记下载结果到缓存与映射表。
 
-    若源文件已在缓存目录内则原地登记；否则复制进缓存（保留源文件）。
-    返回映射表条目。
+    同盘硬链接以共享存储，跨盘复制，保留源文件。更新时原子替换缓存路径，
+    已有任务的硬链接仍指向旧内容。源文件和缓存视为不可变快照：后续压缩必须
+    写入新文件再 replace，不能就地覆盖。processing_profile 可记录处理副本规格。
+    返回映射表条目（含 file_path）。
     """
     info = info or {}
     key = cache_key(url, platform)
     platform = platform or key.split("_", 1)[0]
     src = Path(file_path)
-    if not src.exists():
+    if not src.is_file():
         raise FileNotFoundError(f"登记失败，文件不存在: {file_path}")
+    if src.stat().st_size == 0:
+        raise ValueError(f"登记失败，文件为空: {file_path}")
 
     ext = src.suffix.lower() or ".mp4"
     filename = f"{key}{ext}"
     dest = cache_dir() / filename
 
     with _lock:
-        if src.resolve() != dest.resolve():
-            shutil.copy2(src, dest)
+        index = _load_index()
+        old = index.get(key) or {}
+        _publish_snapshot(src, dest)
         entry = {
             "key": key,
             "platform": platform,
             "source_url": url,
-            "video_id": info.get("id") or key.split("_", 1)[-1],
-            "title": (info.get("title") or "")[:200],
-            "uploader": (info.get("uploader") or "")[:100],
+            "video_id": info.get("id") or old.get("video_id") or key.split("_", 1)[-1],
+            "title": (info.get("title") or old.get("title") or "")[:200],
+            "uploader": (info.get("uploader") or old.get("uploader") or "")[:100],
             "filename": filename,
             "size": dest.stat().st_size,
             "downloaded_at": datetime.now().isoformat(),
             "last_used_at": datetime.now().isoformat(),
             "hit_count": 0,
         }
-        index = _load_index()
-        old = index.get(key)
+        if processing_profile is not None:
+            entry["processing_profile"] = processing_profile
         if old:   # 保留历史命中统计
             entry["hit_count"] = old.get("hit_count", 0)
             entry["downloaded_at"] = old.get("downloaded_at", entry["downloaded_at"])
         index[key] = entry
         _save_index(index)
+        # 容器后缀变化后移除过时缓存路径，已有硬链接任务与源文件不受影响。
+        old_filename = old.get("filename")
+        if old_filename and old_filename != filename:
+            obsolete = cache_dir() / old_filename
+            if obsolete.resolve() != src.resolve():
+                obsolete.unlink(missing_ok=True)
         logging.info(f"已登记下载缓存: {key} → {filename}（{entry['size'] / 1024 / 1024:.1f}MB）")
         return {**entry, "file_path": str(dest)}
 
 
 def materialize(url: str, target_path, platform: str = "") -> Optional[Dict]:
     """
-    把缓存文件复制到目标路径（供任务使用，缓存保留）。
+    把缓存的不可变快照映射到目标路径（同盘硬链接，跨盘复制）。
     命中缓存时返回条目，否则 None。
     """
-    entry = lookup(url, platform)
-    if not entry:
-        return None
-    src = Path(entry["file_path"])
-    target = Path(target_path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        # 同文件系统优先硬链接（零拷贝），失败回退复制
-        if target.exists():
-            target.unlink()
+    with _lock:
+        entry = lookup(url, platform)
+        if not entry:
+            return None
+        src = Path(entry["file_path"])
+        target = Path(target_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
         try:
-            os.link(src, target)
-        except OSError:
-            shutil.copy2(src, target)
-        return {**entry, "file_path": str(target)}
-    except Exception as e:
-        logging.warning(f"缓存复用失败（{e}），将重新下载")
-        return None
+            _publish_snapshot(src, target)
+            return {**entry, "file_path": str(target)}
+        except Exception as e:
+            logging.warning(f"缓存复用失败（{e}），将重新下载")
+            return None
 
 
 def stats() -> Dict:
