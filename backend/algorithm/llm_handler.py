@@ -19,6 +19,7 @@ from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 import config
 from backend.algorithm import timing
+from backend.algorithm.chapter_alignment import extract_outline_alignment
 
 # 限流重试参数（源自 light 版实践）
 MAX_RETRIES = 5
@@ -77,6 +78,7 @@ class LLMHandler:
             except Exception:
                 education_level = "自由学习"
         self.education_level = education_level
+        self.chapter_starts = None
 
     def _call_with_retry(self, agent, prompt: str, task_desc: str = "LLM调用") -> str:
         """
@@ -112,12 +114,19 @@ class LLMHandler:
             "请理解意图后归纳，不要照抄原话，也不要凭空补充原文没有的内容。\n\n"
             "【结构要求】\n"
             "1. 只有一个一级标题（`#`），作为整份内容的主题名，不超过 20 字。\n"
-            "2. 一级标题下用 3-8 个二级标题（`##`）划分内容板块，标题为**名词性短语**，"
+            "2. 一级标题下用 3-8 个二级标题（`##`）按原视频时间顺序划分内容板块，标题不得重复，标题为**名词性短语**，"
             "长度 4-16 字，不使用问句、不使用「我们」「你们」等口语词。\n"
             "3. 每个二级标题下的正文：先写 2-4 句连贯的概述段落（说明该板块讲了什么），"
             "再按需补充 0-3 条要点（用 `-` 开头），要点要具体、含关键数据或结论。\n"
             "4. 不要出现三级及更深标题，不要出现「首先/然后/接下来」这类口头连接词。\n"
-            "5. 只输出 Markdown 正文，不要输出任何解释性文字或代码块标记。\n\n"
+            "5. 输出 Markdown 正文，并在文末追加下面指定的一条机器可读注释，不输出其他解释或代码块。\n"
+            "【章节时间边界】\n"
+            "每条字幕有固定的 chunk_id（从 1 开始）。每章必须对应一段连续字幕，不能重排时间顺序。\n"
+            "在正文最后追加 <!-- chapter-map: JSON数组 -->，数组与二级标题一一对应，"
+            "每项为 {\"title\":\"二级标题原文\",\"start_chunk_id\":整数}。\n"
+            "第一章 start_chunk_id 必须为 1；后续章节的 ID 严格递增，不得超过输入字幕块数。"
+            "每章结束于下一章开始前，最后一章覆盖剩余全部字幕。"
+            "字幕块少于 3 条时，二级标题数量不得超过字幕块数量。内部 ID 只出现在文末注释中。\n\n"
             "【输出示例】\n"
             "# 系统架构与实现要点\n\n"
             "## 对话输入接口设计\n\n"
@@ -138,10 +147,10 @@ class LLMHandler:
                 + prompt_header
             )
         formatted_dialogue = []
-        for chunk in chunked_dialogue:
+        for chunk_id, chunk in enumerate(chunked_dialogue, 1):
             start_time_str = f"{int(chunk['start'] // 60):02d}:{int(chunk['start'] % 60):02d}"
             end_time_str = f"{int(chunk['end'] // 60):02d}:{int(chunk['end'] % 60):02d}"
-            dialogue_line = f"[{start_time_str} - {end_time_str}] {chunk['speaker']}: {chunk['text']}"
+            dialogue_line = f"[chunk_id={chunk_id}] [{start_time_str} - {end_time_str}] {chunk['speaker']}: {chunk['text']}"
             formatted_dialogue.append(dialogue_line)
         full_dialogue_text = "\n".join(formatted_dialogue)
         final_prompt = prompt_header + full_dialogue_text
@@ -153,16 +162,19 @@ class LLMHandler:
         Takes chunked dialogue and returns a Markdown outline from the LLM.
         """
         logging.info("正在调用 LLM 生成大纲...")
+        # 同一个 handler 可以重复使用；失败时不能复用上次任务的章节边界。
+        self.chapter_starts = None
         prompt = self._generate_llm_prompt(chunked_dialogue)
         try:
             assistant_sys_msg = ("你是一位专业的内容架构师，擅长把口语化视频转写整理成结构清晰的 Markdown 大纲。"
-                                "输出必须严格遵循用户给定的层级与格式规范：单一一级标题 + 3-8 个名词性二级标题，"
+                                "输出必须严格遵循用户给定的层级与格式规范：单一一级标题 + 名词性二级标题，"
                                 "每个板块先概述段落后要点列表，不出现三级标题与口语连接词。"
                                 "无论原始文本是什么语言，一律使用简体中文输出。")
             if self.education_level:
                 assistant_sys_msg += f"目标读者为{self.education_level}学生。"
             agent = ChatAgent(assistant_sys_msg, model=self.model, token_limit=999999999)
-            outline = self._call_with_retry(agent, prompt, "生成大纲")
+            response = self._call_with_retry(agent, prompt, "生成大纲")
+            outline, self.chapter_starts = extract_outline_alignment(response)
             logging.info("LLM 大纲生成成功。")
             return outline
         except ImportError:

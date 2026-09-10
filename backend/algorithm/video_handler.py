@@ -3,10 +3,14 @@ import os
 import re
 import logging
 import subprocess
+import json
+import math
+from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import config
 from backend.runtime import paths as _rt_paths
+from backend.algorithm.media_profile import ffmpeg_command, run_ffmpeg, probe_video, prepare_video, THREADS
 
 # 视频切分/抽帧并发度。
 # ffmpeg 本身已多线程（libx264 会用满多核），叠加多个 ffmpeg 进程会指数级抢占 CPU：
@@ -25,11 +29,17 @@ def _ffmpeg_cmd(*args):
     构造受资源约束的 ffmpeg 命令：
     - nice 降低优先级（交互式请求优先）
     - -threads 限制编码线程数（避免多进程叠加打满 CPU）
-    注意 -threads 需放在输入之前作为全局参数。
+    输入线程控制解码；编码线程在各输出命令中单独配置。
     """
-    cmd = ["nice", "-n", "10", _rt_paths.ffmpeg_path(), "-threads", str(FFMPEG_THREADS)]
-    cmd.extend(args)
-    return cmd
+    return ffmpeg_command(*args)
+
+
+def _cut_command(source, start, end, destination):
+    return _ffmpeg_cmd(
+        '-ss', str(start), '-i', str(source), '-t', str(end - start),
+        '-c:v', 'libx264', '-preset', 'veryfast', '-threads:v', str(THREADS),
+        '-c:a', 'aac', '-avoid_negative_ts', 'make_zero', str(destination),
+    )
 
 
 def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, output_dir=None):
@@ -106,13 +116,7 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
             # -c:v libx264: 使用 H.264 编码视频
             # -c:a aac: 使用 AAC 编码音频
             # -avoid_negative_ts make_zero: 避免负时间戳问题
-            ffmpeg_command = _ffmpeg_cmd(
-                '-i', input_video_path,
-                '-ss', str(start_time), '-to', str(end_time),
-                '-c:v', 'libx264', '-preset', 'veryfast', '-c:a', 'aac',
-                '-avoid_negative_ts', 'make_zero',
-                '-y', output_path
-            )
+            ffmpeg_command = _cut_command(input_video_path, start_time, end_time, output_path)
             
             cut_jobs.append((heading, output_path, ffmpeg_command))
 
@@ -164,13 +168,7 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
             for (i, heading), (seg_start, seg_end) in zip(level2_items, ranges):
                 safe_heading = re.sub(r'[\\/*?:"<>|]', "", heading).replace(" ", "_")
                 output_path = os.path.join(videocut_path, f"{i+1:02d}_{safe_heading}.mp4")
-                ffmpeg_command = [
-                    _rt_paths.ffmpeg_path(), '-i', input_video_path,
-                    '-ss', f"{seg_start:.2f}", '-to', f"{seg_end:.2f}",
-                    '-c:v', 'libx264', '-c:a', 'aac',
-                    '-avoid_negative_ts', 'make_zero',
-                    '-y', output_path
-                ]
+                ffmpeg_command = _cut_command(input_video_path, seg_start, seg_end, output_path)
                 try:
                     subprocess.run(ffmpeg_command, check=True,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -187,13 +185,7 @@ def cut_videos_by_headings(headings_with_level, matched_data, input_video_path, 
             if heading:
                 safe_heading = re.sub(r'[\\/*?:"<>|]', "", heading).replace(" ", "_")
                 output_path = os.path.join(videocut_path, f"01_{safe_heading}.mp4")
-                ffmpeg_command = _ffmpeg_cmd(
-                    '-i', input_video_path,
-                    '-ss', str(start_time), '-to', str(end_time),
-                    '-c:v', 'libx264', '-preset', 'veryfast', '-c:a', 'aac',
-                    '-avoid_negative_ts', 'make_zero',
-                    '-y', output_path
-                )
+                ffmpeg_command = _cut_command(input_video_path, start_time, end_time, output_path)
                 try:
                     subprocess.run(ffmpeg_command, check=True,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -286,3 +278,68 @@ def extract_frames_from_videos(videocut_path=None, output_dir=None):
         logging.warning("--- 未提取任何帧 ---")
     
     return frame_dirs
+
+
+def chapter_ranges(headings_with_level, matched_data, duration):
+    """把字幕对应关系变成有效时间范围；全无匹配时才明确标记均分兜底。"""
+    items = [(i, h) for i, (level, h) in enumerate(headings_with_level) if level == 2]
+    if not items:
+        items = [(i, h) for i, (level, h) in enumerate(headings_with_level) if level == 1][:1]
+    result = []
+    for i, heading in items:
+        chunks = matched_data.get(heading, [])
+        valid = [c for c in chunks if math.isfinite(c['start']) and math.isfinite(c['end'])
+                 and c['end'] > c['start']]
+        if not valid:
+            continue
+        start = max(0, min(c['start'] for c in valid))
+        end = min(duration, max(c['end'] for c in valid))
+        if end > start:
+            result.append(dict(index=i + 1, heading=heading, start=start, end=end, fallback=False))
+    if not result and items and duration > 0:
+        logging.warning('章节时间范围缺失，抽帧使用均分兜底')
+        for n, (i, heading) in enumerate(items):
+            result.append(dict(index=i + 1, heading=heading, start=duration * n / len(items),
+                               end=duration * (n + 1) / len(items), fallback=True))
+    for item in result:
+        safe = re.sub(r'[\\/*?:"<>|]', '', item['heading']).replace(' ', '_')
+        item['frame_dir'] = f"frames_{item['index']:02d}_{safe}"
+    return result
+
+
+def extract_frames_by_headings(headings_with_level, matched_data, input_video_path,
+                              output_dir, duration=None, progress=None):
+    """直接从处理视频定位抽帧，保持旧版章节帧目录契约，不生成中间 MP4。"""
+    if duration is None:
+        duration = probe_video(input_video_path)['duration']
+    ranges = chapter_ranges(headings_with_level, matched_data, duration)
+    Path(output_dir, 'chapters.json').write_text(
+        json.dumps({'video': str(input_video_path), 'chapters': ranges}, ensure_ascii=False, indent=2),
+        encoding='utf-8',
+    )
+
+    def extract(item):
+        directory = Path(output_dir, item['frame_dir'])
+        directory.mkdir(parents=True, exist_ok=True)
+        length = item['end'] - item['start']
+        # 每秒一帧；短于一秒的章节也取至少一帧，避免被 fps 滤镜舍掉。
+        rate = max(1, 1 / length)
+        cmd = _ffmpeg_cmd(
+            '-ss', str(item['start']), '-i', str(input_video_path), '-t', str(length),
+            '-an', '-vf', f'fps={rate}:round=up', '-q:v', '2',
+            '-threads:v', '1', str(directory / 'frame_%04d.jpg'),
+        )
+        run_ffmpeg(cmd, length)
+        if not any(directory.glob('*.jpg')):
+            raise RuntimeError(f"章节未提取到画面: {item['heading']}")
+        return str(directory)
+
+    completed = []
+    if ranges:
+        with ThreadPoolExecutor(max_workers=min(VIDEO_CONCURRENCY, len(ranges))) as pool:
+            pending = {pool.submit(extract, item): item for item in ranges}
+            for future in as_completed(pending):
+                completed.append(future.result())
+                if progress:
+                    progress(len(completed), len(ranges))
+    return sorted(completed)
