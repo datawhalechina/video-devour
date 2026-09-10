@@ -29,6 +29,66 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
   const [timingLoading, setTimingLoading] = useState(false);
   const [htmlLoading, setHtmlLoading] = useState({});
 
+  // 衍生文体（量子速读/公众号/小红书）：scope -> 正文；未生成时为 undefined
+  const [styles, setStyles] = useState({});
+  const [styleLoading, setStyleLoading] = useState('');
+
+  // 读取服务端已持久化的文体正文；不存在返回 null
+  const readStyle = async (scope) => {
+    try {
+      const res = await fetch(`/api/library/article/${report.task_id}/${scope}`);
+      if (!res.ok) return null;
+      const body = await res.json();
+      return typeof body.content === 'string' && body.content ? body.content : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // 已生成的衍生文体直接读到本地，未生成的留空（点标签时再生成）。
+  // 用合并而非整体替换：初次加载可能与用户的点击生成并发，替换会覆盖掉刚生成的结果。
+  useEffect(() => {
+    if (!report?.task_id) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(STYLE_KEYS.map(async (key) => [key, await readStyle(key)]));
+      if (cancelled) return;
+      const found = Object.fromEntries(entries.filter(([, content]) => content));
+      setStyles(prev => ({ ...found, ...prev }));
+    })();
+    return () => { cancelled = true; };
+  }, [report?.task_id]);
+
+  // 点击文体：先查服务端持久化文件，确实没有才触发生成。
+  // 这样即使本地状态陈旧，也不会重复生成（服务端本来也会命中磁盘缓存）。
+  const ensureStyle = async (scope) => {
+    if (styles[scope] !== undefined || styleLoading) return;
+    setStyleLoading(scope);
+    try {
+      let content = await readStyle(scope);
+      if (content === null) {
+        const res = await fetch(`/api/library/article/${report.task_id}/${scope}/generate`, { method: 'POST' });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.detail || `HTTP ${res.status}`);
+        }
+        content = await readStyle(scope);
+        if (content === null) throw new Error('生成完成但未取到内容');
+      }
+      setStyles(prev => ({ ...prev, [scope]: content }));
+    } catch (err) {
+      alert(`${STYLE_TABS.find(t => t.key === scope)?.label || scope} 生成失败: ${err.message}`);
+    } finally {
+      setStyleLoading('');
+    }
+  };
+
+  const pickTab = (key) => {
+    setActiveTab(key);
+    setExportMenu(null);
+    if (STYLE_KEYS.includes(key)) ensureStyle(key);
+  };
+
   // 思维导图 / 知识图谱 / 学习卡片：统一用页面内模态预览。
   // 不用 window.open——应用内浏览器/弹窗拦截会导致静默失败（用户只看到 alert）。
   const [preview, setPreview] = useState(null)   // { title, url }
@@ -241,8 +301,12 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
     { key: "outline", label: "图文大纲", icon: Image, content: report.detailed_outline, description: "沿着核心观点，快速回顾视频内容。" },
     { key: "report", label: "精简报告", icon: FileText, content: report.final_report, description: "提炼重点，留下值得记住的内容。" },
     { key: "detailed", label: "详细报告", icon: BookOpen, content: report.detailed_report, description: "对照视频原文与整理笔记，深入理解每一个观点。" },
+    ...STYLE_TABS.map(t => ({ ...t, content: styles[t.key] })),
   ];
   const currentTab = tabs.find(tab => tab.key === activeTab);
+  // 导出下拉仅列分析报告：衍生文体走各自的下载入口
+  const exportTabs = tabs.filter(tab => !STYLE_KEYS.includes(tab.key));
+  const isStyleTab = STYLE_KEYS.includes(activeTab);
   const sourceTitle = report.video_name || report.fileName || "视频分析报告";
   const topicTags = [...sourceTitle.matchAll(/(?:^|\s)(#[^\s#]+)/g)].map(match => match[1]);
   const displayTitle = sourceTitle.replace(/(?:^|\s)#[^\s#]+/g, '').trim() || sourceTitle;
@@ -295,7 +359,7 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
               <div id="report-export-options" className="report-export-panel">
                 <label htmlFor="export-document-type">选择导出内容</label>
                 <select id="export-document-type" value={exportMenu} onChange={event => setExportMenu(event.target.value)}>
-                  {tabs.map(tab => <option key={tab.key} value={tab.key}>{tab.label}</option>)}
+                  {exportTabs.map(tab => <option key={tab.key} value={tab.key}>{tab.label}</option>)}
                 </select>
                 <button onClick={() => doExport(exportMenu, "inline")}>
                   <FileText size={18} /><span><strong>Markdown 单文件</strong><small>内嵌图片，便于分享与阅读</small></span><ArrowUpRight size={14} />
@@ -403,23 +467,38 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
             else return;
             event.preventDefault();
             setActiveTab(tabs[index].key);
-            setExportMenu(null);
+            pickTab(tabs[index].key);
             event.currentTarget.querySelectorAll('[role="tab"]')[index].focus();
           }}>
             {tabs.map(({ key, label, icon: Icon }) => (
               <button key={key} id={`report-tab-${key}`} role="tab" aria-selected={activeTab === key}
                 aria-controls="report-content" tabIndex={activeTab === key ? 0 : -1}
-                onClick={() => { setActiveTab(key); setExportMenu(null); }}>
+                onClick={() => pickTab(key)}>
                 <Icon size={16} /><span>{label}</span>
+                {STYLE_KEYS.includes(key) && styles[key] === undefined && styleLoading !== key && (
+                  <em className="report-tab-pending">生成</em>
+                )}
+                {styleLoading === key && <em className="report-tab-pending">生成中…</em>}
               </button>
             ))}
           </div>
-          <button onClick={() => handleEdit(activeTab)} className="report-edit-button"><Edit3 size={15} /> 编辑报告</button>
+          {isStyleTab ? (
+            <div className="report-style-tools">
+              <a href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=md`}
+                 className="report-tool-button"><FileText size={15} /> 下载 .md</a>
+              <a href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=pdf`}
+                 className="report-tool-button"><FileDown size={15} /> 下载 PDF</a>
+            </div>
+          ) : (
+            <button onClick={() => handleEdit(activeTab)} className="report-edit-button"><Edit3 size={15} /> 编辑报告</button>
+          )}
         </div>
         <div id="report-content" role="tabpanel" aria-labelledby={`report-tab-${activeTab}`} tabIndex={0} className="report-content">
           <p className="report-reading-note"><BookOpen size={14} /> {currentTab.description}</p>
           <article className="report-prose">
-            {currentTab.content ? renderMarkdown(currentTab.content) : (
+            {styleLoading === activeTab ? (
+              <div className="report-empty"><Timer size={28} /><h2>正在生成{currentTab.label}…</h2><p>基于已有报告改写，通常几秒到半分钟。</p></div>
+            ) : currentTab.content ? renderMarkdown(currentTab.content) : (
               <div className="report-empty"><FileText size={28} /><h2>暂时没有{currentTab.label}</h2><p>该任务尚未生成这份内容，可以先查看其他报告。</p></div>
             )}
           </article>
