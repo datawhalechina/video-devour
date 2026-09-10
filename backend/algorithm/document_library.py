@@ -26,15 +26,28 @@ from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from backend.runtime import paths as _rt_paths
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-OUTPUT_DIR = PROJECT_ROOT / "output"
+DATA_ROOT = _rt_paths.data_root()
+OUTPUT_DIR = DATA_ROOT / "output"
 
 # 文章维度 → 文件名 / 中文名
 ARTICLE_TYPES = {
     "outline": ("detailed_outline.md", "图文大纲"),
     "report": ("final_report.md", "精简报告"),
     "detailed": ("detailed_report.md", "详细报告"),
+    # 衍生文体：按需生成（style_articles），生成后自动入库
+    "quantum": ("quantum_read.md", "量子速读"),
+    "wechat": ("wechat_article.md", "公众号文章"),
+    "xiaohongshu": ("xiaohongshu_article.md", "小红书笔记"),
 }
+
+# 可被「按需生成」的维度（文件不存在时由 style_articles 生成）
+GENERATABLE_SCOPES = ("quantum", "wechat", "xiaohongshu")
+
+# 文档库展示顺序：先分析报告，后衍生文体
+ARTICLE_ORDER = ("outline", "report", "detailed", "quantum", "wechat", "xiaohongshu")
 
 PLATFORM_LABELS = {
     "bilibili": "B站", "youtube": "YouTube", "wechat": "微信视频号", "upload": "本地上传",
@@ -126,7 +139,7 @@ class BM25Index:
 
 def _load_task_meta(task_id: str) -> Dict:
     """从 tasks.json 读取任务元信息（标题/来源/学习阶段）"""
-    tasks_file = PROJECT_ROOT / "tasks.json"
+    tasks_file = DATA_ROOT / "tasks.json"
     try:
         tasks = json.loads(tasks_file.read_text(encoding="utf-8"))
         return tasks.get(task_id) or {}
@@ -145,20 +158,42 @@ def _detect_platform(source_url: str) -> str:
     return "upload" if u == "" else "other"
 
 
-def scan_library() -> List[Dict]:
+def _parse_iso(value: str) -> float:
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except Exception:
+        return 0.0
+
+
+def _title_from_report(dir_path: Path, fallback: str) -> str:
+    detail = dir_path / "detailed_report.md"
+    src = detail if detail.exists() else dir_path / "detailed_outline.md"
+    if src.exists():
+        try:
+            m = re.search(r"^#\s+(.+)", src.read_text(encoding="utf-8"), re.MULTILINE)
+            if m:
+                return m.group(1).strip()
+        except Exception:
+            pass
+    return fallback
+
+
+def scan_videos() -> List[Dict]:
     """
-    扫描 output/frames_* 目录，返回文档条目列表（以单次视频处理为单位）。
+    按「视频」聚合全部处理任务：同一视频多次处理形成 V1、V2…的版本链。
 
     每个条目：
     {
-      doc_id, title, platform, platform_label, source_url,
-      education_level, created_at,
-      articles: {scope: {"file": 绝对路径, "name": 文件名, "mtime": ..., "size": ...}}
+      video_key, title, platform, platform_label, source_url,
+      version_count, created_at(最新), first_seen_at,
+      versions: [ {doc_id, version, version_label, education_level,
+                   created_at, dir, articles:{scope:{file,name,label,mtime,size}}} ]
     }
+    versions 按处理时间升序，即 versions[0] = V1。
     """
-    docs: List[Dict] = []
+    videos: Dict[str, Dict] = {}
     if not OUTPUT_DIR.exists():
-        return docs
+        return []
     for dir_path in OUTPUT_DIR.iterdir():
         if not (dir_path.is_dir() and dir_path.name.startswith("frames_")):
             continue
@@ -168,9 +203,15 @@ def scan_library() -> List[Dict]:
         doc_id = parts[1]
         meta = _load_task_meta(doc_id)
         source_url = meta.get("source_url") or ""
+        try:
+            from backend.devour.video_identity import video_key as _vk
+            vkey = meta.get("video_key") or _vk(source_url) or f"task_{doc_id}"
+        except Exception:
+            vkey = meta.get("video_key") or f"task_{doc_id}"
         platform = _detect_platform(source_url) if source_url else "upload"
 
         articles = {}
+        newest_mtime = 0.0
         for scope, (fname, label) in ARTICLE_TYPES.items():
             f = dir_path / fname
             if f.exists() and f.stat().st_size > 0:
@@ -178,46 +219,149 @@ def scan_library() -> List[Dict]:
                     "file": str(f), "name": fname, "label": label,
                     "mtime": f.stat().st_mtime, "size": f.stat().st_size,
                 }
+                newest_mtime = max(newest_mtime, f.stat().st_mtime)
         if not articles:
             continue
 
-        # 标题：优先任务记录文件名，其次详细报告的首个一级标题
-        title = meta.get("filename") or ""
-        if not title or title == doc_id:
-            detail = dir_path / "detailed_report.md"
-            src = detail if detail.exists() else dir_path / "detailed_outline.md"
-            if src.exists():
-                m = re.search(r"^#\s+(.+)", src.read_text(encoding="utf-8"), re.MULTILINE)
-                title = m.group(1).strip() if m else doc_id
+        filename = (meta.get("filename") or "").strip()
+        # 标题：任务文件名（非 URL）优先，其次详细报告一级标题
+        if filename and not filename.startswith(("http://", "https://")):
+            title = filename
+        else:
+            title = _title_from_report(dir_path, filename or doc_id)
         title = title.replace("\n", " ")[:120]
 
-        docs.append({
-            "doc_id": doc_id,
-            "dir": dir_path.name,
-            "title": title,
-            "platform": platform,
+        created_ts = _parse_iso(meta.get("created_at") or "") or dir_path.stat().st_ctime
+        created_ts = max(created_ts, newest_mtime) if newest_mtime else created_ts
+
+        entry = videos.setdefault(vkey, {
+            "video_key": vkey, "title": title, "platform": platform,
             "platform_label": PLATFORM_LABELS.get(platform, platform),
-            "source_url": source_url,
-            "education_level": meta.get("education_level") or "自由学习",
-            "created_at": datetime.fromtimestamp(dir_path.stat().st_ctime).isoformat(),
-            "articles": articles,
+            "source_url": source_url, "versions": [],
         })
-    docs.sort(key=lambda d: d["created_at"], reverse=True)
-    return docs
+        entry["versions"].append({
+            "doc_id": doc_id,
+            "run_id": dir_path.name[len("frames_"):] if dir_path.name.startswith("frames_") else dir_path.name,
+            "dir": dir_path.name,
+            "education_level": meta.get("education_level") or "自由学习",
+            "created_at": datetime.fromtimestamp(created_ts).isoformat(),
+            "articles": articles,
+            "_sort": created_ts,
+        })
+
+    result = []
+    for entry in videos.values():
+        entry["versions"].sort(key=lambda v: (v["_sort"], v["doc_id"]))
+        for index, run in enumerate(entry["versions"], 1):
+            run.pop("_sort", None)
+            run["version"] = index
+            run["version_label"] = f"V{index}"
+        latest = entry["versions"][-1]
+        entry["version_count"] = len(entry["versions"])
+        entry["latest_doc_id"] = latest["doc_id"]
+        entry["latest_version"] = latest["version"]
+        entry["created_at"] = latest["created_at"]
+        entry["first_seen_at"] = entry["versions"][0]["created_at"]
+        # 标题以最新一次为准（更可能是被修正过的正式标题）
+        if latest.get("title"):
+            entry["title"] = latest["title"]
+        # 同一视频的来源以最新记录为准
+        result.append(entry)
+    result.sort(key=lambda v: v["created_at"], reverse=True)
+    return result
 
 
-def get_article(doc_id: str, scope: str) -> Optional[Dict]:
-    """获取单篇文章全文（md）"""
+def scan_library() -> List[Dict]:
+    """兼容旧接口：展平为「每个处理任务一项」，并附带视频/版本信息。"""
+    flat = []
+    for video in scan_videos():
+        for run in video["versions"]:
+            flat.append({
+                "doc_id": run["doc_id"],
+                "run_id": run.get("run_id", ""),
+                "dir": run["dir"],
+                "title": video["title"],
+                "platform": video["platform"],
+                "platform_label": video["platform_label"],
+                "source_url": video["source_url"],
+                "video_key": video["video_key"],
+                "version": run["version"],
+                "version_label": run["version_label"],
+                "version_count": video["version_count"],
+                "education_level": run["education_level"],
+                "created_at": run["created_at"],
+                "articles": run["articles"],
+            })
+    flat.sort(key=lambda d: d["created_at"], reverse=True)
+    return flat
+
+
+def get_video(identifier: str) -> Optional[Dict]:
+    """按 video_key（或任一版本的 doc_id）取视频详情，含全部版本与文章。
+
+    articles 统一为列表 [{scope,label,size}]，与 list_videos 的形状保持一致。
+    """
+    target = None
+    for video in scan_videos():
+        if video["video_key"] == identifier or any(
+                run["doc_id"] == identifier for run in video["versions"]):
+            target = video
+            break
+    if target is None:
+        return None
+    return {
+        **{k: v for k, v in target.items() if k != "versions"},
+        "versions": [
+            {
+                **{k: v for k, v in run.items() if k != "articles"},
+                "articles": [
+                    {"scope": sc, "label": info["label"], "size": info["size"]}
+                    for sc, info in run["articles"].items()
+                ],
+            }
+            for run in reversed(target["versions"])   # 最新版本在前，与 list_videos 一致
+        ],
+    }
+
+
+def get_article(doc_id: str, scope: str, run_id: str = "") -> Optional[Dict]:
+    """获取单篇文章全文（md）。
+
+    同一任务可能产出多个版本（重复处理），此时用 run_id 精确指定某一次输出；
+    run_id 缺省时取该任务最近一次的版本。
+    """
     label = ARTICLE_TYPES.get(scope, (None, scope))[1]
-    for doc in scan_library():
-        if doc["doc_id"] == doc_id:
-            art = doc["articles"].get(scope)
-            if not art:
-                return None
-            content = Path(art["file"]).read_text(encoding="utf-8")
-            return {"doc": doc, "scope": scope, "label": label,
-                    "content": content, "file": art["file"]}
-    return None
+    fallback = None
+    for video in scan_videos():
+        for run in video["versions"]:
+            if run["doc_id"] != doc_id:
+                continue
+            if run_id and run.get("run_id") != run_id:
+                continue
+            hit = {
+                "doc": {
+                    "doc_id": doc_id, "title": video["title"],
+                    "platform": video["platform"], "platform_label": video["platform_label"],
+                    "source_url": video["source_url"], "video_key": video["video_key"],
+                    "version": run["version"], "version_label": run["version_label"],
+                    "version_count": video["version_count"],
+                    "run_id": run.get("run_id", ""),
+                    "dir": run["dir"],
+                },
+                "scope": scope, "label": label,
+                "file": (run["articles"].get(scope) or {}).get("file"),
+            }
+            if run_id:
+                if not hit["file"]:
+                    return None
+                hit["content"] = Path(hit["file"]).read_text(encoding="utf-8")
+                return hit
+            if hit["file"] and (fallback is None or run["version"] >= fallback["doc"]["version"]):
+                fallback = hit          # 无 run_id：保留最新的可用版本
+    if fallback is None:
+        return None
+    fallback["content"] = Path(fallback["file"]).read_text(encoding="utf-8")
+    return fallback
 
 
 def _snippet(text: str, query: str, width: int = 140) -> str:
@@ -271,12 +415,16 @@ def search_library(query: str, scope: str = "all", top_k: int = 10) -> Dict:
         text = Path(art["file"]).read_text(encoding="utf-8")
         results.append({
             "doc_id": doc_id,
+            "run_id": doc.get("run_id", ""),
             "scope": sc,
             "label": ARTICLE_TYPES[sc][1],
             "title": doc["title"],
             "platform": doc["platform"],
             "platform_label": doc["platform_label"],
             "source_url": doc["source_url"],
+            "video_key": doc["video_key"],
+            "version_label": doc["version_label"],
+            "version_count": doc["version_count"],
             "created_at": doc["created_at"],
             "score": score,
             "snippet": _snippet(text, query.strip()),
@@ -286,7 +434,7 @@ def search_library(query: str, scope: str = "all", top_k: int = 10) -> Dict:
 
 
 def list_library(scope: str = "all") -> Dict:
-    """无关键词：返回全部文档索引"""
+    """无关键词：返回全部文档索引（同一视频的多个版本各成条目）"""
     docs = scan_library()
     scope_set = set(ARTICLE_TYPES) if scope == "all" else ({scope} & set(ARTICLE_TYPES))
     results = []
@@ -298,10 +446,13 @@ def list_library(scope: str = "all") -> Dict:
             except Exception:
                 preview = ""
             results.append({
-                "doc_id": doc["doc_id"], "scope": sc,
+                "doc_id": doc["doc_id"], "run_id": doc.get("run_id", ""), "scope": sc,
                 "label": ARTICLE_TYPES[sc][1],
                 "title": doc["title"], "platform": doc["platform"],
                 "platform_label": doc["platform_label"],
+                "video_key": doc["video_key"],
+                "version_label": doc["version_label"],
+                "version_count": doc["version_count"],
                 "created_at": doc["created_at"],
                 "snippet": preview,
                 "view_url": f"/report/{doc['doc_id']}",
@@ -309,13 +460,60 @@ def list_library(scope: str = "all") -> Dict:
     return {"query": "", "scope": scope, "total": len(results), "results": results}
 
 
+def list_videos() -> Dict:
+    """文档库按视频聚合的索引：每个视频一张卡片，携带版本列表。"""
+    videos = scan_videos()
+    cards = []
+    for v in videos:
+        latest = v["versions"][-1]
+        preview, latest_scope = "", None
+        for scope in ("report", "outline", "detailed"):
+            art = latest["articles"].get(scope)
+            if art:
+                try:
+                    preview = Path(art["file"]).read_text(encoding="utf-8")[:120] + "…"
+                    latest_scope = scope
+                except Exception:
+                    pass
+                break
+        cards.append({
+            "video_key": v["video_key"],
+            "title": v["title"],
+            "platform": v["platform"],
+            "platform_label": v["platform_label"],
+            "source_url": v["source_url"],
+            "version_count": v["version_count"],
+            "latest_version": v["latest_version"],
+            "latest_doc_id": v["latest_doc_id"],
+            "latest_scope": latest_scope,
+            "created_at": v["created_at"],
+            "first_seen_at": v["first_seen_at"],
+            "snippet": preview,
+            "versions": [
+                {
+                    "doc_id": run["doc_id"],
+                    "run_id": run.get("run_id", ""),
+                    "version_label": run["version_label"],
+                    "education_level": run["education_level"],
+                    "created_at": run["created_at"],
+                    "articles": [
+                        {"scope": sc, "label": info["label"], "size": info["size"]}
+                        for sc, info in run["articles"].items()
+                    ],
+                }
+                for run in reversed(v["versions"])   # 最新版本在前
+            ],
+        })
+    return {"query": "", "total": len(cards), "results": cards}
+
+
 # ---------------------------------------------------------------------------
 # 导出：单篇 / 整库
 # ---------------------------------------------------------------------------
 
-def export_article_zip(doc_id: str, scope: str) -> Optional[Tuple[bytes, str]]:
+def export_article_zip(doc_id: str, scope: str, run_id: str = "") -> Optional[Tuple[bytes, str]]:
     """单篇导出（md + 该篇引用的 keyframes 图片打包）"""
-    art = get_article(doc_id, scope)
+    art = get_article(doc_id, scope, run_id)
     if not art:
         return None
     doc = art["doc"]
@@ -334,36 +532,62 @@ def export_article_zip(doc_id: str, scope: str) -> Optional[Tuple[bytes, str]]:
     return buf.getvalue(), safe
 
 
+def _safe_name(text: str, fallback: str = "video") -> str:
+    """把标题变成安全的目录名（去掉路径分隔符、视频扩展名与控制字符）。"""
+    cleaned = re.sub(r"\.(mp4|mkv|mov|webm|m4v|avi|flv|wmv)$", "", (text or "").strip(),
+                     flags=re.IGNORECASE)
+    cleaned = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return cleaned[:60] or fallback
+
+
 def export_library_zip() -> Tuple[bytes, str]:
-    """整库导出：按任务组织的全部文章 + manifest.json 索引"""
-    docs = scan_library()
+    """整库导出：按「视频/版本」组织——{标题}/{V1,V2…}/各篇.md + 关键帧。"""
+    videos = scan_videos()
     buf = BytesIO()
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     name = f"videodevour_library_{ts}.zip"
-    manifest = {"exported_at": datetime.now().isoformat(), "total_docs": len(docs), "documents": []}
+    manifest = {
+        "exported_at": datetime.now().isoformat(),
+        "total_videos": len(videos),
+        "total_versions": sum(v["version_count"] for v in videos),
+        "videos": [],
+    }
+    used_dirs = {}
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for doc in docs:
+        for video in videos:
+            base = _safe_name(video["title"], video["video_key"])
+            if base in used_dirs:                      # 同名视频加后缀去重
+                used_dirs[base] += 1
+                base = f"{base}_{used_dirs[base]}"
+            else:
+                used_dirs[base] = 1
             entry = {
-                "doc_id": doc["doc_id"], "title": doc["title"],
-                "platform": doc["platform"], "source_url": doc["source_url"],
-                "education_level": doc["education_level"],
-                "created_at": doc["created_at"], "articles": {},
+                "video_key": video["video_key"], "title": video["title"],
+                "platform": video["platform"], "source_url": video["source_url"],
+                "version_count": video["version_count"], "versions": [],
             }
-            doc_dir = f"{doc['doc_id'][:8]}_{doc['platform']}"
-            for scope, art in doc["articles"].items():
-                label = ARTICLE_TYPES[scope][1]
-                arcname = f"{doc_dir}/{label}.md"
-                try:
-                    zf.writestr(arcname, Path(art["file"]).read_text(encoding="utf-8"))
-                    entry["articles"][scope] = {"label": label, "path": arcname}
-                except Exception as e:
-                    logging.warning(f"整库导出：读取 {art['file']} 失败: {e}")
-            # 关键帧图片
-            kf = PROJECT_ROOT / "output" / doc["dir"] / "keyframes"
-            if kf.exists():
-                for img in sorted(kf.iterdir()):
-                    if img.is_file():
-                        zf.write(img, f"{doc_dir}/keyframes/{img.name}")
-            manifest["documents"].append(entry)
+            for run in video["versions"]:              # V1, V2… 升序
+                doc_dir = f"{base}/{run['version_label']}"
+                v_entry = {
+                    "doc_id": run["doc_id"], "version": run["version_label"],
+                    "education_level": run["education_level"],
+                    "created_at": run["created_at"], "articles": {},
+                }
+                for scope, art in run["articles"].items():
+                    label = ARTICLE_TYPES[scope][1]
+                    arcname = f"{doc_dir}/{label}.md"
+                    try:
+                        zf.writestr(arcname, Path(art["file"]).read_text(encoding="utf-8"))
+                        v_entry["articles"][scope] = {"label": label, "path": arcname}
+                    except Exception as e:
+                        logging.warning(f"整库导出：读取 {art['file']} 失败: {e}")
+                kf = DATA_ROOT / "output" / run["dir"] / "keyframes"
+                if kf.exists():
+                    for img in sorted(kf.iterdir()):
+                        if img.is_file():
+                            zf.write(img, f"{doc_dir}/keyframes/{img.name}")
+                entry["versions"].append(v_entry)
+            manifest["videos"].append(entry)
         zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     return buf.getvalue(), name

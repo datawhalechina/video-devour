@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Download, Loader2, FileText } from 'lucide-react'
+import { ArrowLeft, Download, FileDown, Loader2, FileText } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 /**
  * 文档库文章子页：Markdown 渲染展示（图片内嵌正确路径），支持 .md 下载。
- * 路由：/library/article/:docId/:scope
+ * 路由：/library/article/:docId/:scope?run=<run_id>
+ * run 用于区分同一视频的多次处理（V1/V2…），缺省取最新版本。
  */
 function LibraryArticlePage() {
   const { docId, scope } = useParams()
+  const [searchParams] = useSearchParams()
+  const runId = searchParams.get('run') || ''
   const navigate = useNavigate()
   const [article, setArticle] = useState(null)
   const [error, setError] = useState(null)
@@ -19,7 +22,8 @@ function LibraryArticlePage() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`/api/library/article/${docId}/${scope}`)
+        const q = runId ? `?run_id=${encodeURIComponent(runId)}` : ''
+        const res = await fetch(`/api/library/article/${docId}/${scope}${q}`)
         if (!res.ok) {
           const d = await res.json().catch(() => ({}))
           throw new Error(d.detail || `HTTP ${res.status}`)
@@ -30,7 +34,7 @@ function LibraryArticlePage() {
       }
     })()
     return () => { cancelled = true }
-  }, [docId, scope])
+  }, [docId, scope, runId])
 
   // Markdown 里的相对路径图片 → 静态目录（补任务输出目录层）。
   // 注意：不要手动 encodeURIComponent——react-markdown 的 urlTransform 已对
@@ -56,13 +60,22 @@ function LibraryArticlePage() {
           </button>
           <div className="flex items-center gap-2">
             {article && (
-              <a
-                href={`/api/library/article/${docId}/${scope}/download`}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
-              >
-                <Download className="w-4 h-4" />
-                下载 .md
-              </a>
+              <>
+                <a
+                  href={`/api/library/article/${docId}/${scope}/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=md`}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
+                >
+                  <Download className="w-4 h-4" />
+                  下载 .md
+                </a>
+                <a
+                  href={`/api/library/article/${docId}/${scope}/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=pdf`}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50"
+                >
+                  <FileDown className="w-4 h-4" />
+                  下载 PDF
+                </a>
+              </>
             )}
           </div>
         </div>
@@ -85,6 +98,12 @@ function LibraryArticlePage() {
             <div className="article-meta flex items-center gap-2 mb-4 text-xs text-gray-400">
               <span className="px-2 py-0.5 rounded bg-primary-50 text-primary-700 font-medium">{article.label}</span>
               <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600">{article.platform_label}</span>
+              {article.version_label && (
+                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">
+                  {article.version_label}
+                  {article.version_count > 1 ? ` / 共 ${article.version_count} 版` : ''}
+                </span>
+              )}
               <a
                 href={article.source_url}
                 target="_blank"
