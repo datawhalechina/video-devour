@@ -2,6 +2,7 @@
 import logging
 import re
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import config
 
@@ -373,6 +374,200 @@ def generate_final_report(detailed_outline_path, output_dir, education_level: st
         logging.error(f"生成最终报告时发生未知错误: {e}", exc_info=True)
         return None
 
+# ---------------------------------------------------------------------------
+# 详细报告：章节笔记生成
+#
+# 单次生成的原文上限（按行/句子边界切分，超长章节分段生成后再合并，
+# 而不是把原文截断——原文必须完整呈现）。
+NOTES_CHUNK_CHARS = 3500
+# 分段笔记生成的并发度；长视频（10 万字级）串行要近 20 分钟，适度并发才能实用。
+NOTES_PARALLEL = 3
+# 分段数不超过该值时合并成一份连贯笔记；更多段时直接顺序拼接，
+# 避免单次合并要吞下数万字、反而成为最慢的一步。
+NOTES_MERGE_MAX_SEGMENTS = 3
+
+_DETAIL_NOTES_SYSTEM = (
+    "你是专业的学习笔记整理者，擅长把口语化的视频原话整理成结构清晰、信息完整的书面笔记。"
+    "只输出简体中文（专有名词保留原文），不要任何解释。"
+)
+
+# 仅当原话不是中文时才安排「内容翻译」，中文视频直接跳过这一节。
+_TRANSLATION_SECTION = """**内容翻译**
+把原话逐句翻译为通顺、准确的书面中文。要求：逐句对应，不省略、不概括、不合并句子，
+完整保留原话中的信息、数字与举例。
+
+"""
+
+_DETAIL_NOTES_PROMPT = """你是专业的学习笔记整理者。下面是视频某章节的语音原话（带时间戳，口语化），
+请整理成结构化的书面笔记。
+
+严格按以下结构输出，保留小标题文字：
+
+**本段主旨**
+用 1-3 句话概括这部分讲了什么。
+
+__TRANSLATION__**结构化解读**
+按内容实际组织，用「-」分点解读，尽量覆盖以下维度：
+- 核心概念（是什么）
+- 原理与机制（为什么、如何运作）
+- 关键数据与细节（数字、名称、步骤）
+- 结论与价值（带来什么影响）
+要点要具体，含方法名、数字或结论；只依据原话，不添加原话没有的信息。
+
+**关键要点**
+用「-」列出 4-8 条最重要的要点，供快速复习。
+
+其他要求：
+1. 只依据原话内容，不编造；口语中的重复、语气词请忽略。
+2. 专有名词、技术术语保留英文原文。
+3. 只输出笔记正文，不要输出标题以外的解释文字。
+__LEVEL__章节标题：__HEADING__
+
+原话：
+---
+__RAW__
+---
+"""
+
+_DETAIL_MERGE_PROMPT = """下面是一段视频原话分段整理出的多份笔记，请合并成一份完整笔记。
+
+要求：
+1. 保持原有结构：__STRUCTURE__。
+2. __TRANSLATION_MERGE__
+3. 「结构化解读」与「关键要点」去重合并，避免重复条目。
+4. 只依据给定笔记合并，不添加新内容。
+5. 全程简体中文（专有名词保留原文）。
+6. 只输出合并后的笔记正文，不要任何解释。
+
+章节标题：__HEADING__
+
+分段笔记：
+---
+__NOTES__
+---
+"""
+
+_MINDMAP_SYSTEM = (
+    "你是知识可视化专家，只输出一个 Mermaid 代码块，不要任何解释文字。"
+)
+
+_MINDMAP_PROMPT = """请根据下面的视频大纲，用 Mermaid 画一张思维导图（mindmap），概括整体内容结构。
+
+要求：
+1. 只输出一个 ```mermaid 代码块，代码块第一行必须是 mindmap。
+2. 根节点写成 root((主题))；下面用 3-6 个一级分支（对应大纲的二级标题），每个分支下 2-4 个要点。
+3. 用缩进表示层级，每层 2 个空格；节点文字精炼，不超过 15 字。
+4. 节点文字中禁止出现圆括号、方括号、花括号、引号、冒号、逗号、斜杠等标点，以免破坏 Mermaid 语法。
+5. 只使用大纲中真实存在的内容，不要新增观点。
+6. 全程简体中文（专有名词保留原文）。
+
+大纲：
+---
+__OUTLINE__
+---
+"""
+
+
+def _split_notes_source(raw, limit=NOTES_CHUNK_CHARS):
+    """按行（句子）边界切分原文，避免在句子中间断开。"""
+    lines = raw.splitlines()
+    pieces, buf, size = [], [], 0
+    for line in lines:
+        if buf and size + len(line) > limit:
+            pieces.append("\n".join(buf))
+            buf, size = [], 0
+        buf.append(line)
+        size += len(line) + 1
+    if buf:
+        pieces.append("\n".join(buf))
+    return pieces or [raw]
+
+
+def _clean_mermaid(text):
+    """提取并校验 Mermaid mindmap 代码块；不合法时返回 None。"""
+    match = re.search(r"```mermaid\s*(.*?)```", text, re.S)
+    body = (match.group(1) if match else text).strip()
+    body = re.sub(r"^```(?:mermaid)?\s*|```$", "", body).strip()
+    lines = [line for line in body.splitlines() if line.strip()]
+    if not lines or lines[0].strip().lower() != "mindmap":
+        return None
+    if not any(line.startswith(("  ", "\t")) for line in lines[1:]):
+        return None
+    return "```mermaid\n" + body + "\n```"
+
+
+def _is_chinese_dominant(text, sample=6000):
+    """判断语音原话是否以中文为主：中文视频跳过「内容翻译」这一节。"""
+    chunk = (text or "")[:sample]
+    t = re.sub(r"\[\d{2}:\d{2}\]", "", chunk)          # 去时间戳，避免误判
+    cjk = sum(1 for ch in t if "\u4e00" <= ch <= "\u9fff")
+    latin = sum(1 for ch in t if ch.isascii() and ch.isalpha())
+    if cjk + latin == 0:
+        return True                                     # 无字母类内容按中文处理（不翻译）
+    return cjk / (cjk + latin) >= 0.4
+
+
+def _generate_chapter_notes(llm, raw, heading, level_instruction, translate=True):
+    translation = _TRANSLATION_SECTION if translate else ""
+    level = f"4. 学习阶段：{level_instruction}\n" if level_instruction else (
+        "4. 直接输出，不要额外说明。\n" if not translate else "")
+    prompt = (_DETAIL_NOTES_PROMPT
+              .replace("__TRANSLATION__", translation)
+              .replace("__LEVEL__", level)
+              .replace("__HEADING__", heading)
+              .replace("__RAW__", raw))
+    return llm.get_response(prompt, system_message=_DETAIL_NOTES_SYSTEM).strip()
+
+
+def _merge_chapter_notes(llm, partials, heading, translate=True):
+    """长章节分段生成的笔记合并为一份，避免原文被截断导致信息丢失。
+
+    段数较多时直接顺序拼接（仍是完整内容），只对少量分段做一次 LLM 合并，
+    否则合并调用本身要吞下数万字，会成为整份报告最慢的一步。
+    """
+    if len(partials) == 1:
+        return partials[0]
+    if len(partials) > NOTES_MERGE_MAX_SEGMENTS:
+        return "\n\n".join(partials)
+    joined = "\n\n".join(f"【第 {i + 1} 段笔记】\n{p}" for i, p in enumerate(partials))
+    structure = ("**本段主旨** / **内容翻译** / **结构化解读** / **关键要点**" if translate
+                 else "**本段主旨** / **结构化解读** / **关键要点**")
+    translation_rule = ("「内容翻译」按时间顺序完整拼接，逐句保留，不得省略或压缩任何一段。"
+                        if translate else "保留各段「本段主旨」「结构化解读」「关键要点」的内容。")
+    prompt = (_DETAIL_MERGE_PROMPT
+              .replace("__STRUCTURE__", structure)
+              .replace("__TRANSLATION_MERGE__", translation_rule)
+              .replace("__HEADING__", heading)
+              .replace("__NOTES__", joined))
+    return llm.get_response(prompt, system_message=_DETAIL_NOTES_SYSTEM).strip()
+
+
+def _notes_for_chapter(llm, raw, heading, level_instruction, translate=True):
+    """章节笔记：超长章节分段并发生成后合并；长视频据此避免串行等待过久。"""
+    pieces = _split_notes_source(raw)
+    if len(pieces) == 1:
+        return _generate_chapter_notes(llm, pieces[0], heading, level_instruction, translate)
+    workers = max(1, min(NOTES_PARALLEL, len(pieces)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        partials = list(pool.map(
+            lambda piece: _generate_chapter_notes(llm, piece, heading, level_instruction),
+            pieces))
+    return _merge_chapter_notes(llm, partials, heading)
+
+
+def _build_mindmap(llm, outline):
+    try:
+        out = llm.get_response(_MINDMAP_PROMPT.replace("__OUTLINE__", outline),
+                               system_message=_MINDMAP_SYSTEM)
+    except Exception as e:
+        logging.warning(f"详细报告：思维导图生成失败，跳过: {e}")
+        return None
+    cleaned = _clean_mermaid(out)
+    if not cleaned:
+        logging.warning("详细报告：思维导图格式不合法，跳过")
+    return cleaned
+
+
 def generate_detailed_report(detailed_outline_path, output_dir, education_level: str = None,
                              headings_with_level=None, matched_data=None, dialogue=None):
     """
@@ -417,102 +612,76 @@ def generate_detailed_report(detailed_outline_path, output_dir, education_level:
             logging.warning("详细报告：未找到二级章节，跳过")
             return None
 
-        # 每章时间范围：优先 matched_data 的真实范围；否则按章节顺序均分
         if not dialogue:
             logging.warning("详细报告：缺少 ASR 对话数据，无法生成原文对照")
             return None
-        total_start = min(c["start"] for c in dialogue)
-        total_end = max(c["end"] for c in dialogue)
-        ranges = {}
-        for heading in level2:
-            chunks = (matched_data or {}).get(heading) or []
-            if chunks:
-                ranges[heading] = (min(c["start"] for c in chunks), max(c["end"] for c in chunks))
-        missing = [h for h in level2 if h not in ranges]
-        if missing:
-            # 均分兜底：未匹配章节按顺序瓜分剩余/全部时间轴
-            span = total_end - total_start
-            step = span / len(level2)
-            for i, h in enumerate(level2):
-                if h not in ranges:
-                    ranges[h] = (total_start + step * i, total_start + step * (i + 1))
+
+        # 每章字幕块：整块归属（align_outline_chunks 已保证每块只属于一章）。
+        # 不做按字符比例的边界切割，避免原文被切成半句或丢失内容。
+        chapter_chunks = {}
+        if matched_data:
+            for heading in level2:
+                chunks = [c for c in (matched_data.get(heading) or []) if c.get("text")]
+                chapter_chunks[heading] = sorted(chunks, key=lambda c: c["start"])
+        if not any(chapter_chunks.values()):
+            # 对齐结果整体缺失时兜底：整块均分，仍保证每块只出现一次、句子完整
+            count, chapters = len(dialogue), len(level2)
+            for i, heading in enumerate(level2):
+                chapter_chunks[heading] = dialogue[i * count // chapters:(i + 1) * count // chapters]
 
         def _mmss(sec):
             m, s = int(sec // 60), int(sec % 60)
             return f"{m:02d}:{s:02d}"
 
         def _raw_of(heading):
-            lo, hi = ranges[heading]
-            lines = []
-            for c in dialogue:
-                if c["end"] <= lo or c["start"] >= hi:
-                    continue  # 与本章无交叠
-                text = c["text"]
-                if not text:
-                    continue
-                span = c["end"] - c["start"]
-                if c["start"] >= lo - 0.01 and c["end"] <= hi + 0.01:
-                    # 完全落在本章范围内：整句输出
-                    lines.append(f"[{_mmss(c['start'])}] {text}")
-                elif span > 0:
-                    # 跨越章节边界的句子（如整段一长句的短视频）：
-                    # 按字符占比切出本章片段，时间戳线性近似，避免每章重复全文
-                    f0 = max(0.0, (lo - c["start"]) / span)
-                    f1 = min(1.0, (hi - c["start"]) / span)
-                    seg = text[int(len(text) * f0):int(len(text) * f1)].strip()
-                    if seg:
-                        lines.append(f"[{_mmss(c['start'] + span * f0)}] {seg}")
-            if not lines:  # 仍为空时取最近邻，避免空章节
-                nearest = min(dialogue, key=lambda c: min(abs(c["start"] - lo), abs(c["start"] - hi)))
-                lines = [f"[{_mmss(nearest['start'])}] {nearest['text']}"]
-            return "\n".join(lines)
+            """本章原文：完整输出整块字幕，不截断、不切割。"""
+            return "\n".join(f"[{_mmss(c['start'])}] {c['text']}"
+                             for c in chapter_chunks.get(heading, []))
 
         from llm_handler import LLMHandler, get_level_instruction
         llm = LLMHandler(education_level=education_level)
         level_instruction = get_level_instruction(education_level) or ""
 
+        # 中文原话无需翻译：跳过「内容翻译」，笔记只保留主旨/解读/要点
+        all_text = "\n".join(c.get("text", "") for c in dialogue)
+        translate = not _is_chinese_dominant(all_text)
+        logging.info(f"详细报告：原话{'非中文，保留「内容翻译」' if translate else '为中文，跳过翻译'}")
+
         title_match = re.search(r'^#\s+(.+)', outline_content, re.MULTILINE)
         doc_title = title_match.group(1).strip() if title_match else "详细报告"
 
         parts = [f"# {doc_title}\n",
-                 "> 每个章节先给【视频原文】（带时间戳的语音原话），再给【整理笔记】，对照精读；"
-                 "时间戳可回看视频对应片段。\n"]
+                 "> 每个章节先给【视频原文】（带时间戳的语音原话，完整不截断），再给【整理笔记】，"
+                 "对照精读；时间戳可回看视频对应片段。\n"]
+
+        # 整体思维导图（Mermaid，随报告一起呈现）
+        mindmap = _build_mindmap(llm, outline_content)
+        if mindmap:
+            parts.append("\n## 内容思维导图\n")
+            parts.append(mindmap + "\n")
 
         for heading in level2:
             raw = _raw_of(heading)
-            # 超长章节截断保护（LLM 上下文与可读性）
-            if len(raw) > 6000:
-                raw = raw[:6000] + "\n…（本章原文过长，已截取前段）"
+            chunks = chapter_chunks.get(heading) or []
             parts.append(f"\n## {heading}\n")
             img = section_images.get(heading)
             if img:
                 parts.append(f"![关键帧: {heading}]({img})\n")
-            lo, hi = ranges[heading]
-            parts.append(f"*本章对应视频 {_mmss(lo)} - {_mmss(hi)}*\n")
+            if chunks:
+                parts.append(f"*本章对应视频 {_mmss(chunks[0]['start'])} - "
+                             f"{_mmss(chunks[-1]['end'])}*\n")
             parts.append("### 视频原文\n")
-            parts.append(raw + "\n")
+            parts.append((raw if raw else "（本章无对应语音内容）") + "\n")
 
-            prompt = (
-                "你是专业的学习笔记整理者。下面是视频某个章节的语音原话（带时间戳，口语化），"
-                "请整理成要点式笔记。\n\n"
-                "要求：\n"
-                "1. 先用 1-3 句概括这部分讲了什么；\n"
-                "2. 再用 `-` 列出 2-6 条关键要点（保留具体方法、数字、结论）；\n"
-                "3. 只依据原话内容，不添加没有的信息；口语中的重复、语气词请忽略；\n"
-                "4. 使用简体中文（专有名词保留原文）；\n"
-                "5. 只输出笔记正文，不要标题、不要解释。\n"
-                + (f"6. 学习阶段：{level_instruction}\n" if level_instruction else "")
-                + f"\n章节标题：{heading}\n\n原话：\n---\n{raw}\n---\n"
-            )
-            try:
-                notes = llm.get_response(
-                    prompt,
-                    system_message="你是专业的学习笔记整理者，只输出简体中文要点笔记。",
-                ).strip()
-            except Exception as e:
-                logging.error(f"详细报告：章节 '{heading}' 笔记生成失败: {e}")
-                notes = "（笔记生成失败）"
             parts.append("### 整理笔记\n")
+            if raw:
+                try:
+                    notes = _notes_for_chapter(llm, raw, heading, level_instruction, translate)
+                except Exception as e:
+                    logging.error(f"详细报告：章节 '{heading}' 笔记生成失败: {e}")
+                    notes = "（笔记生成失败）"
+            else:
+                notes = "（本章无对应语音内容）"
             parts.append(notes + "\n")
 
         report_content = "\n".join(parts)
