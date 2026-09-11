@@ -140,10 +140,15 @@ def select_keyframes_with_vlm(headings_with_level, output_dir):
     """
     logging.info("--- 步骤 9: 开始使用 VLM 选择关键帧 ---")
     try:
-        from vlm_handler import VLMHandler
+        from backend.algorithm.vlm_handler import VLMHandler
         vlm_handler = VLMHandler()
     except Exception as e:
-        logging.error(f"无法初始化VLM处理器，跳过关键帧选择: {e}")
+        # 关键帧选择失败不阻断流程，但必须让用户知道报告将没有配图，
+        # 否则会表现为"处理成功但报告没图"的静默降级。
+        logging.error(
+            "VLM 关键帧选择不可用，本次报告将不含配图（其余内容正常生成）。"
+            f"原因: {e}。请检查「偏好设置」中的 VLM 配置（API Key / 接口地址 / 模型名）。"
+        )
         return {}
 
     selected_keyframes = {}

@@ -335,7 +335,7 @@ def generate_final_report(detailed_outline_path, output_dir, education_level: st
         with open(detailed_outline_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        from llm_handler import LLMHandler, get_level_instruction
+        from backend.algorithm.llm_handler import LLMHandler, get_level_instruction
         llm = LLMHandler(education_level=education_level)
 
         level_instruction = get_level_instruction(education_level)
@@ -638,7 +638,7 @@ def generate_detailed_report(detailed_outline_path, output_dir, education_level:
             return "\n".join(f"[{_mmss(c['start'])}] {c['text']}"
                              for c in chapter_chunks.get(heading, []))
 
-        from llm_handler import LLMHandler, get_level_instruction
+        from backend.algorithm.llm_handler import LLMHandler, get_level_instruction
         llm = LLMHandler(education_level=education_level)
         level_instruction = get_level_instruction(education_level) or ""
 
