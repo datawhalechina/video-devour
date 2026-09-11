@@ -37,6 +37,7 @@ desktop/dist/
 desktop/build/
 desktop/bin/
 desktop/release/*.zip
+desktop/release/*.exe
 *.spec.bak
 
 # macOS
