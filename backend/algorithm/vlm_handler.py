@@ -1,6 +1,7 @@
 
 import logging
 import json
+import random
 import asyncio
 import aiohttp
 import base64
@@ -10,13 +11,28 @@ import io
 import config
 
 
+def _normalize_chat_endpoint(url: str) -> str:
+    """
+    把 VLM 基地址规范化为 OpenAI 兼容的 chat/completions 完整端点。
+
+    设置页填写的是 base_url（如 https://api.stepfun.com/step_plan/v1），
+    此前直接 POST 基地址会 404。已带 /chat/completions 的地址原样返回；
+    其它情况统一补 /chat/completions。
+    """
+    url = (url or "").strip().rstrip("/")
+    if not url:
+        return url
+    if url.endswith("/chat/completions"):
+        return url
+    return url + "/chat/completions"
+
 class VLMHandler:
     """
     VLM 处理器
     
     """
 
-    def __init__(self, max_concurrent: int = 10, temperature: float = 0.6):
+    def __init__(self, max_concurrent: int = None, temperature: float = 0.6):
         """
         初始化VLM处理器
         
@@ -25,11 +41,14 @@ class VLMHandler:
             temperature: 温度
         """
         try:
-            self.max_concurrent = max_concurrent
+            # VLM 供应商对并发敏感（实测 10 并发触发大量 429），默认收敛到 4
+            import os as _os
+            self.max_concurrent = max_concurrent if max_concurrent else int(
+                _os.getenv("VIDEO_DEVOUR_VLM_CONCURRENCY", "4"))
             self.temperature = temperature
             
             # 从 config 读取配置
-            self.api_url = config.VLM_API_URL
+            self.api_url = _normalize_chat_endpoint(config.VLM_API_URL)
             self.api_key = config.VLM_API_KEY
             self.model_type = config.VLM_MODEL_TYPE
             
@@ -182,7 +201,7 @@ class VLMHandler:
         image_path: str,
         topic: str,
         task_id: int = 0,
-        max_retries: int = 3
+        max_retries: int = 5
     ) -> Tuple[int, str]:
         """
         异步评估单张图片
@@ -245,9 +264,10 @@ class VLMHandler:
                         raise ValueError("API 返回空响应")
                 
                 except Exception as e:
+                    msg = str(e)
                     logging.warning(
                         f"[任务{task_id}] 评估图片 '{image_path}' 失败 "
-                        f"(尝试 {attempt}/{max_retries}): {e}"
+                        f"(尝试 {attempt}/{max_retries}): {msg}"
                     )
                     if attempt == max_retries:
                         logging.error(
@@ -255,9 +275,11 @@ class VLMHandler:
                             f"评估失败，已达最大重试次数"
                         )
                         return (-1, "处理失败")
-                    
-                    # 重试前等待
-                    await asyncio.sleep(1)
+                    # 限流（429/ throttl）用更长指数退避 + 抖动，普通错误短退避
+                    if "429" in msg or "throttl" in msg.lower() or "rate" in msg.lower():
+                        await asyncio.sleep(min(30, 2 ** attempt) + random.uniform(0, 1))
+                    else:
+                        await asyncio.sleep(1)
             
             return (-1, "处理失败")
     
