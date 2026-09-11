@@ -118,11 +118,25 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/ffmpeg-win32-x64" -OutFile "desktop/bin/ffmpeg.exe"
           Invoke-WebRequest -Uri "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/ffprobe-win32-x64" -OutFile "desktop/bin/ffprobe.exe"
 
-      - name: 打包
+      - name: 安装 Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          # choco 安装在 Program Files (x86)，加入 PATH 供 ISCC 调用
+          $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue
+          if (-not $iscc) { throw "Inno Setup 安装失败" }
+          Write-Host "ISCC: $($iscc.FullName)"
+
+      - name: 打包（含安装包）
         shell: pwsh
         run: |
           $env:PYTHON = "python"
+          $env:PATH = "C:\Program Files (x86)\Inno Setup 6;$env:PATH"
           powershell -ExecutionPolicy Bypass -File desktop/build_win.ps1
+          # 显式校验安装包产物，避免"回显成功但实际未生成"
+          $setup = Get-ChildItem desktop/dist -Filter "*-setup.exe"
+          if (-not $setup) { throw "未生成 Windows 安装包" }
+          Write-Host "安装包: $($setup.Name) ($([math]::Round($setup.Length/1MB,1)) MB)"
 
       - name: 冒烟测试（后端启动 + health）
         shell: pwsh
@@ -145,6 +159,12 @@ jobs:
         run: |
           $size = (Get-ChildItem -Recurse desktop/dist/VideoDevour | Measure-Object -Property Length -Sum).Sum
           Write-Host ("未压缩体积: {0:N1} MB" -f ($size / 1MB))
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoDevour-windows-x64-installer
+          path: desktop/dist/*-setup.exe
+          retention-days: 14
 
       - uses: actions/upload-artifact@v4
         with:

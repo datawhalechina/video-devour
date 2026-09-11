@@ -31,7 +31,11 @@ WizardStyle=modern
 ; 卸载时不删除用户数据目录（任务、报告、设置保留）
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 中文语言包随仓库内置（installer_lang/），不依赖 Inno Setup 安装目录或外网：
+; 官方安装只带英文语言文件，中文属独立翻译包，缺失会导致 "Couldn't open include file" 而中止编译。
+; {#SourcePath} 为脚本所在目录，避免相对路径解析歧义。
+Name: "chinesesimplified"; MessagesFile: "{#SourcePath}\installer_lang\ChineseSimplified.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"
