@@ -45,7 +45,11 @@ function LinkProcess() {
 
   const embedUrl = (item) => {
     const tab = PLATFORM_TABS.find((t) => t.key === item.platform)
-    return tab && item.video_id ? tab.embed(item.video_id) : null
+    // embed 可能为 null（如抖音无可公开内嵌播放器），必须判可调用，
+    // 否则空调用会让整个页面崩溃白屏
+    return tab && typeof tab.embed === 'function' && item.video_id
+      ? tab.embed(item.video_id)
+      : null
   }
 
   const showError = (msg) => setError(msg)

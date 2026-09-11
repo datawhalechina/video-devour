@@ -398,6 +398,12 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
                 <h3 className="text-base font-bold text-gray-900">{preview.title}</h3>
                 <div className="flex items-center gap-2">
                   <a href={preview.url} target="_blank" rel="noreferrer"
+                     onClick={(e) => {
+                       // 应用内浏览器可能拦截 target=_blank，显式新开，失败则当前页跳转
+                       e.preventDefault();
+                       const win = window.open(preview.url, '_blank', 'noopener');
+                       if (!win) window.location.href = preview.url;
+                     }}
                      className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
                     浏览器打开
                   </a>
