@@ -11,6 +11,8 @@
 说明：请仅对拥有版权或已获授权的内容进行下载处理。
 """
 import logging
+import os
+import tempfile
 from backend.runtime import paths as _rt_paths
 import re
 from pathlib import Path
@@ -110,8 +112,12 @@ def _extract_video_id(url: str, platform: str) -> Optional[str]:
         m = re.search(r"weixin\.qq\.com/sph/([A-Za-z0-9_\-]+)", url, re.IGNORECASE)
         return m.group(1) if m else None
     if platform == "douyin":
-        # /video/{id}、/note/{id}（图文）、短链 v.douyin.com/xxx
+        # /video/{id}、/note/{id}（图文）
         m = re.search(r"/(?:video|note)/(\d+)", url)
+        if m:
+            return m.group(1)
+        # 搜索页/推荐页常把视频 id 放在 query：?modal_id=xxx / aweme_id / vid
+        m = re.search(r"[?&](?:modal_id|aweme_id|vid)=(\d+)", url)
         if m:
             return m.group(1)
         m = re.search(r"v\.douyin\.com/([A-Za-z0-9]+)", url)
@@ -162,6 +168,30 @@ def _resolve_douyin_short_url(url: str) -> str:
         return url
 
 
+def normalize_douyin_url(url: str) -> str:
+    """
+    抖音链接归一化：把各种形式统一为 yt-dlp 可解析的视频页地址。
+    覆盖：
+    - /video/{id}、/note/{id}（图文）→ 原样
+    - 搜索页/推荐页带 ?modal_id={id} → /video/{id}
+    - v.douyin.com 短链 → 跟随重定向后取 /video/{id}
+    - 已是 iesdouyin share 链接且带 aweme_id 的 → /video/{id}
+    无法识别出视频 id 时原样返回（由调用方给引导）。
+    """
+    if not url or "douyin" not in url.lower():
+        return url
+    vid = _extract_video_id(url, "douyin")
+    if vid and not url.lower().startswith(("http://v.douyin", "https://v.douyin")):
+        return f"https://www.douyin.com/video/{vid}"
+    if "v.douyin.com" in url.lower():
+        resolved = _resolve_douyin_short_url(url)
+        vid2 = _extract_video_id(resolved, "douyin")
+        if vid2:
+            return f"https://www.douyin.com/video/{vid2}"
+        return resolved
+    return url
+
+
 def probe_video_info(url: str) -> Dict:
     """
     获取视频元数据（不下载），用于前端预览确认。
@@ -170,11 +200,9 @@ def probe_video_info(url: str) -> Dict:
         ValueError: 链接不受支持或视频不存在
     """
     platform = detect_platform(url)
-    # 抖音短链先跟随重定向，能自动拿到视频页时避免报 Unsupported URL
-    if platform == "douyin" and "v.douyin.com" in url:
-        resolved = _resolve_douyin_short_url(url)
-        if "/video/" in resolved:
-            url = resolved
+    # 抖音链接统一归一化（modal_id 搜索页 / 短链 / note 页 → 视频页）
+    if platform == "douyin":
+        url = normalize_douyin_url(url)
     if platform == "wechat":
         # 视频号不支持 yt-dlp：分享页兜底信息 + 直连链路尽力补全真实元数据
         info = _wechat_share_info(url)
@@ -196,8 +224,15 @@ def probe_video_info(url: str) -> Dict:
                 return _bilibili_view_info(bvid)
             except Exception as e:
                 logging.warning(f"B站 view API 获取失败，回退 yt-dlp: {e}")
+    # 抖音元数据接口也需要登录态 cookie（与下载一致）
+    probe_opts = {}
+    if platform == "douyin":
+        _ck = _douyin_cookiefile()
+        if _ck:
+            probe_opts["cookiefile"] = _ck
+
     try:
-        with _get_ydl(referer=_platform_referer(platform)) as ydl:
+        with _get_ydl(referer=_platform_referer(platform), **probe_opts) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as e:
         if platform == "douyin":
@@ -258,7 +293,11 @@ def _youtube_oembed_info(url: str) -> Dict:
 
 
 def _platform_referer(platform: str) -> str:
-    return "https://www.youtube.com/" if platform == "youtube" else "https://www.bilibili.com/"
+    return {
+        "youtube": "https://www.youtube.com/",
+        "douyin": "https://www.douyin.com/",
+        "wechat": "https://weixin.qq.com/",
+    }.get(platform, "https://www.bilibili.com/")
 
 
 # ---------------------------------------------------------------------------
@@ -981,6 +1020,33 @@ def search_videos(query: str, platform: str = "bilibili", max_results: int = 8) 
     return _youtube_search(query, max_results)
 
 
+def _douyin_cookiefile() -> Optional[str]:
+    """
+    把设置里的抖音 cookies 写成临时 cookiefile（yt-dlp 用），返回路径；无则 None。
+    已是 Netscape 表格格式时直接落盘；旧版请求头格式（name=value; ...）转换为 Netscape。
+    """
+    import tempfile
+    try:
+        from backend.algorithm.settings_store import load_settings
+        text = (load_settings().get("douyin_cookies") or "").strip()
+    except Exception:
+        text = ""
+    if not text or "douyin" not in text.lower():
+        return None
+    fd, path = tempfile.mkstemp(prefix="dy_cookies_", suffix=".txt")
+    with os.fdopen(fd, "w") as f:
+        if "\t" in text:                 # 已是 Netscape 表格格式
+            f.write(text if text.endswith("\n") else text + "\n")
+        else:                             # 请求头格式 → 转 Netscape
+            f.write("# Netscape HTTP Cookie File\n")
+            for kv in text.split(";"):
+                kv = kv.strip()
+                if "=" in kv:
+                    name, value = kv.split("=", 1)
+                    f.write(f".douyin.com\tTRUE\t/\tTRUE\t0\t{name.strip()}\t{value.strip()}\n")
+    return path
+
+
 def _load_douyin_cookies_header() -> str:
     """从设置读取抖音 cookies.txt，转成请求头 Cookie 字符串（无则空）"""
     try:
@@ -1203,9 +1269,21 @@ def _youtube_js_runtime() -> Optional[str]:
     return None
 
 
-def _download_format_options(max_height: int = 720) -> Dict:
+def _download_format_options(max_height: int = 720, platform: str = "") -> Dict:
     """先限制源画质，缺少低清版本时取最低分辨率，避免回退到无上限 best。"""
     height = max(1, int(max_height))
+    if platform == "douyin":
+        # 抖音的 bytevc1（H.265）分片会被 CDN 403，download_addr / h264_* 格式
+        # 实测可取（HTTP 200）。格式 id 形如 download_addr-0 / h264_540p_xxx-0。
+        return {
+            "format": (
+                "download_addr-0/download_addr-1"
+                f"/h264_{height}p/h264_720p/h264_540p"
+                f"/bv*[height<={height}]/b[height<={height}]/b"
+            ),
+            # 不给 format_sort_force：抖音的 bytevc1(H.265) 分片会被 CDN 403，
+            # 强制按分辨率排序会把它换回来，必须严格按上面列出的顺序选。
+        }
     return {
         "format": (
             f"bv*[height<={height}][vcodec~='^(avc|h264)']+ba"
@@ -1237,11 +1315,12 @@ def download_video(url: str, target_dir: str, max_height: int = 720,
     target = Path(target_dir)
     target.mkdir(parents=True, exist_ok=True)
     platform = detect_platform(url)
-    if platform == "douyin" and "v.douyin.com" in url:
-        url = _resolve_douyin_short_url(url)
+    if platform == "douyin":
+        url = normalize_douyin_url(url)
     if platform == "wechat":
         return _download_wechat_video(url, target_dir, progress_hook=progress_hook)
-    referer = "https://www.youtube.com/" if platform == "youtube" else "https://www.bilibili.com/"
+    # Referer 必须与平台匹配：抖音 CDN 会校验，用 B站 referer 会 403
+    referer = _platform_referer(platform)
 
     def _wrap_hook(d):
         if progress_hook:
@@ -1253,7 +1332,7 @@ def download_video(url: str, target_dir: str, max_height: int = 720,
     options = {
         "referer": referer,
         "outtmpl": str(target / "%(id)s.%(ext)s"),
-        **_download_format_options(max_height),
+        **_download_format_options(max_height, platform),
         "merge_output_format": "mp4",
         "progress_hooks": [_wrap_hook],
         # 分片流（YouTube DASH/HLS）多线程下载；B站等单文件流不受影响
