@@ -267,7 +267,7 @@ h1,h2,h3{line-height:1.35}</style>
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                placeholder={`在${platform === 'bilibili' ? 'B站' : 'YouTube'}搜索视频关键词...`}
+                placeholder={`在${({bilibili: 'B站', youtube: 'YouTube', douyin: '抖音'})[platform] || ''}搜索视频关键词...`}
                 className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
               />
               <button
@@ -278,7 +278,25 @@ h1,h2,h3{line-height:1.35}</style>
                 {searchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                 <span>搜索</span>
               </button>
+              {platform === 'douyin' && (
+                <a
+                  href={`https://www.douyin.com/search/${encodeURIComponent(query || '')}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="服务端搜索受限，改为浏览器检索（你已登录），找到后复制链接粘贴到上方"
+                  className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
+                >
+                  <Search className="w-4 h-4" />
+                  <span>浏览器搜索</span>
+                </a>
+              )}
             </div>
+            {platform === 'douyin' && (
+              <p className="mt-2 text-xs text-gray-500 leading-relaxed">
+                抖音搜索接口有浏览器签名校验（反爬），服务端无法直接检索。请用右侧「浏览器搜索」打开抖音搜索，
+                找到视频后复制链接粘贴到上方输入框即可处理（你浏览器的登录态天然可用）。
+              </p>
+            )}
           </div>
         </section>
 

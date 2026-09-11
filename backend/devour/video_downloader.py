@@ -990,15 +990,21 @@ def _load_douyin_cookies_header() -> str:
         text = ""
     if not text or "douyin" not in text.lower():
         return ""
-    pairs = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) >= 7:
-            pairs.append(f"{parts[5]}={parts[6]}")
-    return "; ".join(pairs)
+    # 兼容两种存储格式：
+    # 1) Netscape cookies.txt（制表符分隔，第 6/7 列为 name/value）
+    # 2) 请求头格式 name=value; name=value（旧版一键读取曾存此格式）
+    if "\t" in text:
+        pairs = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 7:
+                pairs.append(f"{parts[5]}={parts[6]}")
+        return "; ".join(pairs)
+    # 请求头格式：直接可用
+    return text.strip().rstrip(";")
 
 
 def _douyin_search(query: str, max_results: int = 8) -> List[Dict]:
@@ -1086,7 +1092,16 @@ def _douyin_search(query: str, max_results: int = 8) -> List[Dict]:
             break
 
     if not results:
-        raise ValueError("抖音未返回搜索结果（可能关键词无匹配，或接口需重新登录）")
+        nil_type = (payload.get("search_nil_info") or {}).get("search_nil_type")
+        if nil_type == "verify_check":
+            # 抖音对搜索接口有 a_bogus 签名 + 人机校验（混淆 JS 算法），
+            # 仅靠 cookies 无法通过；服务端不做逆向，转为引导浏览器检索。
+            raise ValueError(
+                "抖音搜索接口有浏览器签名校验（a_bogus 反爬），服务端无法直接检索。"
+                "请点击「打开抖音搜索」在浏览器里搜索（你已登录），"
+                "找到视频后复制链接，粘贴到上方输入框即可下载处理。"
+            )
+        raise ValueError("抖音未返回搜索结果（关键词可能无匹配，或稍后重试）")
     return results
 
 

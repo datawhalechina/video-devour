@@ -125,6 +125,15 @@ def _collect_from_browser(browser: str):
                 attempts.append(f"{browser}/{label}: 命中 {len(cookies)} 个 cookie（含登录态）✅")
             else:
                 attempts.append(f"{browser}/{label}: 有 {len(cookies)} 个 cookie 但缺登录态（可能未登录）")
+        elif label == "douyin":
+            # 抖音：存 Netscape 格式（与手动粘贴的 cookies.txt 一致，
+            # 下载器与搜索都按该格式解析）
+            if names & set(key_names):
+                lines = [_netscape_line(c) for c in cookies]
+                fields[setting_key] = "# Netscape HTTP Cookie File\n" + "\n".join(lines)
+                attempts.append(f"{browser}/{label}: 命中 {len(cookies)} 个 cookie（含登录态）✅")
+            else:
+                attempts.append(f"{browser}/{label}: 有 {len(cookies)} 个 cookie 但无登录态（可能未登录）")
         else:  # yuanbao
             if names & set(key_names):
                 header = "; ".join(f"{c['name']}={c['value']}" for c in cookies)

@@ -567,8 +567,9 @@ async def import_cookies_from_browser(request: BrowserCookieRequest):
         settings_store.update_settings(fields)
     found = {k: bool(v) for k, v in fields.items()}
     labels = {"bilibili_sessdata": "B站 SESSDATA", "youtube_cookies": "YouTube cookies",
-              "wechat_yuanbao_cookie": "元宝 Cookie"}
-    hit = [labels[k] for k in fields if fields.get(k)]
+              "wechat_yuanbao_cookie": "元宝 Cookie", "douyin_cookies": "抖音 cookies"}
+    # 用 labels.get 兜底：新增平台字段而漏配标签时不再抛 KeyError（曾导致 500）
+    hit = [labels.get(k, k) for k in fields if fields.get(k)]
     if hit:
         message = f"已从 {result.get('browser_used')} 读取并保存：{'、'.join(hit)}"
     elif result.get("browser_used"):
