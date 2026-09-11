@@ -24,6 +24,12 @@ VIDEO_CONCURRENCY = max(1, min(2, int(os.getenv(
     "2" if (os.cpu_count() or 4) >= 8 else "1",
 ))))
 
+# 每章均匀采样的帧数上限。
+# 旧策略按 1fps 密集抽帧（短则几十帧，长则上百帧），VLM 要从海量近乎相同的
+# 帧里挑一张，既慢（大量 429）又难有区分度。改为：每章按时间轴均匀采样
+# 固定帧数（默认 10），短视频不再产生过多帧，VLM 筛选难度大幅下降。
+FRAMES_PER_CHAPTER = max(3, int(os.getenv("VIDEO_DEVOUR_FRAMES_PER_CHAPTER", "10")))
+
 def _ffmpeg_cmd(*args):
     """
     构造受资源约束的 ffmpeg 命令：
@@ -322,14 +328,24 @@ def extract_frames_by_headings(headings_with_level, matched_data, input_video_pa
         directory = Path(output_dir, item['frame_dir'])
         directory.mkdir(parents=True, exist_ok=True)
         length = item['end'] - item['start']
-        # 每秒一帧；短于一秒的章节也取至少一帧，避免被 fps 滤镜舍掉。
-        rate = max(1, 1 / length)
-        cmd = _ffmpeg_cmd(
-            '-ss', str(item['start']), '-i', str(input_video_path), '-t', str(length),
-            '-an', '-vf', f'fps={rate}:round=up', '-q:v', '2',
-            '-threads:v', '1', str(directory / 'frame_%04d.jpg'),
-        )
-        run_ffmpeg(cmd, length)
+        # 每章均匀采样 FRAMES_PER_CHAPTER 帧（按时间段等间隔取帧），
+        # 而不是 1fps 密集抽帧：候选集小、分布均匀，VLM 更快也更准。
+        count = FRAMES_PER_CHAPTER
+        # 采样间隔（秒）：章节时长 / 帧数；短于一帧间隔也能覆盖到首尾附近
+        step = length / count if count > 0 and length > 0 else 1.0
+        # 取每段中点作为采样时刻，避免总是取到章节切分处的过渡画面
+        timestamps = [item['start'] + step * (i + 0.5) for i in range(count)]
+        # 超出章节范围的裁剪掉（浮点误差保护）
+        timestamps = [t for t in timestamps if item['start'] <= t < item['end']] or [item['start']]
+
+        # 逐帧精确定位抽取（-ss 放在 -i 前为快速定位）
+        for index, ts in enumerate(timestamps, 1):
+            cmd = _ffmpeg_cmd(
+                '-ss', f'{ts:.3f}', '-i', str(input_video_path),
+                '-frames:v', '1', '-an', '-q:v', '2',
+                '-threads:v', '1', str(directory / f'frame_{index:04d}.jpg'),
+            )
+            run_ffmpeg(cmd, max(1.0, step))
         if not any(directory.glob('*.jpg')):
             raise RuntimeError(f"章节未提取到画面: {item['heading']}")
         return str(directory)
