@@ -497,10 +497,11 @@ function SettingsPage() {
           initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
           className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
         >
-          <h2 className="text-base font-bold text-gray-900 mb-2">抖音 cookies（下载需要登录态）</h2>
+          <h2 className="text-base font-bold text-gray-900 mb-2">抖音 cookies（下载 + 搜索都需要登录态）</h2>
           <p className="text-xs text-gray-500 leading-relaxed mb-4">
-            抖音下载要求登录态 Cookie（yt-dlp 提示 Fresh cookies are needed）。获取方式：登录 douyin.com 后
-            用浏览器扩展导出 cookies.txt（Netscape 格式），粘贴到下方；也可用上方「一键读取浏览器 Cookie」自动获取。
+            抖音的下载与关键词搜索都要求登录态（匿名搜索返回「请先登录」）。配置后可：① 下载抖音视频；
+            ② 在「在线视频」页用关键词搜索抖音。获取方式：登录 douyin.com 后用浏览器扩展导出 cookies.txt
+            （Netscape 格式，需含 sessionid），粘贴到下方；也可用上方「一键读取浏览器 Cookie」自动获取。
           </p>
           <div>
             <label className={labelClass}>cookies.txt 内容（Netscape 格式）</label>

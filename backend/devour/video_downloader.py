@@ -981,61 +981,113 @@ def search_videos(query: str, platform: str = "bilibili", max_results: int = 8) 
     return _youtube_search(query, max_results)
 
 
+def _load_douyin_cookies_header() -> str:
+    """从设置读取抖音 cookies.txt，转成请求头 Cookie 字符串（无则空）"""
+    try:
+        from backend.algorithm.settings_store import load_settings
+        text = (load_settings().get("douyin_cookies") or "").strip()
+    except Exception:
+        text = ""
+    if not text or "douyin" not in text.lower():
+        return ""
+    pairs = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 7:
+            pairs.append(f"{parts[5]}={parts[6]}")
+    return "; ".join(pairs)
+
+
 def _douyin_search(query: str, max_results: int = 8) -> List[Dict]:
     """
-    抖音搜索。
+    抖音关键词搜索。
 
-    说明：抖音网页搜索 API 需要 a_bogus 签名（无签名返回空），无法在服务端直接调用。
-    因此这里用官方公开的「热榜」接口做内容发现：返回当前热门话题，
-    用户可据此到抖音 App/网页查看，或直接粘贴分享链接处理。
-    关键词与热词做匹配，匹配到时排在前面。
+    抖音搜索接口（aweme/v1/web/general/search/single/）强制要求登录态：
+    匿名请求返回 status_code=2483「请先登录」。因此本函数：
+    - 配置了抖音 cookies（设置页「抖音 cookies」，需含 sessionid）→ 调用真实搜索接口
+    - 未配置 → 明确提示并给出可操作路径（配置 cookies / 粘贴链接 / 跳转抖音搜索）
+
+    说明：抖音另有 a_bogus 签名校验，但实测带有效登录 cookie 时基本搜索可用；
+    若接口改版导致失败，会回退为明确错误而非静默返回空。
     """
     import requests
 
-    session = requests.Session()
-    session.headers.update({"User-Agent": _BROWSER_UA, "Referer": "https://www.douyin.com/"})
-    try:
-        resp = session.get("https://www.douyin.com/aweme/v1/web/hot/search/list/", timeout=10)
-        payload = resp.json()
-        words = (payload.get("data") or {}).get("word_list") or []
-    except Exception as e:
-        logging.warning(f"抖音热榜获取失败: {e}")
+    cookie_header = _load_douyin_cookies_header()
+    if not cookie_header:
         raise ValueError(
-            "抖音搜索需要登录态签名，服务端无法直接检索。"
-            "可打开 https://www.douyin.com/search/ 搜索后复制视频链接，"
-            "或在抖音 App 分享后粘贴链接处理。"
+            "抖音关键词搜索需要登录态 Cookie。请在设置页「抖音 cookies」配置"
+            "（可点「一键读取浏览器 Cookie」自动获取，需浏览器登录过抖音），"
+            "或直接在抖音 App/网页搜索后复制视频链接粘贴处理。"
         )
 
-    kw = (query or "").lower()
-    results = []
-    for w in words:
-        word = (w.get("word") or "").strip()
-        if not word:
-            continue
-        group_id = str(w.get("group_id") or "")
-        # 热词无法直接给出视频直链：提供抖音搜索页跳转（前端打开）
-        item = {
-            "id": group_id or word,
-            "title": word,
-            "uploader": "抖音热榜",
-            "duration": None,
-            "thumbnail": "",
-            "platform": "douyin",
-            "webpage_url": f"https://www.douyin.com/search/{word}",
-            "video_id": group_id or "",
-            "description": f"热度 {w.get('hot_value') or 0} · 讨论 {w.get('discuss_video_count') or 0}",
-            "hot_value": w.get("hot_value") or 0,
-        }
-        # 与关键词匹配的排前面
-        item["_rank"] = 0 if kw and kw in word.lower() else 1
-        results.append(item)
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": _BROWSER_UA,
+        "Referer": "https://www.douyin.com/",
+        "Accept": "application/json, text/plain, */*",
+        "Cookie": cookie_header,
+    })
+    params = {
+        "device_platform": "webapp", "aid": 6383, "channel": "channel_pc_web",
+        "search_channel": "aweme_general", "keyword": query,
+        "search_source": "normal_search", "query_correct_type": 1,
+        "is_filter_search": 0, "offset": 0, "count": max_results,
+        "pc_client_type": 1, "version_code": "170400", "version_name": "17.4.0",
+        "cookie_enabled": "true", "platform": "PC",
+        "browser_language": "zh-CN", "browser_platform": "MacIntel",
+        "browser_name": "Chrome", "browser_version": "126.0.0.0",
+    }
+    try:
+        resp = session.get(
+            "https://www.douyin.com/aweme/v1/web/general/search/single/",
+            params=params, timeout=15,
+        )
+        payload = resp.json()
+    except Exception as e:
+        raise ValueError(f"抖音搜索请求失败: {str(e)[:120]}")
 
-    results.sort(key=lambda x: (x["_rank"], -x.get("hot_value", 0)))
-    for r in results:
-        r.pop("_rank", None)
+    code = payload.get("status_code")
+    if code == 2483:
+        raise ValueError(
+            "抖音提示「请先登录」：当前 Cookie 无效或未登录。请重新在设置页配置抖音 cookies。"
+        )
+    if code not in (0, None):
+        raise ValueError(f"抖音搜索失败: {payload.get('status_msg') or code}")
+
+    results = []
+    for item in (payload.get("data") or []):
+        info = item.get("aweme_info") or item.get("aweme_mix_info") or {}
+        aweme_id = info.get("aweme_id") or item.get("aweme_id")
+        if not aweme_id:
+            continue
+        video = info.get("video") or {}
+        cover = ""
+        url_list = (video.get("cover") or {}).get("url_list") or (video.get("origin_cover") or {}).get("url_list") or []
+        if url_list:
+            cover = url_list[0]
+        duration_ms = video.get("duration") or 0
+        author = (info.get("author") or {}).get("nickname") or ""
+        desc = (info.get("desc") or "").strip()
+        results.append({
+            "id": str(aweme_id),
+            "title": desc or f"抖音视频 {aweme_id}",
+            "uploader": author,
+            "duration": int(duration_ms / 1000) if duration_ms else None,
+            "thumbnail": cover,
+            "platform": "douyin",
+            "webpage_url": f"https://www.douyin.com/video/{aweme_id}",
+            "video_id": str(aweme_id),
+            "description": desc[:100],
+        })
+        if len(results) >= max_results:
+            break
+
     if not results:
-        raise ValueError("抖音热榜暂无数据，请稍后重试或直接粘贴视频链接")
-    return results[:max_results]
+        raise ValueError("抖音未返回搜索结果（可能关键词无匹配，或接口需重新登录）")
+    return results
 
 
 def _bilibili_search(query: str, max_results: int) -> List[Dict]:

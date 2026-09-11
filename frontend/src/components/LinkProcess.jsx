@@ -295,6 +295,17 @@ h1,h2,h3{line-height:1.35}</style>
                 <span>去配置 Cookie</span>
               </button>
             )}
+            {platform === 'douyin' && (
+              <a
+                href={`https://www.douyin.com/search/${encodeURIComponent(query || '')}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold flex-shrink-0 transition"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>打开抖音搜索</span>
+              </a>
+            )}
           </div>
         )}
 
