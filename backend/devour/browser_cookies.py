@@ -28,6 +28,7 @@ _TARGETS = {
     "bilibili": (".bilibili.com", "bilibili_sessdata", ("SESSDATA",)),
     "youtube": (".youtube.com", "youtube_cookies", ("SID", "SAPISID", "LOGIN_INFO")),
     "yuanbao": ("yuanbao.tencent.com", "wechat_yuanbao_cookie", ("hy_token", "hy_user", "tongyi_sso_ticket")),
+    "douyin": (".douyin.com", "douyin_cookies", ("sessionid", "passport_csrf_token", "ttwid")),
 }
 
 

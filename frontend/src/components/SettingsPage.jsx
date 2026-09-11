@@ -31,6 +31,7 @@ function SettingsPage() {
   const [testResults, setTestResults] = useState({})  // { asr: {ok, message}, ... }
   const [cookieImport, setCookieImport] = useState({ loading: false, message: '', attempts: [] })
   const [cacheInfo, setCacheInfo] = useState(null)
+  const [offlineCheck, setOfflineCheck] = useState(null)
   const [error, setError] = useState(null)
 
   useEffect(() => {
@@ -61,6 +62,7 @@ function SettingsPage() {
         wechat_resolver_url: data.wechat_resolver_url || '',
         wechat_resolver_token: data.wechat_resolver_token || '',
         youtube_cookies: data.youtube_cookies || '',
+        douyin_cookies: data.douyin_cookies || '',
         bilibili_sessdata: data.bilibili_sessdata || '',
         cookie_browser: data.cookie_browser || '',
       })
@@ -71,6 +73,7 @@ function SettingsPage() {
 
   const setField = (key, value) => {
     setForm(prev => ({ ...prev, [key]: value }))
+    if (key === 'asr_mode' && value === 'offline') checkOffline()
   }
 
   const handleSave = async () => {
@@ -103,6 +106,13 @@ function SettingsPage() {
     } catch (err) {
       setYtCheck({ loading: false, result: { checks: {}, suggestions: [`自检失败: ${err.message}`] } })
     }
+  }
+
+  const checkOffline = async () => {
+    try {
+      const res = await fetch('/api/asr/offline-check')
+      if (res.ok) setOfflineCheck(await res.json())
+    } catch (e) { /* 忽略 */ }
   }
 
   const loadCache = async () => {
@@ -254,7 +264,7 @@ function SettingsPage() {
                 <HardDriveDownload className="w-5 h-5 text-gray-700" />
                 <span className="font-semibold text-gray-900">离线模式（本地模型）</span>
               </div>
-              <p className="text-sm text-gray-500">本地 FunASR Paraformer，无 API 消耗，首次使用需下载模型</p>
+              <p className="text-sm text-gray-500">本地 FunASR Paraformer，无 API 消耗；需下载约 2GB 模型，首次很慢且占资源（按需安装）</p>
             </button>
             <button
               onClick={() => setField('asr_mode', 'online')}
@@ -264,7 +274,7 @@ function SettingsPage() {
                 <Radio className="w-5 h-5 text-gray-700" />
                 <span className="font-semibold text-gray-900">在线模式（云端 API）</span>
               </div>
-              <p className="text-sm text-gray-500">DashScope 云端识别，零模型下载、启动即用，需填写 API Key</p>
+              <p className="text-sm text-gray-500">云端识别，零模型下载、启动即用（推荐），需填写 API Key</p>
             </button>
           </div>
 
@@ -331,7 +341,40 @@ function SettingsPage() {
               <TestResult target="asr" />
             </div>
           )}
-        </motion.section>
+        
+          {form.asr_mode === 'offline' && (
+            <div className="mt-5 p-4 rounded-xl bg-amber-50 border border-amber-200">
+              <p className="text-sm font-semibold text-amber-800 mb-2">离线模式需要先安装本地模型</p>
+              <p className="text-xs text-amber-700 leading-relaxed mb-3">
+                本地语音识别约需 2GB 模型 + torch/funasr 依赖，首次安装耗时较久且占磁盘/内存。
+                若只是临时使用，建议切回「在线模式」（零下载）。
+              </p>
+              {offlineCheck ? (
+                <div className="text-xs space-y-1 mb-3">
+                  <p className={offlineCheck.ready ? 'text-green-700' : 'text-amber-800'}>
+                    {offlineCheck.ready ? '✓ 环境就绪，可直接使用' : '✗ 尚未就绪'}
+                  </p>
+                  <p className="text-amber-700">计算后端：{offlineCheck.compute_backend?.toUpperCase()}</p>
+                  {offlineCheck.missing_models?.length > 0 && (
+                    <p className="text-amber-700">缺少模型：{offlineCheck.missing_models.length} 个</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-amber-600 mb-3">正在检查环境…</p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button onClick={checkOffline} className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-xs font-medium text-amber-800 hover:bg-amber-100">
+                  重新检查
+                </button>
+                {offlineCheck && !offlineCheck.ready && (
+                  <span className="px-3 py-1.5 rounded-lg bg-amber-100 text-xs font-mono text-amber-800 select-all">
+                    bash scripts/install_offline_asr.sh
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+</motion.section>
 
         {/* LLM 配置 */}
         <motion.section
@@ -447,6 +490,28 @@ function SettingsPage() {
             <span>测试 VLM 连通性</span>
           </button>
           <TestResult target="vlm" />
+        </motion.section>
+
+        {/* 抖音 cookies */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
+        >
+          <h2 className="text-base font-bold text-gray-900 mb-2">抖音 cookies（下载需要登录态）</h2>
+          <p className="text-xs text-gray-500 leading-relaxed mb-4">
+            抖音下载要求登录态 Cookie（yt-dlp 提示 Fresh cookies are needed）。获取方式：登录 douyin.com 后
+            用浏览器扩展导出 cookies.txt（Netscape 格式），粘贴到下方；也可用上方「一键读取浏览器 Cookie」自动获取。
+          </p>
+          <div>
+            <label className={labelClass}>cookies.txt 内容（Netscape 格式）</label>
+            <textarea
+              value={form.douyin_cookies || ''}
+              onChange={(e) => setField('douyin_cookies', e.target.value)}
+              placeholder="# Netscape HTTP Cookie File&#10;.douyin.com	TRUE	/	TRUE	0	sessionid	..."
+              rows={5}
+              className={`${inputClass} font-mono text-xs`}
+            />
+          </div>
         </motion.section>
 
         {/* 一键读取浏览器 Cookie */}

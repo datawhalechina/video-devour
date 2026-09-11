@@ -15,12 +15,17 @@ from backend.algorithm.settings_store import PROVIDER_DEFAULT_ASR_MODEL
 
 
 def get_asr_mode() -> str:
-    """读取当前 ASR 模式，默认 offline"""
+    """
+    读取当前 ASR 模式。
+
+    默认 online：本地离线模型（FunASR Paraformer，约 2GB）下载慢且吃 CPU/内存，
+    不应作为新用户的默认路径；需要离线识别时再到设置页显式切换并安装。
+    """
     try:
         from backend.algorithm.settings_store import load_settings
-        return load_settings().get("asr_mode", "offline")
+        return load_settings().get("asr_mode") or "online"
     except Exception:
-        return "offline"
+        return "online"
 
 
 def create_asr_engine(mode: str = None):

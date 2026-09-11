@@ -168,19 +168,20 @@ Everything is configured through the **settings console** (see below) — no con
 
 After starting the services, click the ⚙ floating button at the bottom-right of any page (or open `/settings`):
 
-- **ASR mode**: `Offline` (local FunASR Paraformer, no API) or `Online` (DashScope / StepFun cloud, zero model downloads)
+- **ASR mode**: defaults to `Online` (cloud, zero downloads, works immediately); local `Offline` (FunASR Paraformer) needs ~2GB of models — switching to it shows a self-check with the install command, or run `bash scripts/install_offline_asr.sh`
 - **LLM / VLM**: API key, base URL (any OpenAI-compatible service), and model name — with one-click provider presets and connectivity tests
 - **Default education level**: nine levels (Self-paced / Primary / … / Vertical-domain research)
 - **WeChat Channels**: paste the Yuanbao cookie to enable Channels share-link downloads (see below)
 
 Settings are stored in `settings.json` at the project root (gitignored — never commit secrets) and injected at each task run.
 
-### Online video links (Bilibili / YouTube / WeChat Channels)
+### Online video links (Bilibili / YouTube / Douyin / WeChat Channels)
 
 The "Link processing" page builds reports directly from a URL — no file upload needed:
 
 - **Paste a link**: platform auto-detected with an embedded preview player; share text from the apps works too.
 - **Keyword search**: Bilibili (official API) and YouTube; result cards show cover/duration/uploader.
+- **Douyin**: supports `douyin.com/video/{id}` pages and `v.douyin.com` short links (auto-resolved). **Downloads require a logged-in cookie** (set it under "Douyin cookies", or use one-click browser cookie import); keyword search is login-gated by Douyin, so the app offers a **trending-topics discovery** instead.
 - **One-click download & process**: yt-dlp download (auto-merged mp4) → standard pipeline (ASR → outline → keyframes → report).
 
 Notes:

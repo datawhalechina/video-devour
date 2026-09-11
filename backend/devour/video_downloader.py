@@ -81,7 +81,7 @@ def _get_ydl(**extra):
 
 
 def detect_platform(url: str) -> str:
-    """根据链接判断来源平台：youtube | bilibili | wechat | other"""
+    """根据链接判断来源平台：youtube | bilibili | wechat | douyin | other"""
     url = (url or "").lower()
     if re.search(r"(youtube\.com|youtu\.be)", url):
         return "youtube"
@@ -89,6 +89,8 @@ def detect_platform(url: str) -> str:
         return "bilibili"
     if re.search(r"weixin\.qq\.com/sph/", url):
         return "wechat"
+    if re.search(r"(douyin\.com|iesdouyin\.com)", url):
+        return "douyin"
     return "other"
 
 
@@ -106,6 +108,13 @@ def _extract_video_id(url: str, platform: str) -> Optional[str]:
         return m.group(1) if m else None
     if platform == "wechat":
         m = re.search(r"weixin\.qq\.com/sph/([A-Za-z0-9_\-]+)", url, re.IGNORECASE)
+        return m.group(1) if m else None
+    if platform == "douyin":
+        # /video/{id}、/note/{id}（图文）、短链 v.douyin.com/xxx
+        m = re.search(r"/(?:video|note)/(\d+)", url)
+        if m:
+            return m.group(1)
+        m = re.search(r"v\.douyin\.com/([A-Za-z0-9]+)", url)
         return m.group(1) if m else None
     return None
 
@@ -127,6 +136,32 @@ def _simplify_info(info: Dict, platform: str) -> Dict:
     }
 
 
+def _resolve_douyin_short_url(url: str) -> str:
+    """
+    抖音短链（v.douyin.com/xxx）跟随重定向拿到真实地址。
+    视频类短链会跳到 /video/{id}；用户/直播类会跳到其他路径（由调用方判断）。
+    解析失败时原样返回。
+    """
+    import requests
+    try:
+        resp = requests.get(url, headers={"User-Agent": _MOBILE_UA},
+                            allow_redirects=True, timeout=10)
+        final = resp.url or url
+        # 从最终地址里抽取视频 id 并规范化为 /video/{id}
+        m = re.search(r"/(?:video|note)/(\d+)", final)
+        if m:
+            return f"https://www.douyin.com/video/{m.group(1)}"
+        # 有些跳转把 id 放在 query（modal_id / aweme_id）
+        for key in ("modal_id", "aweme_id", "vid"):
+            m = re.search(rf"[?&]{key}=(\d+)", final)
+            if m:
+                return f"https://www.douyin.com/video/{m.group(1)}"
+        return final
+    except Exception as e:
+        logging.warning(f"抖音短链解析失败: {e}")
+        return url
+
+
 def probe_video_info(url: str) -> Dict:
     """
     获取视频元数据（不下载），用于前端预览确认。
@@ -135,6 +170,11 @@ def probe_video_info(url: str) -> Dict:
         ValueError: 链接不受支持或视频不存在
     """
     platform = detect_platform(url)
+    # 抖音短链先跟随重定向，能自动拿到视频页时避免报 Unsupported URL
+    if platform == "douyin" and "v.douyin.com" in url:
+        resolved = _resolve_douyin_short_url(url)
+        if "/video/" in resolved:
+            url = resolved
     if platform == "wechat":
         # 视频号不支持 yt-dlp：分享页兜底信息 + 直连链路尽力补全真实元数据
         info = _wechat_share_info(url)
@@ -160,6 +200,20 @@ def probe_video_info(url: str) -> Dict:
         with _get_ydl(referer=_platform_referer(platform)) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as e:
+        if platform == "douyin":
+            msg = str(e)
+            if "Unsupported URL" in msg or "iesdouyin.com/share/user" in msg:
+                raise ValueError(
+                    "抖音链接需为视频页（www.douyin.com/video/{id}）。"
+                    "短链/用户主页无法直接解析：请在抖音 App 打开目标视频 → 分享 → 复制链接，"
+                    "若得到 v.douyin.com 短链，请先在浏览器打开、待跳转到视频页后复制完整地址；"
+                    "或直接在抖音 App 内下载视频后到「本地上传」处理。"
+                )
+            if "cookies" in msg.lower() or "Fresh cookies" in msg:
+                raise ValueError(
+                    "抖音下载需要登录态 Cookie。请在设置控制台「抖音 cookies」配置，"
+                    "或点击「一键读取浏览器 Cookie」自动获取（需在浏览器登录过抖音）。"
+                )
         if platform == "youtube" and ("Sign in" in str(e) or "not a bot" in str(e)):
             # YouTube bot 检查：按 youtube-downloader 工具的实践回退 oEmbed
             logging.warning("YouTube bot 检查拦截，回退 oEmbed 获取元数据")
@@ -917,12 +971,71 @@ def search_videos(query: str, platform: str = "bilibili", max_results: int = 8) 
     query = (query or "").strip()
     if not query:
         raise ValueError("搜索关键词不能为空")
-    if platform not in ("bilibili", "youtube"):
-        raise ValueError("platform 仅支持 bilibili 或 youtube（微信视频号暂不支持搜索，请直接粘贴分享链接）")
+    if platform not in ("bilibili", "youtube", "douyin"):
+        raise ValueError("platform 仅支持 bilibili / youtube / douyin（微信视频号不支持搜索，请直接粘贴分享链接）")
 
     if platform == "bilibili":
         return _bilibili_search(query, max_results)
+    if platform == "douyin":
+        return _douyin_search(query, max_results)
     return _youtube_search(query, max_results)
+
+
+def _douyin_search(query: str, max_results: int = 8) -> List[Dict]:
+    """
+    抖音搜索。
+
+    说明：抖音网页搜索 API 需要 a_bogus 签名（无签名返回空），无法在服务端直接调用。
+    因此这里用官方公开的「热榜」接口做内容发现：返回当前热门话题，
+    用户可据此到抖音 App/网页查看，或直接粘贴分享链接处理。
+    关键词与热词做匹配，匹配到时排在前面。
+    """
+    import requests
+
+    session = requests.Session()
+    session.headers.update({"User-Agent": _BROWSER_UA, "Referer": "https://www.douyin.com/"})
+    try:
+        resp = session.get("https://www.douyin.com/aweme/v1/web/hot/search/list/", timeout=10)
+        payload = resp.json()
+        words = (payload.get("data") or {}).get("word_list") or []
+    except Exception as e:
+        logging.warning(f"抖音热榜获取失败: {e}")
+        raise ValueError(
+            "抖音搜索需要登录态签名，服务端无法直接检索。"
+            "可打开 https://www.douyin.com/search/ 搜索后复制视频链接，"
+            "或在抖音 App 分享后粘贴链接处理。"
+        )
+
+    kw = (query or "").lower()
+    results = []
+    for w in words:
+        word = (w.get("word") or "").strip()
+        if not word:
+            continue
+        group_id = str(w.get("group_id") or "")
+        # 热词无法直接给出视频直链：提供抖音搜索页跳转（前端打开）
+        item = {
+            "id": group_id or word,
+            "title": word,
+            "uploader": "抖音热榜",
+            "duration": None,
+            "thumbnail": "",
+            "platform": "douyin",
+            "webpage_url": f"https://www.douyin.com/search/{word}",
+            "video_id": group_id or "",
+            "description": f"热度 {w.get('hot_value') or 0} · 讨论 {w.get('discuss_video_count') or 0}",
+            "hot_value": w.get("hot_value") or 0,
+        }
+        # 与关键词匹配的排前面
+        item["_rank"] = 0 if kw and kw in word.lower() else 1
+        results.append(item)
+
+    results.sort(key=lambda x: (x["_rank"], -x.get("hot_value", 0)))
+    for r in results:
+        r.pop("_rank", None)
+    if not results:
+        raise ValueError("抖音热榜暂无数据，请稍后重试或直接粘贴视频链接")
+    return results[:max_results]
 
 
 def _bilibili_search(query: str, max_results: int) -> List[Dict]:
@@ -1057,6 +1170,8 @@ def download_video(url: str, target_dir: str, max_height: int = 720,
     target = Path(target_dir)
     target.mkdir(parents=True, exist_ok=True)
     platform = detect_platform(url)
+    if platform == "douyin" and "v.douyin.com" in url:
+        url = _resolve_douyin_short_url(url)
     if platform == "wechat":
         return _download_wechat_video(url, target_dir, progress_hook=progress_hook)
     referer = "https://www.youtube.com/" if platform == "youtube" else "https://www.bilibili.com/"
@@ -1098,15 +1213,26 @@ def download_video(url: str, target_dir: str, max_height: int = 720,
             path = _bilibili_cookiefile()
             return (path, True) if path else (None, False)
         # YouTube bot 检查：环境变量 cookies 文件优先，其次设置控制台粘贴的 cookies.txt
-        env_cookies = os.getenv("YTDLP_COOKIES_FILE")
-        if env_cookies and os.path.exists(env_cookies):
-            return env_cookies, False
-        text = _settings_text("youtube_cookies")
-        if text and "youtube.com" in text.lower():
-            fd, path = tempfile.mkstemp(prefix="yt_cookies_", suffix=".txt")
-            with os.fdopen(fd, "w") as f:
-                f.write(text if text.endswith("\n") else text + "\n")
-            return path, True
+        if platform == "youtube":
+            env_cookies = os.getenv("YTDLP_COOKIES_FILE")
+            if env_cookies and os.path.exists(env_cookies):
+                return env_cookies, False
+            text = _settings_text("youtube_cookies")
+            if text and "youtube.com" in text.lower():
+                fd, path = tempfile.mkstemp(prefix="yt_cookies_", suffix=".txt")
+                with os.fdopen(fd, "w") as f:
+                    f.write(text if text.endswith("\n") else text + "\n")
+                return path, True
+            return None, False
+        # 抖音同样需要登录态 cookie（Fresh cookies are needed）
+        if platform == "douyin":
+            text = _settings_text("douyin_cookies")
+            if text and "douyin" in text.lower():
+                fd, path = tempfile.mkstemp(prefix="dy_cookies_", suffix=".txt")
+                with os.fdopen(fd, "w") as f:
+                    f.write(text if text.endswith("\n") else text + "\n")
+                return path, True
+            return None, False
         return None, False
 
     def _remove_cookiefile(entry):
@@ -1142,6 +1268,13 @@ def download_video(url: str, target_dir: str, max_height: int = 720,
         except Exception as e:
             last_error = e
             message = str(e)
+            if platform == "douyin" and ("cookies" in message.lower() or "Fresh cookies" in message):
+                _remove_cookiefile(cookie_entry)
+                raise ValueError(
+                    "抖音下载需要登录态 Cookie（yt-dlp 提示 Fresh cookies are needed）。"
+                    "请在设置控制台「抖音 cookies」粘贴浏览器导出的 cookies.txt（Netscape 格式，"
+                    "需含 douyin.com 的 cookie），或点击「一键读取浏览器 Cookie」自动获取。"
+                )
             if "Sign in" in message or "not a bot" in message:
                 _remove_cookiefile(cookie_entry)
                 raise ValueError(

@@ -1687,6 +1687,63 @@ async def clear_download_cache(max_age_days: int = 0, max_total_mb: int = 0):
     )
 
 
+@app.get("/api/asr/offline-check")
+async def offline_asr_check():
+    """
+    离线 ASR 环境自检：依赖（torch/funasr/modelscope）、计算后端、本地模型目录。
+    用于设置页在用户切换「离线」时给出可操作提示，而不是让用户盲等下载。
+    """
+    import importlib.util as _ilu
+
+    def _check():
+        import os
+        from pathlib import Path as _P
+        root = _P(__file__).resolve().parent.parent.parent
+        models_dir = root / "models" / "iic"
+        required = [
+            "speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
+            "speech_fsmn_vad_zh-cn-16k-common-pytorch",
+            "punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
+            "speech_campplus_sv_zh-cn_16k-common",
+        ]
+        deps = {}
+        for mod in ("torch", "funasr", "modelscope"):
+            deps[mod] = _ilu.find_spec(mod) is not None
+
+        backend = "cpu"
+        try:
+            import torch
+            if torch.cuda.is_available():
+                backend = "cuda"
+            elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+                backend = "mps"
+        except Exception:
+            pass
+
+        missing = [m for m in required
+                   if not (models_dir / m).exists() or not any((models_dir / m).iterdir())]
+        ready = all(deps.values()) and not missing
+        hints = []
+        if not all(deps.values()):
+            hints.append("缺少依赖（torch/funasr/modelscope）：执行 bash scripts/install_offline_asr.sh --deps")
+        if missing:
+            hints.append(f"缺少 {len(missing)} 个本地模型：执行 bash scripts/install_offline_asr.sh --models")
+        if not ready:
+            hints.append("或保持「在线」ASR，零下载、开箱即用（推荐）")
+        return {
+            "ready": ready,
+            "dependencies": deps,
+            "compute_backend": backend,
+            "models_dir": str(models_dir),
+            "missing_models": missing,
+            "hints": hints,
+            "check_command": "bash scripts/install_offline_asr.sh --check",
+            "install_command": "bash scripts/install_offline_asr.sh",
+        }
+
+    return await _run_link_probe(_check)
+
+
 @app.get("/api/history")
 async def get_history():
     """

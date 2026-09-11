@@ -61,9 +61,10 @@
 - **中文输出保障**：无论视频原语言是什么，大纲与报告一律输出简体中文（专有名词保留原文）。
 - **LLM 限流重试**：限流/超时自动指数退避重试，保证长任务稳定性。
 
-### 🔗 在线视频链接处理（B站 / YouTube / 微信视频号）
+### 🔗 在线视频链接处理（B站 / YouTube / 抖音 / 微信视频号）
 - **粘贴链接直接处理**：自动识别平台（可直接粘贴 App 分享文案），预览窗口内嵌官方播放器在线播放，一键下载并进入完整处理流水线。
 - **关键词搜索**：内置 B站官方搜索与 YouTube 搜索，封面/时长/UP主卡片式展示。
+- **抖音**：支持 `douyin.com/video/{id}` 视频页与 `v.douyin.com` 短链（自动跟随重定向）。**下载需要登录态 Cookie**（设置页「抖音 cookies」或一键读取浏览器 Cookie）；抖音搜索受官方登录限制，采用**热榜内容发现**代替关键词检索。
 - **微信视频号**：支持 `weixin.qq.com/sph/...` 分享链接。在设置页填入腾讯元宝 Cookie 后走**直连解析**（元宝解析 → 视频号 feed 接口 → 本地 ISAAC64 解密，无第三方依赖）；也可选配自建解析服务（`WECHAT_RESOLVER_URL`）或使用本地捕获工具（[ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download)）下载后上传处理。
 - 由 `yt-dlp` 驱动，含 B站风控退避重试与 YouTube cookies 支持（`YTDLP_COOKIES_FILE`）。
 
@@ -171,7 +172,7 @@ pip install -r requirements.txt
 
 启动后在任意页面点击右下角 ⚙ 悬浮按钮（或访问 `/settings`）完成全部配置：
 
-- **语音识别模式**：`离线`（本地 FunASR Paraformer，无需 API）或 `在线`（DashScope / StepFun 云端识别，零模型下载、启动即用）
+- **语音识别模式**：默认 `在线`（云端识别，零模型下载、开箱即用）；本地 `离线`（FunASR Paraformer）需先安装约 2GB 模型——设置页切到离线会显示自检结果与安装命令，或运行 `bash scripts/install_offline_asr.sh`
 - **LLM / VLM**：填写 API Key、接口地址（任意 OpenAI 兼容服务）与模型名称，支持常用供应商一键填入，并可一键连通性测试
 - **默认学习阶段**：九档可选（自由学习/小学/初中/高中/大学/硕士/博士/深入研究/垂直领域研究）
 - **微信视频号**：填入元宝 Cookie 以启用视频号分享链接下载（配置方法见下文）
