@@ -55,8 +55,17 @@ Write-Host "[3/4] 检查 Inno Setup..."
 $Iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
 if ($Iscc) {
     Write-Host "[4/4] 生成安装包..."
+    # 检查 ISCC 退出码：之前只判断"命令是否存在"，
+    # 编译中止（如缺语言文件）也会打印"已生成"，导致误判。
     & $Iscc.Source (Join-Path $ScriptDir "installer.iss")
-    Write-Host "安装包已生成于 desktop\dist\"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Inno Setup 编译失败（退出码 $LASTEXITCODE），详见上方输出"
+    }
+    $SetupExe = Get-ChildItem -Path $DistDir -Filter "*-setup.exe" | Select-Object -First 1
+    if (-not $SetupExe) {
+        throw "ISCC 返回成功但未找到 *-setup.exe，请检查 installer.iss 的 OutputDir"
+    }
+    Write-Host "安装包已生成：$($SetupExe.FullName)"
 } else {
     Write-Host "[4/4] 未检测到 Inno Setup，跳过安装包（目录版可直接运行）"
     Write-Host "      安装 Inno Setup 6 后重试：winget install JRSoftware.InnoSetup"

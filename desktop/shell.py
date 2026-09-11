@@ -180,14 +180,24 @@ class BackendProcess:
 
 
 class Bridge:
-    """暴露给前端的原生桥（仅文件操作与窗口操作）。"""
+    """
+    暴露给前端的原生桥（仅文件操作与窗口操作）。
+
+    注意：窗口引用必须是下划线私有属性（`_window`）。
+    pywebview 注入 js_api 时会递归展开对象的**公开**属性（webview/util.py 的
+    get_functions），只跳过下划线开头的名字。若窗口引用是公开属性（如 `self.window`），
+    它会一路走进原生窗口对象图：
+        window.native.AccessibilityObject.Bounds.Empty.Empty.Empty...
+    WinForms 的 `Rectangle.Empty` 每次返回新实例，pywebview 靠 id() 去重因此失效，
+    导致无限递归（Windows 实测：窗口卡死、终端刷满 maximum recursion depth exceeded）。
+    """
 
     def __init__(self, window=None):
-        self.window = window
+        self._window = window
 
     def pick_video(self):
         """选择视频文件，返回绝对路径。"""
-        result = self.window.create_file_dialog(
+        result = self._window.create_file_dialog(
             webview.OPEN_DIALOG,
             allow_multiple=False,
             file_types=("视频文件 (*.mp4;*.mov;*.mkv;*.avi;*.webm;*.flv;*.m4v)", "所有文件 (*.*)"),
@@ -196,7 +206,7 @@ class Bridge:
 
     def save_as(self, suggested_name: str = "export.md", content: str = ""):
         """另存为：返回保存路径。"""
-        result = self.window.create_file_dialog(
+        result = self._window.create_file_dialog(
             webview.SAVE_DIALOG, save_filename=suggested_name
         )
         if not result:
@@ -306,7 +316,8 @@ def main():
         height=860,
         min_size=(900, 600),
     )
-    bridge.window = window
+    # 赋给私有属性（不可写成 bridge.window，否则触发 pywebview 递归展开原生窗口对象）
+    bridge._window = window
 
     def _on_closed():
         backend.stop()

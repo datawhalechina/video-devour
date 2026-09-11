@@ -195,7 +195,7 @@ class SemanticMatcher:
         
         return None, 0.0
 
-from llm_handler import LLMHandler
+from backend.algorithm.llm_handler import LLMHandler
 
 def match_chunk_to_headings_llm(chunk, headings, chunk_index=None, all_chunks=None, context_window=3):
     """

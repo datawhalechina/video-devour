@@ -71,8 +71,26 @@ hiddenimports += collect_submodules("yt_dlp")
 hiddenimports += collect_submodules("reportlab")
 datas += collect_data_files("reportlab")
 
-# 项目自身的后端包（避免遗漏子模块）
-hiddenimports += collect_submodules("backend")
+# 项目自身的后端模块：用文件系统枚举，不要依赖 collect_submodules。
+# 原因：backend/、backend/algorithm/、backend/devour/ 都没有 __init__.py（隐式命名空间包），
+# collect_submodules("backend") 只会返回 backend.api / backend.runtime 两个包下的模块
+# （实测 5 个），algorithm 与 devour 下的模块一个都收不到。
+# 之前能运行只是碰巧：PyInstaller 顺着入口的静态 import 链收到了大部分模块，
+# 而仅被“函数内裸导入”引用的模块（如 vlm_handler）被静默漏掉，
+# 表现为关键帧选择失败、报告无图。
+def _iter_backend_modules():
+    names = set()
+    for py in (PROJECT_ROOT / "backend").rglob("*.py"):
+        if py.name == "__init__.py":
+            continue
+        if py.name.startswith("test_") or py.name == "config.template.py":
+            continue
+        rel = py.relative_to(PROJECT_ROOT).with_suffix("")
+        names.add(".".join(rel.parts))
+    return sorted(names)
+
+
+hiddenimports += _iter_backend_modules()
 hiddenimports += collect_submodules("desktop")
 
 # pywebview 在 macOS 下依赖 pyobjc WebKit 桥，需显式收集

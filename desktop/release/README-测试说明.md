@@ -1,15 +1,40 @@
 # VideoDevour 桌面客户端 · 测试包
 
-构建日期：2026-09-09　版本：0.1.0（轻量包）
+构建日期：2026-09-11　版本：0.1.0（轻量包）
 
 ## 交付文件
 
 | 文件 | 平台 | 大小 | 说明 |
 |------|------|------|------|
-| `VideoDevour-macos-arm64.zip` | macOS Apple Silicon | 192MB | 解压后得到 `VideoDevour.app` |
-| `VideoDevour-windows-x64.zip` | Windows x64 | 200MB | 解压后得到 `VideoDevour.exe` + `_internal/` |
+| `VideoDevour-0.1.0-setup.exe` | Windows x64 | 146MB | **推荐**：安装程序，含开始菜单/桌面快捷方式 |
+| `VideoDevour-windows-x64.zip` | Windows x64 | 203MB | 绿色版，解压即用（免安装） |
+| `VideoDevour-macos-arm64.zip` | macOS Apple Silicon | 195MB | 解压后得到 `VideoDevour.app` |
 
-> **必须解压后运行**：两个包都是 onedir 结构，不能只单独拿出 `.app` / `.exe`。
+> **绿色版必须解压后运行**：含 onedir 结构，不能只单独拿出 `.exe`。
+
+## Windows 测试步骤
+
+### 方式一：安装包（推荐）
+
+1. 双击 `VideoDevour-0.1.0-setup.exe`
+2. 按向导安装（默认装到 `%LOCALAPPDATA%\Programs\VideoDevour`，免管理员权限）
+3. 从开始菜单或桌面快捷方式启动
+
+**卸载时用户数据会保留**（任务、报告、设置都在 `%LOCALAPPDATA%\VideoDevour`）。
+
+### 方式二：绿色版
+
+```powershell
+Expand-Archive VideoDevour-windows-x64.zip -DestinationPath .
+.\VideoDevour.exe
+```
+
+### SmartScreen 提示
+
+两种方式首次运行都会弹"Windows 已保护你的电脑"——因为**安装包与可执行文件都未做代码签名**。
+点「更多信息」→「仍要运行」即可。这是预期行为，正式发行前会加签名证书。
+
+**系统要求**：Windows 10/11 x64 + WebView2 运行时（Win11 及较新版 Win10 已内置）。
 
 ## macOS 测试步骤
 
@@ -27,20 +52,6 @@ open VideoDevour.app
 若双击提示"已损坏"或"无法验证开发者"，就是第 2 步没做。
 
 **适用机型**：Apple Silicon（M1/M2/M3/M4）。Intel Mac 不适用（本次未构建 x86_64）。
-
-## Windows 测试步骤
-
-```powershell
-# 1. 解压到任意目录（不要放在 C:\Program Files 等受保护路径）
-Expand-Archive VideoDevour-windows-x64.zip -DestinationPath .
-
-# 2. 运行
-.\VideoDevour.exe
-```
-
-**系统要求**：Windows 10/11 x64，需要 **WebView2 运行时**（Win11 及较新的 Win10 已内置；若提示缺失，从微软官网安装 Evergreen 版）。
-
-**SmartScreen 提示**：包未做代码签名，首次运行会弹"Windows 已保护你的电脑"→ 点"更多信息"→"仍要运行"。这是预期行为，正式发行前会加签名证书。
 
 ## 首次使用要配置的东西
 
