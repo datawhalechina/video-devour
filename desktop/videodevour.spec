@@ -65,6 +65,12 @@ if _spec and _spec.submodule_search_locations:
 # yt-dlp 的 extractor 也是动态加载
 hiddenimports += collect_submodules("yt_dlp")
 
+# reportlab：PDF 导出（backend/algorithm/pdf_export.py）在函数内被导入，
+# PyInstaller 静态分析看不到，必须显式收集，否则运行时报
+# ModuleNotFoundError: No module named 'reportlab'。
+hiddenimports += collect_submodules("reportlab")
+datas += collect_data_files("reportlab")
+
 # 项目自身的后端包（避免遗漏子模块）
 hiddenimports += collect_submodules("backend")
 hiddenimports += collect_submodules("desktop")
