@@ -19,7 +19,9 @@ VideoDevour skill 入口脚本（跨 agent 通用，遵循 .agents/skills 约定
   devour.py process <url|本地视频路径> [--level 高中|初中|小学] [--home 项目目录]
   devour.py mindmap [--latest | --dir 输出目录] [--open] [--level 学习阶段]
   devour.py graph   [--latest | --dir 输出目录] [--open] [--level 学习阶段]
-  devour.py report [--latest | --dir 输出目录]
+  devour.py styles  [--latest | --dir 输出目录] [--kind quantum,wechat,xiaohongshu]
+  devour.py pdf     [--latest | --dir 输出目录] [--type report|detailed|outline|all] [--out 文件]
+  devour.py report  [--latest | --dir 输出目录] [--type report|detailed|outline]
 """
 import argparse
 import json
@@ -98,6 +100,56 @@ def cmd_info(args):
     print(json.dumps(info, ensure_ascii=False, indent=2))
 
 
+def _collect_artifacts(out_dir: Path) -> dict:
+    """汇总一个任务目录里的产物：报告 / 详细报告 / 大纲 / 关键帧 / 压缩信息 / 文体。
+
+    与 WebUI 的产物保持一致，便于 agent 直接取用，不必自己猜文件名。
+    """
+    def _p(name):
+        f = out_dir / name
+        return str(f) if f.exists() and f.stat().st_size > 0 else None
+
+    arts = {
+        "report": _p("final_report.md"),            # 精简报告
+        "detailed_report": _p("detailed_report.md"),  # 详细报告（原文+笔记）
+        "outline": _p("detailed_outline.md"),       # 图文大纲
+    }
+    kf = out_dir / "keyframes"
+    arts["keyframes"] = [str(p) for p in sorted(kf.glob("*.jpg"))] if kf.exists() else []
+
+    # 处理时压缩到 720p/10fps 的实际结果（原体积 vs 压缩后）
+    mp = out_dir / "media_profile.json"
+    if mp.exists():
+        try:
+            d = json.loads(mp.read_text(encoding="utf-8"))
+            arts["media_profile"] = {
+                "profile": d.get("profile"),
+                "original_bytes": d.get("original_bytes"),
+                "size": d.get("size"),
+                "width": d.get("width"),
+                "height": d.get("height"),
+                "fps": d.get("fps"),
+            }
+        except Exception:
+            pass
+
+    # 已生成的衍生文体（按需生成，未生成则不列出）。
+    # 用 document_library 的静态映射取文件名，避免为读名字而导入依赖 config 的模块。
+    try:
+        from backend.algorithm.document_library import ARTICLE_TYPES, GENERATABLE_SCOPES
+        styles = {}
+        for scope in GENERATABLE_SCOPES:
+            fname, label = ARTICLE_TYPES[scope][0], ARTICLE_TYPES[scope][1]
+            f = out_dir / fname
+            if f.exists() and f.stat().st_size > 0:
+                styles[scope] = {"label": label, "file": str(f)}
+        if styles:
+            arts["styles"] = styles
+    except Exception:
+        pass
+    return arts
+
+
 def cmd_process(args):
     home = project_home(args.home)
     setup_project(home)
@@ -112,7 +164,8 @@ def cmd_process(args):
         print(f"[1/2] 下载视频: {url}")
         from backend.devour.video_downloader import download_video
 
-        result = download_video(url, str(home / "uploads"), max_height=1080)
+        # 默认取 720p H.264：与处理阶段的轻量档一致，避免下高清再重编码（更省流量与时间）
+        result = download_video(url, str(home / "uploads"), max_height=720)
         video_path = result["file_path"]
         print(f"下载完成: {video_path}")
     else:
@@ -134,7 +187,6 @@ def cmd_process(args):
         print(json.dumps({"error": "流水线未产生输出目录，请检查日志"}, ensure_ascii=False))
         sys.exit(2)
     out_dir = candidates[-1]
-    report = out_dir / "final_report.md"
 
     # 可选附加产物：--extras mindmap,graph,card（默认不生成，节省时间）
     extras_result = {}
@@ -155,21 +207,10 @@ def cmd_process(args):
         except Exception as e:
             extras_result[kind] = f"生成失败: {e}"
 
-    outcome = {
-        "output_dir": str(out_dir),
-        "report": str(report) if report.exists() else None,
-        "outline": str(out_dir / "detailed_outline.md")
-        if (out_dir / "detailed_outline.md").exists()
-        else None,
-        "keyframes": [
-            str(p) for p in sorted((out_dir / "keyframes").glob("*.jpg"))
-        ]
-        if (out_dir / "keyframes").exists()
-        else [],
-    }
+    outcome = {"output_dir": str(out_dir), **_collect_artifacts(out_dir)}
     if extras_result:
         outcome["extras"] = extras_result
-    if not outcome["report"]:
+    if not outcome.get("report"):
         outcome["error"] = "处理未完成：final_report.md 未生成，请检查 processing.log"
         print(json.dumps(outcome, ensure_ascii=False, indent=2))
         sys.exit(2)
@@ -297,12 +338,81 @@ def cmd_report(args):
             print("暂无任何处理产物", file=sys.stderr)
             sys.exit(1)
         out_dir = candidates[-1]
-    report = out_dir / "final_report.md"
+    # 默认看精简报告；--type detailed 看详细报告（原文+笔记对照）
+    name = {"report": "final_report.md", "detailed": "detailed_report.md",
+            "outline": "detailed_outline.md"}[args.type]
+    report = out_dir / name
     if not report.exists():
-        print(f"该任务尚未完成（无 final_report.md）: {out_dir}", file=sys.stderr)
+        print(f"该任务尚未生成 {name}: {out_dir}", file=sys.stderr)
         sys.exit(1)
     print(f"# 输出目录: {out_dir}\n")
     print(report.read_text(encoding="utf-8"))
+
+
+def cmd_styles(args):
+    """生成衍生文体：量子速读 / 公众号文章 / 小红书笔记（基于已有报告改写）。
+
+    默认三种都生成；已生成的会直接复用（落盘缓存）。
+    """
+    home = project_home(args.home)
+    setup_project(home)
+    out_dir = _resolve_task_dir(home, args)
+
+    from backend.algorithm.style_articles import generate_style, STYLE_TYPES
+    kinds = [k.strip() for k in (args.kind or "").split(",") if k.strip()] or list(STYLE_TYPES)
+    result = {"output_dir": str(out_dir), "styles": {}}
+    for scope in kinds:
+        if scope not in STYLE_TYPES:
+            result["styles"][scope] = "不支持的文体（可选 quantum/wechat/xiaohongshu）"
+            continue
+        label = STYLE_TYPES[scope][1]
+        try:
+            path = generate_style(out_dir, scope, args.level or None)
+            result["styles"][scope] = {"label": label, "file": str(path)}
+            print(f"已生成{label}: {path}")
+        except Exception as e:
+            result["styles"][scope] = f"生成失败: {e}"
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def cmd_pdf(args):
+    """把报告导出为 PDF（内置中文字体，无需外部依赖）。
+
+    --type：report 精简报告(默认) / detailed 详细报告 / outline 图文大纲 / all 合并
+    """
+    home = project_home(args.home)
+    setup_project(home)
+    out_dir = _resolve_task_dir(home, args)
+
+    from backend.algorithm.pdf_export import markdown_to_pdf, safe_pdf_name
+    sources = {"report": ("final_report.md", "精简报告"),
+               "detailed": ("detailed_report.md", "详细报告"),
+               "outline": ("detailed_outline.md", "图文大纲")}
+    if args.type == "all":
+        parts = []
+        for key in ("outline", "report", "detailed"):
+            f = out_dir / sources[key][0]
+            if f.exists() and f.stat().st_size > 0:
+                parts.append(f.read_text(encoding="utf-8"))
+        if not parts:
+            print("该任务暂无可导出的报告", file=sys.stderr)
+            sys.exit(1)
+        md, label = "\n\n".join(parts), "合并报告"
+    else:
+        fname, label = sources[args.type]
+        f = out_dir / fname
+        if not f.exists() or f.stat().st_size == 0:
+            print(f"该任务没有{label}（{fname}）", file=sys.stderr)
+            sys.exit(1)
+        md = f.read_text(encoding="utf-8")
+
+    title = out_dir.name
+    pdf_bytes = markdown_to_pdf(md, title=title, base_dir=out_dir, extra_roots=(home,))
+    out_path = Path(args.out).expanduser() if args.out else out_dir / safe_pdf_name(title, label)
+    out_path.write_bytes(pdf_bytes)
+    print(json.dumps({"pdf": str(out_path), "type": args.type, "label": label,
+                      "bytes": len(pdf_bytes), "output_dir": str(out_dir)},
+                     ensure_ascii=False, indent=2))
 
 
 def main():
@@ -356,10 +466,32 @@ def main():
     p_kg.add_argument("--open", action="store_true", help="生成后在浏览器打开")
     p_kg.set_defaults(func=lambda a: cmd_viz(a, "graph"))
 
-    p_report = sub.add_parser("report", help="查看最新/指定任务的报告")
+    p_report = sub.add_parser("report", help="查看任务报告（默认精简报告，--type 可选详细报告/大纲）")
     p_report.add_argument("--latest", action="store_true")
     p_report.add_argument("--dir", default=None)
+    p_report.add_argument("--type", default="report",
+                          choices=["report", "detailed", "outline"],
+                          help="report=精简报告(默认) / detailed=详细报告 / outline=图文大纲")
     p_report.set_defaults(func=cmd_report)
+
+    p_styles = sub.add_parser(
+        "styles", help="生成衍生文体：量子速读 / 公众号文章 / 小红书笔记")
+    p_styles.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
+    p_styles.add_argument("--dir", default=None, help="指定任务输出目录")
+    p_styles.add_argument("--kind", default="",
+                          help="逗号分隔，可选：quantum,wechat,xiaohongshu（默认全部）")
+    p_styles.add_argument("--level", default=None,
+                          choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
+    p_styles.set_defaults(func=cmd_styles)
+
+    p_pdf = sub.add_parser("pdf", help="把报告导出为 PDF（内置中文字体）")
+    p_pdf.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
+    p_pdf.add_argument("--dir", default=None, help="指定任务输出目录")
+    p_pdf.add_argument("--type", default="report",
+                       choices=["report", "detailed", "outline", "all"],
+                       help="report=精简报告(默认) / detailed=详细报告 / outline=图文大纲 / all=合并")
+    p_pdf.add_argument("--out", default=None, help="输出文件路径（默认写入任务目录）")
+    p_pdf.set_defaults(func=cmd_pdf)
 
     args = parser.parse_args()
     home = project_home(args.home)

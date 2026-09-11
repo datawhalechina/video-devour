@@ -1,6 +1,6 @@
 ---
 name: videodevour
-description: 使用 VideoDevour 把视频（B站/YouTube 链接、微信视频号分享链接或本地文件）处理成中文图文报告。当用户要求"处理这个视频"、"视频转笔记/报告/图文大纲"、"下载并总结B站/YouTube/视频号视频"时使用。支持搜索视频、查询链接信息、一键生成带关键帧的图文报告。
+description: 使用 VideoDevour 把视频（B站/YouTube 链接、微信视频号分享链接或本地文件）处理成中文图文报告。当用户要求"处理这个视频"、"视频转笔记/报告/图文大纲"、"下载并总结B站/YouTube/视频号视频"时使用。支持搜索视频、查询链接信息、一键生成带关键帧的图文报告（精简/详细），并可改写成量子速读、公众号文章、小红书笔记，或导出 PDF。
 license: Apache-2.0
 compatibility: 需要 Python 3.12+ 与项目 .venv（uv sync），ffmpeg；任何支持 .agents/skills 约定的 agent 均可调用
 ---
@@ -11,6 +11,8 @@ compatibility: 需要 Python 3.12+ 与项目 .venv（uv sync），ffmpeg；任�
 
 调用 VideoDevour 项目（本仓库），把视频端到端处理为中文图文报告
 （ASR 转写 → 大纲 → 视频切分 → 关键帧 → 图文报告），不依赖 Web 界面。
+产出三层内容：**图文大纲 / 精简报告（结论先行）/ 详细报告（完整原文+笔记对照）**；
+可按需改写成**量子速读 / 公众号文章 / 小红书笔记**，并导出 **PDF**。
 
 ## 必要输入
 
@@ -25,6 +27,8 @@ compatibility: 需要 Python 3.12+ 与项目 .venv（uv sync），ffmpeg；任�
    脚本会自动切换到 `.venv` 运行。
 3. ASR/LLM/VLM 配置读取项目根目录 `settings.json`；LLM/VLM 需要 key，离线 ASR 需要
    本地模型（`models/iic/` 下四个目录）。缺 key 时提示用户在 WebUI 控制台（`/settings`）填写。
+4. 导出 PDF 依赖 `reportlab`（已写入 `requirements.txt` / `requirements-lite.txt`），
+   执行过 `uv sync` 即可用。
 
 ## Workflow
 
@@ -85,8 +89,15 @@ python3 <skill目录>/scripts/devour.py process /path/to/video.mp4 --level 初�
 ```
 
 - 命令是同步阻塞的，**bash 超时请设为 600000ms（10分钟）以上**；10 分钟内的视频一般 2-5 分钟完成
-- 输出为逐阶段进度日志，成功结束时打印 JSON 结果：
-  `{"report": ".../final_report.md", "outline": ".../detailed_outline.md", ...}`
+  （90 分钟以上的长视频，详细报告分段生成需 10 分钟以上，请把超时再放大）
+- 处理前会自动把视频压到 **720p / 10fps / H.264** 再转写与抽帧（省时省存储）；压缩结果大于原文件时保留原文件
+- 输出为逐阶段进度日志，成功结束时打印 JSON 结果，关键字段：
+  - `report`：精简报告（结论先行，快速阅读）
+  - `detailed_report`：详细报告（**完整视频原文 + 整理笔记**对照，原文不截断）
+  - `outline`：图文大纲（章节 + 关键帧）
+  - `keyframes`：关键帧图片路径数组
+  - `media_profile`：压缩前后体积与分辨率（确认存储收益时看这个）
+  - `styles`：已生成的衍生文体（未生成时不出现，见第 7 节）
 - ASR 模式跟随 `settings.json`（离线=本地 MPS/CPU，在线=DashScope），LLM/VLM 固定走云端
 - **思维导图/知识图谱/学习卡片默认不生成**（为不需要的用户节省时间）。用户明确需要时，
   加 `--extras "mindmap,graph,card"`（可任选其一或多个，逗号分隔）在报告完成后一次生成；
@@ -107,13 +118,48 @@ python3 <skill目录>/scripts/devour.py graph --latest --open
 输出 JSON `{"html": "<输出目录>/mindmap.html", ...}`，将 html 路径呈现给用户（浏览器打开即用）。
 若在 `process` 时已用 `--extras` 生成过，直接使用输出 JSON 中 extras 里的路径，无需重复生成。
 
-### 7. 读取报告
+### 7. 衍生文体：量子速读 / 公众号文章 / 小红书笔记（仅用户需要时）
 
-处理完成后读取打印的 `final_report.md` 路径，向用户呈现报告内容摘要（含关键帧图片的相对路径引用）。
-也可手动查看：
+把已有报告改写成可直接发布的成品文案（**不是分析报告**，基于精简报告改写，事实不跑偏）。
+**不在处理流程里预生成**，按需生成并落盘缓存，重复调用直接复用。
 
 ```bash
-python3 <skill目录>/scripts/devour.py report --latest
+S=<skill目录>/scripts/devour.py
+# 三种全部生成（默认）
+python3 $S styles --latest
+# 只生成某一种
+python3 $S styles --latest --kind xiaohongshu
+# 指定任务目录
+python3 $S styles --dir "<输出目录>" --kind quantum,wechat
+```
+
+- `quantum` 量子速读：30 秒看懂大意 + 一句可直接发朋友圈的话
+- `wechat` 公众号文章：图文成稿（保留关键帧配图），可直接发布
+- `xiaohongshu` 小红书笔记：emoji 分点的图文笔记，含话题标签
+
+输出 JSON `{"styles": {"quantum": {"label": "...", "file": "..."}, ...}}`。
+**用户没要求就不要主动生成**（每次约 10-30 秒）。
+
+### 8. 导出 PDF（仅用户需要时）
+
+```bash
+python3 $S pdf --latest                        # 精简报告（默认）
+python3 $S pdf --latest --type detailed        # 详细报告
+python3 $S pdf --latest --type all             # 大纲+精简+详细 合并
+python3 $S pdf --latest --out ~/Desktop/report.pdf   # 指定输出路径
+```
+
+服务端用 reportlab 排版（**内置中文字体**，不依赖浏览器/pandoc），关键帧图片内嵌。
+输出 JSON `{"pdf": "...", "type": "...", "bytes": N}`。同样**按需使用**。
+
+### 9. 读取报告
+
+处理完成后读取打印的 `report` / `detailed_report` 路径，向用户呈现内容摘要。
+默认看精简报告；要看**完整原文对照**用 `--type detailed`：
+
+```bash
+python3 <skill目录>/scripts/devour.py report --latest                # 精简报告
+python3 <skill目录>/scripts/devour.py report --latest --type detailed # 详细报告（原文+笔记）
 ```
 
 ## 推荐组合工作流
@@ -123,7 +169,16 @@ python3 <skill目录>/scripts/devour.py report --latest
 ```bash
 S=<skill目录>/scripts/devour.py
 python3 $S process "https://www.bilibili.com/video/BV..." --level 高中   # 下载+处理，产出报告
-python3 $S report --latest                                               # 报告全文
+python3 $S report --latest                                               # 精简报告全文
+```
+
+**要发内容时（在已有报告基础上改写，按需生成）**：
+
+```bash
+S=<skill目录>/scripts/devour.py
+python3 $S styles --latest --kind quantum          # 量子速读（速览 + 朋友圈文案）
+python3 $S styles --latest --kind wechat           # 公众号图文
+python3 $S pdf --latest --type detailed            # 导出 PDF
 ```
 
 **全套学习材料（仅当用户明确需要导图/图谱/卡片时）**：
@@ -138,8 +193,11 @@ python3 $S process "https://www.bilibili.com/video/BV..." --level 高中 --extra
 ## 注意事项
 
 - 处理产物在 `<项目>/output/frames_*/` 目录，与 WebUI 历史共用（skill 直跑的任务不注册到 WebUI 任务列表）
-- 英文视频同样输出中文报告（内部已强制中文），但中文 ASR 模型对英文转写质量有限，内容深度受影响
+- 项目自带 WebUI（知识库 / 视频学习页 / 衍生文体 / 导出 PDF）：`./start.sh` 后访问
+  `http://localhost:8000`；默认监听 `0.0.0.0`，同一局域网的其他电脑用 `http://<本机IP>:8000` 也能打开
+- 英文视频同样输出中文报告（内部已强制中文）。**详细报告对非中文原话会自动加「内容翻译」逐句译成中文，中文视频则跳过翻译**（避免多余）
 - B站未登录只能取约 720p；高频调用可能触发平台风控，脚本已内置退避重试
+- 下载默认即取 720p H.264，与处理档一致（不再下高清再重编码）
 - 微信视频号无公开直链：优先走「元宝 Cookie 直连解析」（设置页填写后自动启用），也可配
   自建解析服务（`WECHAT_RESOLVER_URL`）；处理前可用 `wechat --check` 验证 Cookie；
   失败时引导用户用本地捕获工具（ltaoo/wx_channels_download）下载后按本地文件处理。
