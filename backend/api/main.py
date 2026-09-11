@@ -651,10 +651,14 @@ async def process_link_video(request: LinkProcessRequest):
 
     流程：yt-dlp 或解析服务下载到 uploads/{task_id}.mp4 → 复用现有处理 pipeline
     """
-    from backend.devour.video_downloader import extract_share_url
+    from backend.devour.video_downloader import extract_share_url, detect_platform, normalize_douyin_url
     url = extract_share_url(request.url or "")
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="请提供有效的视频链接")
+    # 归一化为可访问的原始视频页（抖音 modal_id 搜索页 → /video/{id} 等），
+    # 否则报告页“查看原视频”会跳到搜索页或无效地址
+    if detect_platform(url) == "douyin":
+        url = normalize_douyin_url(url)
     if request.education_level not in settings_store.EDUCATION_LEVELS:
         raise HTTPException(status_code=400, detail=f"学习阶段仅支持: {'/'.join(settings_store.EDUCATION_LEVELS)}")
     extras_list = _parse_extras(request.extras)

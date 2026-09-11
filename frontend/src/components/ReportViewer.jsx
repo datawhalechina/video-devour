@@ -327,7 +327,19 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
           <span><Clock size={14} /> {formatDuration(report.duration)}</span>
           <span><FileText size={14} /> {report.created_at ? new Date(report.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : "时间未知"}</span>
           {report.source_url && (
-            <a href={report.source_url} target="_blank" rel="noreferrer" title={report.source_url}>
+            <a
+              href={report.source_url}
+              target="_blank"
+              rel="noreferrer"
+              title={report.source_url}
+              onClick={(e) => {
+                // 应用内浏览器/弹窗策略可能拦截 target=_blank：
+                // 阻止默认后显式新开窗口，失败则当前页跳转（避免“点了没反应”）
+                e.preventDefault();
+                const win = window.open(report.source_url, '_blank', 'noopener');
+                if (!win) window.location.href = report.source_url;
+              }}
+            >
               <Link2 size={14} /> 查看原视频 <ArrowUpRight size={12} />
             </a>
           )}
