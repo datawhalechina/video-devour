@@ -33,11 +33,47 @@ function LibraryVideoPage() {
   const [article, setArticle] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState('')   // 正在按需生成的文体 scope
+  // 按 scope 独立追踪生成状态（scope -> true）。
+  // 不能共用一个字符串：那会互相阻塞，导致三个文体只能逐个生成。
+  const [generating, setGenerating] = useState({})
   const [runId, setRunId] = useState(searchParams.get('run') || '')
   const [scope, setScope] = useState(searchParams.get('scope') || '')
   // 已尝试过按需生成的文体（每个版本各一次），避免异常时反复触发生成
   const attempted = useRef(new Set())
+  // 在途生成请求（scope -> Promise）：并行触发时复用，避免重复请求
+  const inFlight = useRef(new Map())
+
+  // 生成单个文体（仅落盘，不负责展示）；同一 scope 的并发调用复用同一请求
+  const generateScope = (run, sc) => {
+    if (inFlight.current.has(sc)) return inFlight.current.get(sc)
+    attempted.current.add(sc)
+    setGenerating((prev) => ({ ...prev, [sc]: true }))
+    const task = (async () => {
+      const body = new FormData()
+      if (run.run_id) body.append('run_id', run.run_id)
+      const gen = await fetch(
+        `/api/library/article/${run.doc_id}/${sc}/generate`,
+        { method: 'POST', body })
+      if (!gen.ok) {
+        const d = await gen.json().catch(() => ({}))
+        throw new Error(d.detail || `生成失败 HTTP ${gen.status}`)
+      }
+    })().finally(() => {
+      inFlight.current.delete(sc)
+      setGenerating((prev) => { const next = { ...prev }; delete next[sc]; return next })
+    })
+    inFlight.current.set(sc, task)
+    return task
+  }
+
+  // 三个衍生文体并行发起：只等当前选中的那个，其余在后台继续生成，
+  // 用户切过去时通常已就绪（服务端按 scope 缓存，重复调用直接命中文件）。
+  const generateAllStyles = (run, current) => {
+    GENERATABLE.filter((sc) => !attempted.current.has(sc)).forEach((sc) => {
+      generateScope(run, sc)
+    })
+    return generateScope(run, current)
+  }
 
   // 读取某版本的某篇文章；不存在返回 null（不抛错，便于「先读、没有再生成」）
   const readArticle = async (run, sc) => {
@@ -113,18 +149,9 @@ function LibraryVideoPage() {
       try {
         // 先直接按当前版本读取：服务端已持久化就直接用，避免把已生成的内容再生成一遍。
         let data = await readArticle(activeRun, activeScope)
-        if (!data && GENERATABLE.includes(activeScope) && !attempted.current.has(activeScope)) {
-          attempted.current.add(activeScope)      // 防止刷新清单失败时反复触发生成
-          if (!cancelled) setGenerating(activeScope)
-          const body = new FormData()
-          if (activeRun.run_id) body.append('run_id', activeRun.run_id)
-          const gen = await fetch(
-            `/api/library/article/${activeRun.doc_id}/${activeScope}/generate`,
-            { method: 'POST', body })
-          if (!gen.ok) {
-            const d = await gen.json().catch(() => ({}))
-            throw new Error(d.detail || `生成失败 HTTP ${gen.status}`)
-          }
+        if (!data && GENERATABLE.includes(activeScope)) {
+          // 三个衍生文体并行生成，只等当前选中的这个（其余后台继续）
+          await generateAllStyles(activeRun, activeScope)
           if (!cancelled) await loadVideo()   // 刷新文章清单，让新文体出现
           data = await readArticle(activeRun, activeScope)
         }
@@ -134,7 +161,7 @@ function LibraryVideoPage() {
       } catch (err) {
         if (!cancelled) setError(err.message)
       } finally {
-        if (!cancelled) { setLoading(false); setGenerating('') }
+        if (!cancelled) setLoading(false)
       }
     })()
     return () => { cancelled = true }
@@ -259,7 +286,7 @@ function LibraryVideoPage() {
                 {SCOPE_ORDER.map((sc) => {
                   const ready = scopeReady(sc)
                   const meta = SCOPE_META[sc] || { label: sc }
-                  const isGenerating = generating === sc
+                  const isGenerating = !!generating[sc]
                   return (
                     <button
                       key={sc}
@@ -281,7 +308,7 @@ function LibraryVideoPage() {
               </div>
               {activeScope && SCOPE_META[activeScope] && (
                 <span className="video-picker-hint">
-                  {generating ? '正在生成，请稍候…' : SCOPE_META[activeScope].hint}
+                  {generating[activeScope] ? '正在生成，请稍候…' : SCOPE_META[activeScope].hint}
                 </span>
               )}
             </div>
