@@ -9,6 +9,10 @@ VideoDevour 桌面客户端打包配置（PyInstaller onedir）
     dist/VideoDevour/            # 后端 + 壳 + 前端产物
     dist/VideoDevour.app         # macOS 应用包（在 build_mac.sh 中组装）
 
+架构选择（环境变量 VD_TARGET）：
+    不设置时按当前主机推断（darwin-arm64 / darwin-x64 / windows-x64）。
+    用于挑选 desktop/bin/<target>/ 下对应架构的 ffmpeg，避免混入错误架构的二进制。
+
 设计要点：
 - onedir 模式（非 onefile）：onefile 每次启动解压到临时目录，首启慢且杀软误报率高
 - 轻量依赖集合：不含 torch/funasr/modelscope/sentence-transformers
@@ -22,7 +26,23 @@ from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
-BIN_DIR = PROJECT_ROOT / "desktop" / "bin"
+
+
+def _target():
+    """解析目标平台标识，与 desktop/bin/<target>/ 目录名一致。"""
+    explicit = os.environ.get("VD_TARGET")
+    if explicit:
+        return explicit
+    machine = os.uname().machine if hasattr(os, "uname") else ""
+    if sys.platform == "darwin":
+        return "macos-arm64" if machine == "arm64" else "macos-x64"
+    if sys.platform.startswith("win"):
+        return "windows-x64"
+    return "macos-arm64"
+
+
+TARGET = _target()
+BIN_DIR = PROJECT_ROOT / "desktop" / "bin" / TARGET
 
 datas = []
 
@@ -34,12 +54,18 @@ else:
         "缺少前端构建产物：请先执行 `cd frontend && npm run build`"
     )
 
-# 捆绑的 ffmpeg/ffprobe（可选：不存在时回退系统 PATH）
+# 捆绑的 ffmpeg/ffprobe：按目标架构目录取，避免双架构构建时取错
+# （可选：目录不存在时回退系统 PATH）
+_bin_ext = ".exe" if TARGET.startswith("windows") else ""
 if BIN_DIR.exists():
     for name in ("ffmpeg", "ffprobe"):
-        candidate = BIN_DIR / (name + (".exe" if sys.platform.startswith("win") else ""))
+        candidate = BIN_DIR / (name + _bin_ext)
         if candidate.exists():
             datas.append((str(candidate), "bin"))
+        else:
+            print(f"[spec] 警告: {TARGET} 缺少 {name}，将回退系统 PATH")
+else:
+    print(f"[spec] 警告: 找不到 {BIN_DIR}，将回退系统 PATH（请先运行 fetch_binaries.sh）")
 
 # uvicorn / fastapi 的动态导入需要显式收集
 hiddenimports = []

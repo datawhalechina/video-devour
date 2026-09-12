@@ -1,6 +1,6 @@
 # VideoDevour 桌面客户端 · 测试包
 
-构建日期：2026-09-11　版本：0.1.0（轻量包）
+构建日期：2026-09-12　版本：0.1.0（轻量包）
 
 ## 交付文件
 
@@ -8,8 +8,10 @@
 |------|------|------|------|
 | `VideoDevour-0.1.0-setup.exe` | Windows x64 | 146MB | **推荐**：安装程序，含开始菜单/桌面快捷方式 |
 | `VideoDevour-windows-x64.zip` | Windows x64 | 203MB | 绿色版，解压即用（免安装） |
-| `VideoDevour-macos-arm64.zip` | macOS Apple Silicon | 195MB | 解压后得到 `VideoDevour.app` |
+| `VideoDevour-macos-arm64.zip` | macOS Apple Silicon | 195MB | M 系列芯片 |
+| `VideoDevour-macos-x64.zip` | macOS Intel | 175MB | Intel 芯片 |
 
+> **macOS 两个包按芯片选择**：M1/M2/M3/M4 用 `arm64`，Intel 用 `x64`。选错会打不开。
 > **绿色版必须解压后运行**：含 onedir 结构，不能只单独拿出 `.exe`。
 
 ## Windows 测试步骤
