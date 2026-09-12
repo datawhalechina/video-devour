@@ -24,6 +24,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 APP_NAME="VideoDevour"
+# 版本号单一来源：默认取 pyproject.toml，可用 APP_VERSION 覆盖
+APP_VERSION="${APP_VERSION:-$(sed -n 's/^version *= *"\(.*\)"/\1/p' "${PROJECT_ROOT}/pyproject.toml" | head -1)}"
+[ -z "${APP_VERSION}" ] && APP_VERSION="0.0.0"
 
 BUILD_ARM64=0
 BUILD_X64=0
@@ -101,7 +104,7 @@ build_one() {
   rm -rf "${app_bundle}"
   mkdir -p "${app_bundle}/Contents/MacOS" "${app_bundle}/Contents/Resources"
 
-  cat > "${app_bundle}/Contents/Info.plist" <<'PLIST'
+  cat > "${app_bundle}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -113,9 +116,9 @@ build_one() {
     <key>CFBundleIdentifier</key>
     <string>com.videodevour.app</string>
     <key>CFBundleVersion</key>
-    <string>0.1.0</string>
+    <string>${APP_VERSION}</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>${APP_VERSION}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
