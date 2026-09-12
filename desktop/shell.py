@@ -490,6 +490,13 @@ def main():
         logging.warning(f"创建 WebView2 数据目录失败，沿用默认: {e}")
         storage_path = None
 
+    # 启用 WebView 原生下载：
+    # pywebview 默认 ALLOW_DOWNLOADS=False，此时点击指向附件的链接（如报告/文章的
+    # 「下载 .md / PDF」）不会被当作下载，而是被 WebView 直接**导航**到该 URL，
+    # 整个 SPA 被文件内容替换 → 界面白屏（mac 实测）。
+    # 打开后走系统保存对话框；下载完成后由 IPC 事件刷新页面状态（见下）。
+    webview.settings['ALLOW_DOWNLOADS'] = True
+
     try:
         webview.start(private_mode=False, storage_path=storage_path)
     finally:

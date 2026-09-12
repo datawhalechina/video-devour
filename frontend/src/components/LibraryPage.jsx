@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { triggerDownload } from '../utils/helpers'
 import {
   ArrowLeft, BookOpen, Search, Loader2, FileText, Eye, Download, Zap, AlertCircle, Layers,
 } from 'lucide-react'
@@ -174,7 +175,7 @@ function LibraryPage() {
             <h1 className="text-lg font-bold text-gray-900">个人文档库</h1>
           </div>
           <button
-            onClick={() => window.open('/api/library/export', '_blank')}
+            onClick={() => triggerDownload('/api/library/export')}
             title="整库导出（按视频/版本组织的 md + 关键帧 + manifest.json）"
             className="report-tool-button"
           >

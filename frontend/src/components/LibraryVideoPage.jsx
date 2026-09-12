@@ -211,11 +211,11 @@ function LibraryVideoPage() {
           <div className="flex items-center gap-2">
             {currentQuery && (
               <>
-                <a href={downloadHref} className="report-tool-button">
+                <a href={downloadHref} download="" className="report-tool-button">
                   <Download className="w-3.5 h-3.5" />
                   下载 .md
                 </a>
-                <a href={pdfHref} className="report-tool-button">
+                <a href={pdfHref} download="" className="report-tool-button">
                   <FileDown className="w-3.5 h-3.5" />
                   下载 PDF
                 </a>
