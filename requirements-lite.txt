@@ -22,6 +22,12 @@ mcp==1.17.0
 
 # --- 在线 ASR ---
 dashscope>=1.20.0
+# cryptography 由 dashscope 引入，必须上限约束（macOS x86_64 打包关键）：
+# 50.x 的 macOS x86_64 wheel 把 OpenSSL 符号留作未定义（期望运行时动态解析），
+# 而 uv 的 x86_64 Python 静态链接 OpenSSL 且不导出这些符号，
+# 导致 `symbol not found in flat namespace '_BIO_ADDR_free'`，在线 ASR 整体失败。
+# 46.0.4 实测两个架构的 wheel 均无未定义符号。详见 A3-A4 报告第 4.5 节。
+cryptography==46.0.4
 
 # --- 下载与字幕 ---
 yt-dlp[default]>=2024.8.6

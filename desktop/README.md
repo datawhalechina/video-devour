@@ -27,27 +27,43 @@ desktop/
 
 ## 构建
 
-### macOS（arm64）
+### macOS（arm64 / x86_64 双架构）
+
+两个架构必须用**各自架构的 Python** 构建（PyInstaller 的输出架构由解释器决定）。
 
 ```bash
-# 1. 轻量依赖
+# 1. 依赖环境
+#    arm64（Apple Silicon 本机）
 uv venv .venv-lite --python 3.12
 uv pip install --python .venv-lite/bin/python -r requirements-lite.txt pyinstaller pywebview
 
-# 2. 静态 ffmpeg/ffprobe
-./desktop/fetch_binaries.sh
+#    x86_64（Intel；在 Apple Silicon 上经 uv 安装 x86_64 Python）
+uv python install cpython-3.12.13-macos-x86_64-none
+uv venv .venv-x64 --python cpython-3.12.13-macos-x86_64-none
+uv pip install --python .venv-x64/bin/python -r requirements-lite.txt pyinstaller pywebview
 
-# 3. 前端
+# 2. 静态 ffmpeg/ffprobe（按架构分目录存放，双架构可共存）
+./desktop/fetch_binaries.sh --all-macos
+
+# 3. 前端（两架构共用）
 cd frontend && npm run build && cd ..
 
 # 4. 打包
-PYTHON=.venv-lite/bin/python ./desktop/build_mac.sh --sign
+PYTHON_ARM64=.venv-lite/bin/python ./desktop/build_mac.sh --arm64 --sign
+PYTHON_X64=.venv-x64/bin/python   ./desktop/build_mac.sh --x64 --sign
+# 或一次构建两个架构：./desktop/build_mac.sh --both --sign
 
 # 5. 运行
-open desktop/dist/VideoDevour.app
+open desktop/dist/arm64/VideoDevour.app   # Apple Silicon
+open desktop/dist/x64/VideoDevour.app     # Intel
 ```
 
-内测被 Gatekeeper 拦截时：`xattr -cr desktop/dist/VideoDevour.app`（**仅限内测**，正式分发需公证）。
+产物分别在 `desktop/dist/arm64/` 与 `desktop/dist/x64/`。
+
+内测被 Gatekeeper 拦截时：`xattr -cr '<app 路径>'`（**仅限内测**，正式分发需公证）。
+
+> **不要用 `--universal2`**：torch 等依赖不做 universal2，且本包依赖的二进制 wheel
+> 各有架构限制，`lipo` 合并不可行。
 
 ### Windows（x64）
 
