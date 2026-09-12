@@ -68,11 +68,13 @@ build_one() {
   echo "  Python: ${python}"
   echo "=========================================="
 
-  if [ ! -x "${python}" ]; then
+  # PYTHON_<ARCH> 可以是绝对路径，也可以是 PATH 上的命令名（CI 里传 "python"）
+  if ! command -v "${python}" >/dev/null 2>&1 && [ ! -x "${python}" ]; then
     echo "[错误] 找不到 ${arch} 的 Python 环境: ${python}"
-    echo "       请先创建（参考 desktop/README.md 的构建章节）"
+    echo "       请先创建（参考 desktop/README.md 的构建章节），或设置 PYTHON_$(echo "${arch}" | tr a-z A-Z)"
     exit 1
   fi
+  python="$(command -v "${python}" || echo "${python}")"
   # platform.machine() 返回 arm64 / x86_64，而脚本参数用 arm64 / x64
   local actual expect
   actual="$("${python}" -c 'import platform;print(platform.machine())')"
