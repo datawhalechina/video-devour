@@ -9,7 +9,7 @@
 ; - 不对可执行文件做数字签名时，SmartScreen 会提示，属预期行为
 
 #define AppName "VideoDevour"
-#define AppVersion "0.1.1"
+#define AppVersion "0.1.2"
 #define AppPublisher "VideoDevour"
 #define AppExeName "VideoDevour.exe"
 

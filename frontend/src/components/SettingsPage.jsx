@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Settings, Save, Radio, HardDriveDownload, KeyRound, CheckCircle, XCircle, Loader2, GraduationCap } from 'lucide-react'
+import { ArrowLeft, Settings, Save, Radio, HardDriveDownload, KeyRound, CheckCircle, XCircle, Loader2, GraduationCap, Globe } from 'lucide-react'
 import { getSettings, updateSettings, testSettings, importCookiesFromBrowser, youtubeEnvCheck } from '../api/settingsService'
+import { captureLogin, isDesktopClient } from '../api/desktopBridge'
 
 // 供应商预设：点击芯片自动填充接口地址与推荐模型
 const PROVIDER_PRESETS = {
@@ -30,6 +31,7 @@ function SettingsPage() {
   const [testing, setTesting] = useState({})   // { asr: bool, llm: bool, vlm: bool }
   const [testResults, setTestResults] = useState({})  // { asr: {ok, message}, ... }
   const [cookieImport, setCookieImport] = useState({ loading: false, message: '', attempts: [] })
+  const [loginCapture, setLoginCapture] = useState({ loading: '', message: '', ok: false })
   const [cacheInfo, setCacheInfo] = useState(null)
   const [offlineCheck, setOfflineCheck] = useState(null)
   const [error, setError] = useState(null)
@@ -135,11 +137,43 @@ function SettingsPage() {
         wechat_yuanbao_cookie: data.wechat_yuanbao_cookie || prev.wechat_yuanbao_cookie,
         youtube_cookies: data.youtube_cookies || prev.youtube_cookies,
         bilibili_sessdata: data.bilibili_sessdata || prev.bilibili_sessdata,
+        douyin_cookies: data.douyin_cookies || prev.douyin_cookies,
       }))
     } catch (err) {
       setCookieImport({ loading: false, message: `读取失败: ${err.message}`, attempts: [] })
     }
   }
+
+  // 应用内登录读取：打开内嵌浏览器窗口登录，由桌面壳读取登录态
+  const handleCaptureLogin = async (platform) => {
+    if (loginCapture.loading) return
+    setLoginCapture({ loading: platform, message: '', ok: false })
+    try {
+      const result = await captureLogin(platform)
+      if (result?.ok) {
+        const data = await getSettings()
+        setForm(prev => ({
+          ...prev,
+          wechat_yuanbao_cookie: data.wechat_yuanbao_cookie || prev.wechat_yuanbao_cookie,
+          youtube_cookies: data.youtube_cookies || prev.youtube_cookies,
+          bilibili_sessdata: data.bilibili_sessdata || prev.bilibili_sessdata,
+          douyin_cookies: data.douyin_cookies || prev.douyin_cookies,
+        }))
+        setLoginCapture({ loading: '', ok: true, message: `已读取并保存 ${result.label || ''} 登录态（${result.count || 0} 个 cookie）` })
+      } else {
+        setLoginCapture({ loading: '', ok: false, message: result?.error || '未读取到登录态，请重试' })
+      }
+    } catch (err) {
+      setLoginCapture({ loading: '', ok: false, message: `读取失败: ${err.message}` })
+    }
+  }
+
+  const LOGIN_TARGETS = [
+    { key: 'bilibili', label: 'B站' },
+    { key: 'youtube', label: 'YouTube' },
+    { key: 'yuanbao', label: '腾讯元宝' },
+    { key: 'douyin', label: '抖音' },
+  ]
 
   const handleTest = async (target) => {
     setTesting(prev => ({ ...prev, [target]: true }))
@@ -515,16 +549,57 @@ function SettingsPage() {
           </div>
         </motion.section>
 
+        {/* 应用内登录读取（桌面客户端，Windows 推荐） */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.11 }}
+          className="bg-white rounded-2xl shadow-sm border border-primary-200 p-6"
+        >
+          <div className="flex items-center space-x-2 mb-2">
+            <Globe className="w-5 h-5 text-primary-600" />
+            <h2 className="text-base font-bold text-gray-900">应用内登录读取 Cookie（推荐）</h2>
+          </div>
+          <p className="text-xs text-gray-500 leading-relaxed mb-4">
+            点击对应平台，会弹出一个登录窗口；在其中登录成功后自动读取登录态并填入下方卡片，
+            随后窗口自动关闭（仅本机处理，不上传）。此方式读的是应用自身的登录会话，
+            <span className="text-primary-600">不受 Windows 下 Chrome/Edge 的 App-Bound 加密与 Cookie 文件锁限制</span>，
+            是 Windows 客户端最可靠的方式。
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            {LOGIN_TARGETS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => handleCaptureLogin(t.key)}
+                disabled={!!loginCapture.loading || !isDesktopClient()}
+                className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold shadow-md hover:shadow-lg disabled:opacity-50"
+              >
+                {loginCapture.loading === t.key && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>{loginCapture.loading === t.key ? '等待登录…' : t.label}</span>
+              </button>
+            ))}
+          </div>
+          {!isDesktopClient() && (
+            <p className="mt-3 text-xs text-amber-600">
+              应用内登录读取仅在桌面客户端（VideoDevour 应用）中可用；当前为浏览器模式，请使用下方一键读取或手动粘贴。
+            </p>
+          )}
+          {loginCapture.message && (
+            <p className={`mt-3 text-sm ${loginCapture.ok ? 'text-green-700' : 'text-gray-600'}`}>
+              {loginCapture.message}
+            </p>
+          )}
+        </motion.section>
+
         {/* 一键读取浏览器 Cookie */}
         <motion.section
           initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.115 }}
           className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
         >
-          <h2 className="text-base font-bold text-gray-900 mb-2">一键读取浏览器 Cookie（推荐）</h2>
+          <h2 className="text-base font-bold text-gray-900 mb-2">从浏览器数据库读取 Cookie</h2>
           <p className="text-xs text-gray-500 leading-relaxed mb-4">
-            在本机浏览器登录过 B站 / YouTube / 元宝后，点击按钮即可自动读取登录 Cookie 并填入下方各卡片
-            （仅读取这三个站的 cookie，本机处理，不上传）。macOS 首次读取 Chrome/Edge 会弹出钥匙串授权，
-            请点「允许」；Windows 下 Chrome/Edge 127+ 受 App-Bound 加密限制可能失败，可改用 Firefox 或手动粘贴。
+            直接读取本机浏览器（Chrome/Edge/Firefox 等）已保存的登录 Cookie 并填入下方各卡片
+            （仅读取目标站的 cookie，本机处理，不上传）。macOS 首次读取 Chrome/Edge 会弹出钥匙串授权，
+            请点「允许」；Windows 下 Chrome/Edge 127+ 受 App-Bound 加密限制无法读取，
+            请改用上方「应用内登录读取」或 Firefox / 手动粘贴。
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <select

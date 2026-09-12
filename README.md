@@ -16,6 +16,7 @@
 - [🎯 项目简介](#-项目简介)
 - [✨ 核心功能](#-核心功能)
 - [🤖 Agent Skill（任意 AI 编码助手可调用）](#-agent-skill任意-ai-编码助手可调用)
+- [🖥️ Windows 桌面客户端](#️-windows-桌面客户端)
 - [🖼️ 系统预览](#️-系统预览)
 - [🔧 技术架构](#-技术架构)
 - [📦 安装指南](#-安装指南)
@@ -130,6 +131,30 @@ python3 .agents/skills/videodevour/scripts/devour.py report --latest
 ![知识图谱](docs/images/10-知识图谱.png)
 
 > 更多截图（首页 / 设置控制台 / 上传页 / 精简报告）见 [docs/运行模式与使用示例.md](docs/运行模式与使用示例.md)。
+
+## 🖥️ Windows 桌面客户端
+
+不熟悉命令行也没关系：VideoDevour 提供 Windows 桌面客户端，双击即可使用，
+无需安装 Python、Node 或任何依赖。启动后是一个独立窗口，所有功能都在界面里完成。
+
+**完整的分步图文教程（含每步截图与常见问题）见
+[docs/Windows客户端使用指南.md](docs/Windows客户端使用指南.md)。**
+
+五步上手：
+
+1. **安装并启动**：双击安装包按向导安装；绿色版需完整解压后再运行。
+2. **配置 AI 能力**：在「偏好设置」里填写 ASR / LLM / VLM 的 API Key 并测试连通性。
+3. **配置登录 Cookie**：点「应用内登录读取」，在弹出的窗口里登录 B站 / YouTube / 抖音 / 元宝，
+   登录态会自动填入（Windows 上比直接读 Chrome/Edge 更可靠）。
+4. **处理视频**：在「在线视频」粘贴链接，或在「本地上传」拖入本地文件。
+5. **查看报告**：处理完成后在「处理记录」里打开图文报告，可切换多种格式并导出。
+
+| 工作台首页 | 应用内登录读取 Cookie |
+|---|---|
+| ![Windows 工作台首页](docs/images/windows/01-工作台首页.png) | ![Windows 应用内登录](docs/images/windows/04-应用内登录窗口.png) |
+
+> 客户端系统要求：Windows 10/11 x64 + WebView2 Runtime（较新系统已内置）。
+> 首次运行会因未做代码签名而弹出 SmartScreen 提示，点「更多信息」→「仍要运行」即可。
 
 ## 🔧 技术架构
 

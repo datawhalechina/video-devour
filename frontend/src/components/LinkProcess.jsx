@@ -422,7 +422,7 @@ h1,h2,h3{line-height:1.35}</style>
                       </p>
                       <p className="text-xs text-gray-500 leading-relaxed">
                         {preview.platform === 'douyin'
-                          ? '点击右上角「生成图文报告」将直接下载并处理；抖音下载需要登录态 Cookie，可在设置页「抖音 cookies」配置（支持一键读取浏览器 Cookie）'
+                          ? '点击右上角「生成图文报告」将直接下载并处理；抖音下载需要登录态 Cookie，可在设置页「抖音 cookies」配置（桌面客户端可用「应用内登录读取」，或从浏览器读取/手动粘贴）'
                           : '点击右上角「生成图文报告」将调用解析服务下载；若解析失败（链接过期/服务限流），请用本地工具下载后到「上传视频」页上传处理'}
                       </p>
                     </div>

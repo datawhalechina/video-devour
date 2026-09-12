@@ -192,8 +192,13 @@ class Bridge:
     导致无限递归（Windows 实测：窗口卡死、终端刷满 maximum recursion depth exceeded）。
     """
 
+    # 应用内登录读取的默认超时与轮询间隔
+    LOGIN_TIMEOUT = 300
+    LOGIN_POLL_INTERVAL = 1.0
+
     def __init__(self, window=None):
         self._window = window
+        self._port = None          # 后端端口，由 main() 注入
 
     def pick_video(self):
         """选择视频文件，返回绝对路径。"""
@@ -228,6 +233,154 @@ class Bridge:
         else:
             subprocess.Popen(["xdg-open", str(target)])
         return True
+
+    @staticmethod
+    def _normalize_pywebview_cookies(raw) -> list:
+        """
+        把 pywebview get_cookies() 的返回归一成 cookie dict 列表。
+
+        pywebview 返回的是 http.cookies.SimpleCookie 列表（Windows/WebView2），
+        其每个 cookie 是一个 Morsel：cookie 值在 Morsel.value，属性（domain/path/
+        expires/secure）在 Morsel 的映射项里——直接 json 化会丢掉 value，所以必须
+        按下标读取。同时也兼容普通 dict 形态（其他平台/未来版本）。
+        """
+        items = []
+
+        def _one(name, attrs):
+            # Morsel：value 需单独取
+            value = getattr(attrs, "value", None)
+            if value is None and isinstance(attrs, dict):
+                value = attrs.get("value", "")
+            if hasattr(attrs, "get"):          # Morsel 与 dict 都支持 get
+                domain = attrs.get("domain", "")
+                path = attrs.get("path", "/") or "/"
+                expires = attrs.get("expires", 0)
+                secure = attrs.get("secure", True)
+            else:
+                domain, path, expires, secure = "", "/", 0, True
+            items.append({
+                "name": name,
+                "value": value or "",
+                "domain": domain,
+                "path": path,
+                "expires": expires,
+                "secure": bool(secure),
+            })
+
+        def _morsels(container):
+            # SimpleCookie / dict：{name: Morsel | {...}}
+            for name, attrs in container.items():
+                _one(name, attrs)
+
+        if isinstance(raw, (list, tuple)):
+            for entry in raw:
+                if hasattr(entry, "items"):
+                    _morsels(entry)
+        elif hasattr(raw, "items"):
+            _morsels(raw)
+        return items
+
+    def capture_login(self, platform: str = "bilibili"):
+        """
+        应用内登录读取（Windows 推荐路径）。
+
+        打开一个内嵌浏览器窗口让用户登录目标网站，轮询 WebView2 的 CookieManager
+        读取登录态。它读的是应用自身的会话，绕开 Chrome/Edge 的 App-Bound 加密
+        与 Cookies 数据库文件锁（第三方库在非管理员权限下均无法读取）。
+
+        该方法是同步的，供 js_api 调用；pywebview 在独立线程中执行 js_api 方法，
+        因此这里创建/销毁窗口是安全的。
+        """
+        from backend.devour.browser_cookies import (
+            PLATFORMS, build_fields, cookie_in_domain,
+        )
+
+        meta = PLATFORMS.get(platform)
+        if not meta:
+            return {"ok": False, "platform": platform,
+                    "error": f"不支持的平台: {platform}"}
+
+        logging.info(f"[应用内登录] 打开 {platform} 登录窗口: {meta['login_url']}")
+        login_window = None
+        try:
+            login_window = webview.create_window(
+                meta["title"], meta["login_url"],
+                width=560, height=720, min_size=(420, 520),
+            )
+        except Exception as e:
+            logging.error(f"[应用内登录] 打开窗口失败: {e}", exc_info=True)
+            return {"ok": False, "platform": platform, "error": f"打开登录窗口失败: {e}"}
+
+        closed = {"flag": False}
+        try:
+            login_window.events.closed += lambda: closed.__setitem__("flag", True)
+        except Exception:
+            pass
+
+        deadline = time.time() + self.LOGIN_TIMEOUT
+        attempts = []
+        last_count = -1
+        last_error = None
+        try:
+            while time.time() < deadline and not closed["flag"]:
+                time.sleep(self.LOGIN_POLL_INTERVAL)
+                try:
+                    raw = login_window.get_cookies()
+                except Exception as e:
+                    # 窗口被用户关闭时 get_cookies 会失败，视为取消
+                    if closed["flag"]:
+                        break
+                    msg = f"{type(e).__name__}: {str(e)[:80]}"
+                    if msg != last_error:      # 同一错误只记一次
+                        attempts.append(f"读取 cookie 失败: {msg}")
+                        last_error = msg
+                    continue
+                cookies = self._normalize_pywebview_cookies(raw)
+                target = [c for c in cookies if cookie_in_domain(c["domain"], meta["domains"])]
+                fields = build_fields(platform, target)
+                if fields:
+                    key = next(iter(fields))
+                    saved, err = self._save_cookies_via_api(fields)
+                    if err:
+                        attempts.append(f"保存失败: {err}")
+                        continue
+                    logging.info(f"[应用内登录] {platform} 读取成功并已保存（{len(target)} 个 cookie）")
+                    return {"ok": True, "platform": platform, "label": meta["label"],
+                            "field": key, "count": len(target), "attempts": attempts}
+                # 还没登录：仅在域内 cookie 数变化时记录，避免刷屏
+                if target and len(target) != last_count:
+                    attempts.append(f"已获 {len(target)} 个域内 cookie，等待登录态…")
+                    last_count = len(target)
+        finally:
+            try:
+                login_window.destroy()
+            except Exception:
+                pass
+
+        if closed["flag"]:
+            logging.info(f"[应用内登录] {platform} 窗口被用户关闭，未完成")
+            return {"ok": False, "platform": platform, "cancelled": True,
+                    "error": "登录窗口已关闭，未读取到登录态", "attempts": attempts}
+        logging.info(f"[应用内登录] {platform} 超时，未读取到登录态")
+        return {"ok": False, "platform": platform,
+                "error": f"等待登录超时（{self.LOGIN_TIMEOUT}s），未检测到 {meta['label']} 登录态",
+                "attempts": attempts}
+
+    def _save_cookies_via_api(self, fields):
+        """把读取到的 cookie 字段写入后端设置，返回 (ok, error)。"""
+        import urllib.request
+
+        if not self._port:
+            return False, "后端端口未知"
+        url = f"http://127.0.0.1:{self._port}/api/settings/cookies/from-webview"
+        body = json.dumps({"fields": fields}).encode("utf-8")
+        req = urllib.request.Request(url, data=body, method="POST",
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return resp.status == 200, None
+        except Exception as e:
+            return False, f"{type(e).__name__}: {str(e)[:120]}"
 
 
 def _single_instance_lock():
@@ -318,14 +471,27 @@ def main():
     )
     # 赋给私有属性（不可写成 bridge.window，否则触发 pywebview 递归展开原生窗口对象）
     bridge._window = window
+    bridge._port = port
 
     def _on_closed():
         backend.stop()
 
     window.events.closed += _on_closed
 
+    # WebView2 数据目录：
+    # - private_mode=False：销毁「应用内登录窗口」时不会触发 pywebview 删除共享的
+    #   WebView2 数据目录（private 模式下所有窗口共用一个临时目录，销毁任一窗口
+    #   都会 rmtree 它）；同时登录态可跨重启复用。
+    # - storage_path 指向用户数据目录，保证可写且持久。
+    storage_path = str(_data_root() / "webview2")
     try:
-        webview.start()
+        Path(storage_path).mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        logging.warning(f"创建 WebView2 数据目录失败，沿用默认: {e}")
+        storage_path = None
+
+    try:
+        webview.start(private_mode=False, storage_path=storage_path)
     finally:
         backend.stop()
 

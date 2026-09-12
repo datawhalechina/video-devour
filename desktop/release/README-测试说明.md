@@ -1,12 +1,12 @@
 # VideoDevour 桌面客户端 · 测试包
 
-构建日期：2026-09-12　版本：0.1.1（轻量包）
+构建日期：2026-09-12　版本：0.1.2（轻量包）
 
 ## 交付文件
 
 | 文件 | 平台 | 大小 | 说明 |
 |------|------|------|------|
-| `VideoDevour-0.1.1-setup.exe` | Windows x64 | 146MB | **推荐**：安装程序，含开始菜单/桌面快捷方式 |
+| `VideoDevour-0.1.2-setup.exe` | Windows x64 | 146MB | **推荐**：安装程序，含开始菜单/桌面快捷方式 |
 | `VideoDevour-windows-x64.zip` | Windows x64 | 203MB | 绿色版，解压即用（免安装） |
 | `VideoDevour-macos-arm64.zip` | macOS Apple Silicon | 195MB | M 系列芯片 |
 | `VideoDevour-macos-x64.zip` | macOS Intel | 175MB | Intel 芯片 |
@@ -14,11 +14,20 @@
 > **macOS 两个包按芯片选择**：M1/M2/M3/M4 用 `arm64`，Intel 用 `x64`。选错会打不开。
 > **绿色版必须解压后运行**：含 onedir 结构，不能只单独拿出 `.exe`。
 
+## 本版更新（0.1.2）
+
+- **修复 Windows 下浏览器 Cookie 读取**：Chrome/Edge 127+ 的 Cookie 受 App-Bound
+  加密保护且被浏览器独占锁定，第三方库在非管理员权限下无法读取。
+- **新增「应用内登录读取 Cookie」**：在设置页点对应平台按钮，弹出内嵌登录窗口，
+  登录成功后自动读取并填入，绕开上述限制，是 Windows 上最可靠的方式。
+- 修复腾讯元宝登录态读取（其 Cookie 写在 `.tencent.com` 父域）。
+- 新增 [Windows 客户端使用指南](../../docs/Windows客户端使用指南.md)（分步配图）。
+
 ## Windows 测试步骤
 
 ### 方式一：安装包（推荐）
 
-1. 双击 `VideoDevour-0.1.1-setup.exe`
+1. 双击 `VideoDevour-0.1.2-setup.exe`
 2. 按向导安装（默认装到 `%LOCALAPPDATA%\Programs\VideoDevour`，免管理员权限）
 3. 从开始菜单或桌面快捷方式启动
 
@@ -90,7 +99,7 @@ open VideoDevour.app
 - **未做代码签名**：macOS 需 `xattr -cr`，Windows 会有 SmartScreen 提示
 - **无本地会话鉴权**：服务只监听 127.0.0.1，但尚未加 token 校验（阶段 B2 计划）
 - **任务状态在内存 + JSON**：强制退出会显示 interrupted，需重试
-- **Windows 包未在真机做过完整功能测试**：CI 只验证了启动与 health，业务链路请在真机确认
+- **Windows 包已在真机验证核心链路**：启动、Cookie 读取、链接解析、本地视频处理均通过；其余边界场景请继续回归
 
 ## 反馈时请附上
 
