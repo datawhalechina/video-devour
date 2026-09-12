@@ -80,6 +80,24 @@ powershell -ExecutionPolicy Bypass -File desktop/build_win.ps1
 
 `.github/workflows/desktop-build.yml` 在 macOS-14 与 windows-latest 上各自构建并做冒烟测试。
 
+## Cookie 读取（设置页）
+
+两条路径：
+
+1. **应用内登录读取（推荐，Windows）**：桌面壳打开一个内嵌 WebView2 登录窗口，
+   用户登录后由 WebView2 的 CookieManager 读取登录态，经
+   `POST /api/settings/cookies/from-webview` 写入设置。读的是应用自身会话，
+   完全绕开 Chrome/Edge 的 App-Bound 加密与 Cookies 数据库文件锁。
+   支持 B站 / YouTube / 腾讯元宝 / 抖音。
+2. **从浏览器数据库读取**：`browser-cookie3` 直读本机浏览器 Cookie。
+   macOS 可用（首次弹钥匙串授权）；Windows 下 Chrome/Edge 自 127 起改用
+   App-Bound 加密（cookie 以 `v20` 前缀存储，密钥绑定浏览器安装、需管理员权限解密），
+   且运行中的浏览器以独占方式锁住该数据库——非管理员进程无法读取。
+   Windows 下可改用 Firefox，或使用上面的应用内登录读取。
+
+> Windows 客户端会以 `private_mode=False` + `storage_path=<数据目录>/webview2`
+> 启动 WebView2，使登录态可跨重启复用，并避免销毁登录窗口时清掉共享数据目录。
+
 ## 运行时目录
 
 | 平台 | 数据目录 |
