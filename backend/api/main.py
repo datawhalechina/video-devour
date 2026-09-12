@@ -11,6 +11,7 @@ import shutil
 import asyncio
 import json
 import logging
+import concurrent.futures
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -478,13 +479,21 @@ async def _generate_extras(task_id: str, extras: List[str], education_level: str
     return results
 
 
+# 阻塞型 I/O（yt-dlp 探测 / 字幕抓取 / LLM 改写等）共用的线程池。
+# 误区：不要写成 `with ThreadPoolExecutor() as ex:` —— with 退出时 shutdown(wait=True)
+# 会阻塞事件循环线程直到任务结束，导致所有请求（含 /api/health）被串行化、服务无响应。
+# 实测：1 秒任务会让调用方阻塞 1.01 秒。共享池则调用后立即返回。
+_IO_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=max(4, int(os.getenv("VIDEO_DEVOUR_IO_WORKERS", "8"))),
+    thread_name_prefix="vd-io",
+)
+
+
 def _run_link_probe(handler, **kwargs):
-    """在线程池中执行 yt-dlp 操作（网络阻塞型）"""
+    """在线程池中执行阻塞型操作（网络探测 / LLM 改写等），不阻塞事件循环。"""
     import functools
-    import concurrent.futures
     loop = asyncio.get_event_loop()
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        return loop.run_in_executor(executor, functools.partial(handler, **kwargs))
+    return loop.run_in_executor(_IO_EXECUTOR, functools.partial(handler, **kwargs))
 
 
 @app.post("/api/video/link/info")

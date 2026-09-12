@@ -31,7 +31,11 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
 
   // 衍生文体（量子速读/公众号/小红书）：scope -> 正文；未生成时为 undefined
   const [styles, setStyles] = useState({});
-  const [styleLoading, setStyleLoading] = useState('');
+  // 按 scope 独立追踪生成状态（scope -> true）。
+  // 不能共用一个字符串：那会互相阻塞，导致三个文体只能逐个生成。
+  const [styleLoading, setStyleLoading] = useState({});
+  // 在途请求集合：state 更新是异步的，用 ref 防止同一 scope 被重复触发
+  const styleInFlight = useRef(new Set());
 
   // 读取服务端已持久化的文体正文；不存在返回 null
   const readStyle = async (scope) => {
@@ -59,11 +63,12 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
     return () => { cancelled = true; };
   }, [report?.task_id]);
 
-  // 点击文体：先查服务端持久化文件，确实没有才触发生成。
+  // 生成单个文体：先查服务端持久化文件，确实没有才触发生成。
   // 这样即使本地状态陈旧，也不会重复生成（服务端本来也会命中磁盘缓存）。
   const ensureStyle = async (scope) => {
-    if (styles[scope] !== undefined || styleLoading) return;
-    setStyleLoading(scope);
+    if (styles[scope] !== undefined || styleInFlight.current.has(scope)) return;
+    styleInFlight.current.add(scope);
+    setStyleLoading(prev => ({ ...prev, [scope]: true }));
     try {
       let content = await readStyle(scope);
       if (content === null) {
@@ -79,14 +84,19 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
     } catch (err) {
       alert(`${STYLE_TABS.find(t => t.key === scope)?.label || scope} 生成失败: ${err.message}`);
     } finally {
-      setStyleLoading('');
+      styleInFlight.current.delete(scope);
+      setStyleLoading(prev => { const next = { ...prev }; delete next[scope]; return next; });
     }
   };
+
+  // 三个衍生文体并行发起：点开任一文体时，未生成的三个同时开始，不再逐个等待。
+  // 各自独立成败互不影响，服务端按 scope 缓存、重复调用会直接命中磁盘文件。
+  const ensureAllStyles = () => { STYLE_KEYS.forEach(ensureStyle); };
 
   const pickTab = (key) => {
     setActiveTab(key);
     setExportMenu(null);
-    if (STYLE_KEYS.includes(key)) ensureStyle(key);
+    if (STYLE_KEYS.includes(key)) ensureAllStyles();
   };
 
   // 思维导图 / 知识图谱 / 学习卡片：统一用页面内模态预览。
@@ -493,10 +503,10 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
                 aria-controls="report-content" tabIndex={activeTab === key ? 0 : -1}
                 onClick={() => pickTab(key)}>
                 <Icon size={16} /><span>{label}</span>
-                {STYLE_KEYS.includes(key) && styles[key] === undefined && styleLoading !== key && (
+                {STYLE_KEYS.includes(key) && styles[key] === undefined && !styleLoading[key] && (
                   <em className="report-tab-pending">生成</em>
                 )}
-                {styleLoading === key && <em className="report-tab-pending">生成中…</em>}
+                {styleLoading[key] && <em className="report-tab-pending">生成中…</em>}
               </button>
             ))}
           </div>
@@ -514,7 +524,7 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
         <div id="report-content" role="tabpanel" aria-labelledby={`report-tab-${activeTab}`} tabIndex={0} className="report-content">
           <p className="report-reading-note"><BookOpen size={14} /> {currentTab.description}</p>
           <article className="report-prose">
-            {styleLoading === activeTab ? (
+            {styleLoading[activeTab] ? (
               <div className="report-empty"><Timer size={28} /><h2>正在生成{currentTab.label}…</h2><p>基于已有报告改写，通常几秒到半分钟。</p></div>
             ) : currentTab.content ? renderMarkdown(currentTab.content) : (
               <div className="report-empty"><FileText size={28} /><h2>暂时没有{currentTab.label}</h2><p>该任务尚未生成这份内容，可以先查看其他报告。</p></div>
