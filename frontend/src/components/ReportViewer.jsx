@@ -17,6 +17,7 @@ const STYLE_TABS = [
 ];
 const STYLE_KEYS = STYLE_TABS.map(t => t.key);
 import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
+import { triggerDownload } from "../utils/helpers";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { mermaidMarkdownComponents } from './MermaidBlock';
@@ -162,7 +163,8 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
     const url = mode === "pdf"
       ? `/api/export/${report.task_id}?type=${type}&fmt=pdf`
       : `/api/export/${report.task_id}?type=${type}&mode=${mode}`;
-    window.open(url, "_blank");
+    // 用带 download 属性的 <a> 触发：window.open 在桌面客户端里会静默无反应
+    triggerDownload(url);
     setExportMenu(null);
   };
 
@@ -513,8 +515,10 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
           {isStyleTab ? (
             <div className="report-style-tools">
               <a href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=md`}
+                 download=""
                  className="report-tool-button"><FileText size={15} /> 下载 .md</a>
               <a href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=pdf`}
+                 download=""
                  className="report-tool-button"><FileDown size={15} /> 下载 PDF</a>
             </div>
           ) : (

@@ -63,6 +63,7 @@ function LibraryArticlePage() {
               <>
                 <a
                   href={`/api/library/article/${docId}/${scope}/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=md`}
+                  download=""
                   className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
                 >
                   <Download className="w-4 h-4" />
@@ -70,6 +71,7 @@ function LibraryArticlePage() {
                 </a>
                 <a
                   href={`/api/library/article/${docId}/${scope}/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=pdf`}
+                  download=""
                   className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50"
                 >
                   <FileDown className="w-4 h-4" />
