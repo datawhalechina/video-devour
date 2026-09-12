@@ -429,6 +429,11 @@ class BrowserCookieRequest(BaseModel):
     browser: str = ""   # 空 = 自动按序尝试（chrome/edge/firefox/safari/...）
 
 
+class WebviewCookieRequest(BaseModel):
+    # 应用内登录窗口读取到的字段（字段名 -> 值），由桌面壳调用
+    fields: Dict[str, str] = {}
+
+
 # 任务完成后可选自动生成的附加产物（默认不生成，按需勾选，节省处理时间）
 VALID_EXTRAS = {"mindmap", "graph", "card"}
 EXTRA_LABELS = {"mindmap": "思维导图", "graph": "知识图谱", "card": "学习卡片"}
@@ -550,10 +555,12 @@ async def generate_subtitle_notes(request: LinkNotesRequest):
 @app.post("/api/settings/cookies/from-browser")
 async def import_cookies_from_browser(request: BrowserCookieRequest):
     """
-    一键读取本机浏览器中的 B站 / YouTube / 元宝登录 Cookie 并写入设置。
+    从本机浏览器数据库读取 B站 / YouTube / 元宝 / 抖音 登录 Cookie 并写入设置。
 
-    仅读取三个目标域的 cookie，不接触浏览器中的其他数据；
+    仅读取目标域的 cookie，不接触浏览器中的其他数据；
     macOS 首次读取 Chrome/Edge 时会弹钥匙串授权，需点「允许」。
+    Windows 下 Chrome/Edge 受 App-Bound 加密与文件锁限制通常不可用，
+    请改用桌面客户端的「应用内登录读取」。
     """
     try:
         from backend.devour.browser_cookies import collect_target_cookies
@@ -570,14 +577,41 @@ async def import_cookies_from_browser(request: BrowserCookieRequest):
               "wechat_yuanbao_cookie": "元宝 Cookie", "douyin_cookies": "抖音 cookies"}
     # 用 labels.get 兜底：新增平台字段而漏配标签时不再抛 KeyError（曾导致 500）
     hit = [labels.get(k, k) for k in fields if fields.get(k)]
+    locked = any("App-Bound" in str(a) or "占用" in str(a)
+                 for a in (result.get("attempts") or []))
     if hit:
         message = f"已从 {result.get('browser_used')} 读取并保存：{'、'.join(hit)}"
     elif result.get("browser_used"):
         message = f"已打开 {result.get('browser_used')} 的 cookie 库，但未找到目标站登录 cookie（可能未在浏览器登录）"
+    elif locked:
+        message = ("未能读取到浏览器 cookie：Chrome/Edge 的 Cookie 受 App-Bound 加密保护并被浏览器独占锁定，"
+                   "第三方读取在非管理员权限下不可用。请改用上方「应用内登录读取」，或手动粘贴。")
     else:
         message = "未能读取到浏览器 cookie（原因见读取明细）。请改用手动粘贴，或换一个浏览器重试"
     return {"browser_used": result.get("browser_used"), "found": found,
             "attempts": result.get("attempts") or [], "message": message}
+
+
+@app.post("/api/settings/cookies/from-webview")
+async def import_cookies_from_webview(request: WebviewCookieRequest):
+    """
+    保存桌面壳「应用内登录窗口」读取到的 Cookie。
+
+    Windows 下 Chrome/Edge 的 Cookie 受 App-Bound 加密保护且被浏览器独占锁定，
+    第三方库在非管理员权限下无法读取；因此桌面壳改为打开内嵌 WebView2 登录窗口，
+    由 WebView2 的 CookieManager 读取登录态后经此接口写入设置（仅本机处理）。
+    """
+    fields = {k: v for k, v in (request.fields or {}).items()
+              if k in settings_store.DEFAULT_SETTINGS and v}
+    if not fields:
+        raise HTTPException(status_code=400, detail="没有可保存的 Cookie 字段")
+    settings_store.update_settings(fields)
+    labels = {"bilibili_sessdata": "B站 SESSDATA", "youtube_cookies": "YouTube cookies",
+              "wechat_yuanbao_cookie": "元宝 Cookie", "douyin_cookies": "抖音 cookies"}
+    hit = [labels.get(k, k) for k in fields]
+    logging.info(f"应用内登录 Cookie 已保存: {'、'.join(hit)}")
+    return {"found": {k: True for k in fields},
+            "message": f"已通过应用内登录读取并保存：{'、'.join(hit)}"}
 
 
 @app.get("/api/video/link/youtube-check")
