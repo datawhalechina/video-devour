@@ -3,8 +3,9 @@
 """
 VideoDevour skill 入口脚本（跨 agent 通用，遵循 .agents/skills 约定）
 
-把视频（B站/YouTube 链接或本地文件）端到端处理为中文图文报告。
+把视频（B站/YouTube/抖音 链接、微信视频号分享链接或本地文件）端到端处理为中文图文报告。
 自动切换到 VideoDevour 项目的 .venv 运行，无需手动激活环境。
+另可检索项目本地积累的「文档库」（历史任务的全部报告/笔记），供 agent 复用已有成果。
 
 项目根目录解析顺序:
   1. --home 参数 / VIDEO_DEVOUR_HOME 环境变量
@@ -12,16 +13,22 @@ VideoDevour skill 入口脚本（跨 agent 通用，遵循 .agents/skills 约定
   3. 默认安装路径
 
 用法:
-  devour.py search "关键词" [--platform bilibili|youtube] [--max N]
+  devour.py search "关键词" [--platform bilibili|youtube|douyin] [--max N]
   devour.py info <url>
   devour.py notes <url> [--level 学习阶段]
   devour.py wechat <视频号分享链接> [--check]
+  devour.py douyin <抖音链接> [--check]
   devour.py process <url|本地视频路径> [--level 高中|初中|小学] [--home 项目目录]
   devour.py mindmap [--latest | --dir 输出目录] [--open] [--level 学习阶段]
   devour.py graph   [--latest | --dir 输出目录] [--open] [--level 学习阶段]
   devour.py styles  [--latest | --dir 输出目录] [--kind quantum,wechat,xiaohongshu]
   devour.py pdf     [--latest | --dir 输出目录] [--type report|detailed|outline|all] [--out 文件]
   devour.py report  [--latest | --dir 输出目录] [--type report|detailed|outline]
+  devour.py library search "关键词" [--scope all|outline|report|detailed] [--top 5]
+  devour.py library list [--scope ...]
+  devour.py library get <doc_id> --scope report [--run-id RUN]
+  devour.py library export <doc_id> --scope report [--out 目录]
+  devour.py library export-all [--out 目录]
 """
 import argparse
 import json
@@ -270,6 +277,109 @@ def cmd_wechat(args):
     }, ensure_ascii=False, indent=2))
 
 
+def cmd_douyin(args):
+    """抖音：检查登录 Cookie 状态（--check），或下载分享链接视频（仅下载不处理）。
+
+    抖音下载需要登录态 Cookie（设置页「抖音 cookies」或一键读取浏览器 Cookie）；
+    匿名请求会收到「请先登录」（status_code=2483）。
+    """
+    home = project_home(args.home)
+    setup_project(home)
+
+    from backend.devour.video_downloader import (
+        _load_douyin_cookies_header, extract_share_url, detect_platform, download_video,
+    )
+
+    if args.check:
+        cookie = _load_douyin_cookies_header()
+        if cookie:
+            print(json.dumps({
+                "configured": True,
+                "message": "抖音 Cookie 已配置（下载与关键词搜索需要登录态）",
+            }, ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps({
+                "configured": False,
+                "message": "未配置抖音 Cookie。请在 WebUI 设置页「抖音 cookies」填写，"
+                           "或点「一键读取浏览器 Cookie」自动获取（需浏览器已登录抖音）；"
+                           "也可写入 settings.json 的 douyin_cookies",
+            }, ensure_ascii=False, indent=2))
+            sys.exit(1)
+        return
+
+    url = extract_share_url(args.url or "")
+    if detect_platform(url) != "douyin":
+        print("错误: 请提供抖音链接（douyin.com/video/{id} 或 v.douyin.com 短链，"
+              "可直接粘贴含链接的分享文案）", file=sys.stderr)
+        sys.exit(1)
+    print(f"[1/1] 解析并下载抖音视频: {url}")
+    result = download_video(url, str(home / "uploads"), max_height=720)
+    info = result.get("info", {})
+    print(json.dumps({
+        "file_path": result["file_path"],
+        "title": info.get("title"),
+        "uploader": info.get("uploader"),
+        "hint": "可继续用 process 命令处理该本地文件生成图文报告",
+    }, ensure_ascii=False, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# 文档库（历史任务成果复用 / 检索）
+# ---------------------------------------------------------------------------
+
+def cmd_library(args):
+    """检索项目本地「文档库」：全部历史任务产出的报告/笔记/衍生文体。
+
+    子命令：
+      search       BM25 相关度检索（返回 doc_id/scope/摘要）
+      list         无关键词浏览全部文档索引
+      get          按 doc_id + scope 取全文 Markdown
+      export       导出单篇为 ZIP（md + 引用图片）
+      export-all   导出整库为 ZIP
+    """
+    home = project_home(args.home)
+    setup_project(home)
+
+    from backend.algorithm import document_library as dl
+
+    action = args.action
+    if action == "search":
+        result = dl.search_library(args.query, scope=args.scope, top_k=args.top)
+    elif action == "list":
+        result = dl.list_library(scope=args.scope)
+    elif action == "get":
+        result = dl.get_article(args.doc_id, args.scope, run_id=args.run_id or "")
+        if not result:
+            print(f"文章不存在: doc_id={args.doc_id} scope={args.scope}",
+                  file=sys.stderr)
+            sys.exit(1)
+    elif action == "export":
+        result = dl.export_article_zip(args.doc_id, args.scope, run_id=args.run_id or "")
+        if not result:
+            print(f"文章不存在: doc_id={args.doc_id} scope={args.scope}",
+                  file=sys.stderr)
+            sys.exit(1)
+        content, name = result
+        out_dir = Path(args.out).expanduser() if args.out else Path.home() / "Downloads"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / name
+        out_path.write_bytes(content)
+        result = {"zip": str(out_path), "bytes": len(content)}
+    else:  # export-all
+        content, name = dl.export_library_zip()
+        out_dir = Path(args.out).expanduser() if args.out else Path.home() / "Downloads"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / name
+        out_path.write_bytes(content)
+        result = {"zip": str(out_path), "bytes": len(content)}
+
+    # 「取全文」直接打印 Markdown；其余输出 JSON
+    if action == "get":
+        print(result["content"])
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
 def cmd_notes(args):
     """字幕速记：直接用 B站/YouTube 已有字幕生成纯文本笔记（秒级，不下载视频）"""
     home = project_home(args.home)
@@ -420,9 +530,10 @@ def main():
     parser.add_argument("--home", default=None, help="VideoDevour 项目根目录")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_search = sub.add_parser("search", help="搜索B站/YouTube视频")
+    p_search = sub.add_parser("search", help="搜索B站/YouTube/抖音视频")
     p_search.add_argument("query")
-    p_search.add_argument("--platform", default="bilibili", choices=["bilibili", "youtube"])
+    p_search.add_argument("--platform", default="bilibili",
+                          choices=["bilibili", "youtube", "douyin"])
     p_search.add_argument("--max", type=int, default=5)
     p_search.set_defaults(func=cmd_search)
 
@@ -443,6 +554,43 @@ def main():
                       help="视频号分享链接（weixin.qq.com/sph/...）或含链接的分享文案")
     p_wx.add_argument("--check", action="store_true", help="检查元宝 Cookie 是否已配置且有效")
     p_wx.set_defaults(func=cmd_wechat)
+
+    p_dy = sub.add_parser("douyin", help="抖音：下载分享链接视频 / 检查登录 Cookie")
+    p_dy.add_argument("url", nargs="?", default=None,
+                      help="抖音链接（douyin.com/video/{id}、v.douyin.com 短链）或含链接的分享文案")
+    p_dy.add_argument("--check", action="store_true", help="检查抖音 Cookie 是否已配置")
+    p_dy.set_defaults(func=cmd_douyin)
+
+    p_lib = sub.add_parser("library", help="检索项目本地文档库（历史任务报告/笔记复用）")
+    lib_sub = p_lib.add_subparsers(dest="action", required=True)
+    _scope_choices = ["all", "outline", "report", "detailed", "quantum", "wechat", "xiaohongshu"]
+
+    lib_s = lib_sub.add_parser("search", help="BM25 相关度检索（返回 doc_id/scope/摘要）")
+    lib_s.add_argument("query")
+    lib_s.add_argument("--scope", default="all", choices=_scope_choices)
+    lib_s.add_argument("--top", type=int, default=5)
+    lib_s.set_defaults(func=cmd_library)
+
+    lib_l = lib_sub.add_parser("list", help="无关键词浏览全部文档索引")
+    lib_l.add_argument("--scope", default="all", choices=_scope_choices)
+    lib_l.set_defaults(func=cmd_library)
+
+    lib_g = lib_sub.add_parser("get", help="按 doc_id + scope 取全文 Markdown")
+    lib_g.add_argument("doc_id")
+    lib_g.add_argument("--scope", required=True, choices=_scope_choices)
+    lib_g.add_argument("--run-id", default=None, help="同一任务多次处理时指定版本")
+    lib_g.set_defaults(func=cmd_library)
+
+    lib_e = lib_sub.add_parser("export", help="导出单篇为 ZIP（md + 引用图片）")
+    lib_e.add_argument("doc_id")
+    lib_e.add_argument("--scope", required=True, choices=_scope_choices)
+    lib_e.add_argument("--run-id", default=None)
+    lib_e.add_argument("--out", default=None, help="导出目录（默认 ~/Downloads）")
+    lib_e.set_defaults(func=cmd_library)
+
+    lib_ea = lib_sub.add_parser("export-all", help="导出整库为 ZIP")
+    lib_ea.add_argument("--out", default=None, help="导出目录（默认 ~/Downloads）")
+    lib_ea.set_defaults(func=cmd_library)
 
     p_notes = sub.add_parser("notes", help="字幕速记：用平台字幕生成纯文本笔记（B站/YouTube，秒级）")
     p_notes.add_argument("url", help="B站/YouTube 视频链接或分享文案")

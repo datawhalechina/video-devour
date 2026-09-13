@@ -64,7 +64,7 @@
 
 ### 🔗 在线视频链接处理（B站 / YouTube / 抖音 / 微信视频号）
 - **粘贴链接直接处理**：自动识别平台（可直接粘贴 App 分享文案），预览窗口内嵌官方播放器在线播放，一键下载并进入完整处理流水线。
-- **关键词搜索**：内置 B站官方搜索与 YouTube 搜索，封面/时长/UP主卡片式展示。
+- **关键词搜索**：内置 B站官方搜索、YouTube 搜索与抖音搜索（抖音需登录 Cookie），封面/时长/UP主卡片式展示。
 - **抖音**：支持 `douyin.com/video/{id}` 视频页与 `v.douyin.com` 短链（自动跟随重定向）。**下载需要登录态 Cookie**（设置页「抖音 cookies」或一键读取浏览器 Cookie）；抖音的**下载与关键词搜索都需登录态**（匿名搜索返回「请先登录」），配置抖音 cookies 后即可正常搜索抖音视频。
 - **微信视频号**：支持 `weixin.qq.com/sph/...` 分享链接。在设置页填入腾讯元宝 Cookie 后走**直连解析**（元宝解析 → 视频号 feed 接口 → 本地 ISAAC64 解密，无第三方依赖）；也可选配自建解析服务（`WECHAT_RESOLVER_URL`）或使用本地捕获工具（[ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download)）下载后上传处理。
 - 由 `yt-dlp` 驱动，含 B站风控退避重试与 YouTube cookies 支持（`YTDLP_COOKIES_FILE`）。
@@ -83,23 +83,30 @@
 Codex / Claude Code / Cursor 等任何支持该约定的 agent 均可直接调用，无需启动 Web 界面：
 
 ```bash
-# 搜索视频
+# 搜索视频（B站/YouTube/抖音）
 python3 .agents/skills/videodevour/scripts/devour.py search "关键词" --platform bilibili
 # 查看链接信息（标题/UP主/时长/封面）
 python3 .agents/skills/videodevour/scripts/devour.py info "https://www.bilibili.com/video/BV..."
 # 微信视频号：检查元宝 Cookie / 下载分享链接视频
 python3 .agents/skills/videodevour/scripts/devour.py wechat --check
 python3 .agents/skills/videodevour/scripts/devour.py wechat "https://weixin.qq.com/sph/..."
-# 一键处理：下载 → ASR → 大纲 → 关键帧 → 中文图文报告（同样支持视频号链接）
+# 抖音：检查登录 Cookie / 下载链接视频（下载需登录态）
+python3 .agents/skills/videodevour/scripts/devour.py douyin --check
+python3 .agents/skills/videodevour/scripts/devour.py douyin "https://www.douyin.com/video/..."
+# 一键处理：下载 → ASR → 大纲 → 关键帧 → 中文图文报告（同样支持抖音/视频号链接）
 python3 .agents/skills/videodevour/scripts/devour.py process "https://www.bilibili.com/video/BV..." --level 高中
 # 读取最新报告
 python3 .agents/skills/videodevour/scripts/devour.py report --latest
+# 检索本地文档库（复用历史任务的报告/笔记，BM25 搜索）
+python3 .agents/skills/videodevour/scripts/devour.py library search "关键词" --top 5
 ```
 
 - 学习阶段可选：自由学习（默认）/ 小学 / 初中 / 高中 / 大学 / 硕士 / 博士 / 深入研究 / 垂直领域研究
 - 脚本自动切换到项目 `.venv` 运行；项目根按 `--home` → `VIDEO_DEVOUR_HOME` → 脚本位置 自动解析
 - 本机安装：软链到用户级技能目录 `ln -s <repo>/.agents/skills/videodevour ~/.agents/skills/videodevour`
 - `process` 为同步阻塞命令，agent 调用时请将超时设为 10 分钟以上
+- 文档库也可通过内置 MCP 服务（`mcp_server/videodevour_library_mcp.py`，stdio）暴露给
+  Claude Code / Cursor / Claude Desktop 等 MCP 客户端，配置见 `mcp_server/` 脚本头部说明
 
 ## 🖼️ 系统预览
 
@@ -204,13 +211,13 @@ pip install -r requirements.txt
 
 配置保存在项目根目录的 `settings.json`（已被 gitignore，含密钥请勿提交），并在每次任务执行时注入运行时配置。
 
-### 在线视频链接处理（B站 / YouTube / 微信视频号）
+### 在线视频链接处理（B站 / YouTube / 抖音 / 微信视频号）
 
 前端「链接处理」页面支持不上传文件、直接通过视频链接生成报告：
 
-- **粘贴链接**：自动识别平台并展示预览窗口（B站用官方播放器嵌入，YouTube 用 embed 播放器），可在线播放预览；直接粘贴 App 分享文案也可以（自动提取其中的纯链接）
-- **关键词搜索**：内置 B站（官方搜索接口）与 YouTube（ytsearch）搜索，结果卡片含封面/时长/UP主，点击即预览
-- **一键下载处理**：yt-dlp 下载（自动合并 mp4）→ 接入标准处理流水线（ASR → 大纲 → 关键帧 → 报告）
+- **粘贴链接**：自动识别平台并展示预览窗口（B站用官方播放器嵌入，YouTube/抖音用 embed 播放器），可在线播放预览；直接粘贴 App 分享文案也可以（自动提取其中的纯链接）
+- **关键词搜索**：内置 B站（官方搜索接口）、YouTube（ytsearch）与抖音（需登录 Cookie）搜索，结果卡片含封面/时长/UP主，点击即预览
+- **一键下载处理**：yt-dlp 下载（自动合并 mp4）→ 接入标准处理流水线（ASR → 大纲 → 关键帧 → 报告）；同一视频重复处理直接复用本地下载缓存，不重复下载
 
 说明：
 - B站未登录最高可取 720p 左右画质，高清晰度需自行配置登录态；短时间高频请求可能触发平台风控，服务端已带 cookie 指纹与自动重试
@@ -346,12 +353,16 @@ video-devour/
 │   ├── 📁 api/
 │   │   └── main.py              # FastAPI 主应用（全部 API 端点）
 │   └── 📁 devour/               # 视频获取与 ASR 引擎
-│       ├── video_downloader.py  # 链接下载（B站/YouTube/微信视频号）
+│       ├── video_downloader.py  # 链接下载（B站/YouTube/抖音/微信视频号，含搜索）
+│       ├── download_cache.py    # 下载缓存与存储映射表（同视频复用，不重复下载）
 │       ├── asr_factory.py       # ASR 引擎工厂（离线/在线切换）
 │       ├── asr_engine_paraformer_v2.py  # 本地 FunASR 引擎
 │       ├── asr_engine_dashscope.py      # DashScope 在线引擎
 │       ├── asr_engine_stepfun.py        # StepFun 在线引擎
 │       └── ...                  # 其他引擎实现
+├── 📁 mcp_server/               # 文档库 MCP 服务（stdio，供其他 LLM 客户端检索）
+│   ├── videodevour_library_mcp.py  # 5 个工具：search/get/list/export/export-all
+│   └── test_mcp_client.py       # MCP 端到端自测客户端
 ├── 📁 frontend/                 # React 前端应用
 │   ├── 📁 src/
 │   │   ├── 📁 components/       # React 组件（上传/链接/报告/设置等）
