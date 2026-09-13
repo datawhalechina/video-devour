@@ -48,9 +48,12 @@ mcp = FastMCP(
     "videodevour-library",
     instructions=(
         "VideoDevour 个人文档库：检索与获取本地所有已生成视频笔记/报告。"
-        "推荐流程：先用 search_library 按关键词检索（返回 top-k 摘要与 doc_id/scope），"
+        "推荐流程：先用 search_library 按关键词检索（返回 top-k 摘要与 doc_id/scope/run_id），"
         "命中后用 get_article 取全文。scope 取值：outline=图文大纲, "
-        "report=精简报告, detailed=详细报告（原文+笔记对照）。"
+        "report=精简报告, detailed=详细报告（原文+笔记对照）, "
+        "quantum=量子速读, wechat=公众号文章, xiaohongshu=小红书笔记。"
+        "同一视频多次处理会形成多个版本：search_library 结果里的 run_id + version_label "
+        "标识具体版本，取全文时把它一并传给 get_article 即可打开该版本。"
     ),
 )
 
@@ -61,7 +64,9 @@ def search_library(query: str, scope: str = "all", top_k: int = 5) -> str:
 
     Args:
         query: 检索关键词（支持中文/英文/混合）
-        scope: 文章类型过滤：all | outline（图文大纲）| report（精简报告）| detailed（详细报告）
+        scope: 文章类型过滤：all（全部）| outline（图文大纲）| report（精简报告）
+            | detailed（详细报告）| quantum（量子速读）| wechat（公众号）
+            | xiaohongshu（小红书）
         top_k: 返回条数（默认 5，最大 20）
     """
     result = _search_library(query, scope, top_k=min(max(top_k, 1), 20))
@@ -72,27 +77,31 @@ def search_library(query: str, scope: str = "all", top_k: int = 5) -> str:
         lines.append(
             f"{i}. 【{r['label']}】{r['title']}\n"
             f"   来源: {r['platform_label']} | 相关度: {r['score']} | 生成: {r['created_at'][:10]}\n"
-            f"   doc_id: {r['doc_id']} | scope: {r['scope']}\n"
+            f"   doc_id: {r['doc_id']} | scope: {r['scope']} | {r.get('version_label', 'V1')}"
+            f"{'（run_id=' + r['run_id'] + '）' if r.get('run_id') else ''}\n"
             f"   摘要: {r['snippet']}\n"
         )
-    lines.append("\n（需要全文时，用对应 doc_id + scope 调用 get_article）")
+    lines.append("\n（需要全文时，用对应 doc_id + scope 调用 get_article；多版本视频可加 run_id 指定版本）")
     return "\n".join(lines)
 
 
 @mcp.tool()
-def get_article(doc_id: str, scope: str) -> str:
+def get_article(doc_id: str, scope: str, run_id: str = "") -> str:
     """获取单篇文章的完整 Markdown 全文。
 
     Args:
         doc_id: 任务 ID（来自 search_library 结果）
-        scope: 文章类型：outline | report | detailed
+        scope: 文章类型：outline | report | detailed | quantum | wechat | xiaohongshu
+        run_id: 可选，指定版本（来自 search_library 结果）；缺省取最近一次版本
     """
-    result = _get_article(doc_id, scope)
+    result = _get_article(doc_id, scope, run_id)
     if not result:
-        return f"文章不存在：doc_id={doc_id}, scope={scope}。请先用 search_library 确认。"
+        return f"文章不存在：doc_id={doc_id}, scope={scope}, run_id={run_id}。请先用 search_library 确认。"
+    doc = result["doc"]
     header = (
-        f"【{result['label']}】{result['doc']['title']}\n"
-        f"来源: {result['doc']['platform_label']} | 生成: {result['doc']['created_at'][:10]}\n"
+        f"【{result['label']}】{doc['title']}\n"
+        f"来源: {doc['platform_label']} | 生成: {(doc.get('created_at') or '')[:10]}"
+        f" | {doc.get('version_label') or 'V1'}\n"
         f"{'=' * 40}\n\n"
     )
     return header + result["content"]
@@ -103,29 +112,34 @@ def list_library(scope: str = "all") -> str:
     """列出文档库全部文章索引（无关键词浏览）。
 
     Args:
-        scope: all | outline | report | detailed
+        scope: all | outline | report | detailed | quantum | wechat | xiaohongshu
     """
     result = _list_library(scope)
     if not result["results"]:
         return "文档库为空。"
     lines = [f"共 {result['total']} 篇：\n"]
     for r in result["results"]:
-        lines.append(f"- 【{r['label']}】{r['title']}（{r['created_at'][:10]}）doc_id={r['doc_id']} scope={r['scope']}")
+        lines.append(
+            f"- 【{r['label']}】{r['title']}（{r['created_at'][:10]}）"
+            f"doc_id={r['doc_id']} scope={r['scope']} {r.get('version_label', 'V1')}"
+            f"{' run_id=' + r['run_id'] if r.get('run_id') else ''}"
+        )
     return "\n".join(lines)
 
 
 @mcp.tool()
-def export_article(doc_id: str, scope: str, target_dir: str = "") -> str:
+def export_article(doc_id: str, scope: str, target_dir: str = "", run_id: str = "") -> str:
     """把某篇导出为本地 ZIP 文件（md + 引用图片），返回文件绝对路径。
 
     Args:
         doc_id: 任务 ID
-        scope: outline | report | detailed
+        scope: outline | report | detailed | quantum | wechat | xiaohongshu
         target_dir: 导出目录（默认系统的下载/临时目录）
+        run_id: 可选，指定版本（来自 search_library 结果）；缺省取最近一次版本
     """
-    result = _export_article_zip(doc_id, scope)
+    result = _export_article_zip(doc_id, scope, run_id)
     if not result:
-        return f"文章不存在：doc_id={doc_id}, scope={scope}。"
+        return f"文章不存在：doc_id={doc_id}, scope={scope}, run_id={run_id}。"
     content, suggested = result
     out_dir = Path(target_dir).expanduser() if target_dir else Path.home() / "Downloads"
     out_dir.mkdir(parents=True, exist_ok=True)

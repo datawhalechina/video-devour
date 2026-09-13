@@ -347,6 +347,7 @@ def get_article(doc_id: str, scope: str, run_id: str = "") -> Optional[Dict]:
                     "version_count": video["version_count"],
                     "run_id": run.get("run_id", ""),
                     "dir": run["dir"],
+                    "created_at": run["created_at"],
                 },
                 "scope": scope, "label": label,
                 "file": (run["articles"].get(scope) or {}).get("file"),
