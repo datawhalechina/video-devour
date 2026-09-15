@@ -44,3 +44,6 @@ desktop/release/*.exe
 .DS_Store
 # 视频下载缓存（运行时产物）
 downloads/
+
+# 图标生成的中间产物（.icns/.ico/主图已入库，iconset 只是临时目录）
+desktop/assets/VideoDevour.iconset/

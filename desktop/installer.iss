@@ -32,6 +32,9 @@ Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
+; 安装包与应用图标（desktop/assets/VideoDevour.ico）
+SetupIconFile={#SourcePath}\assets\VideoDevour.ico
+UninstallDisplayIcon={app}\{#AppExeName}
 ; 卸载时不删除用户数据目录（任务、报告、设置保留）
 
 [Languages]

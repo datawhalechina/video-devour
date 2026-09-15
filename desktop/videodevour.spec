@@ -27,6 +27,12 @@ from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 
+# 应用图标：Windows 用 .ico（写入 EXE 资源），macOS 的 .icns 由 build_mac.sh 放进 .app
+_ICON = PROJECT_ROOT / "desktop" / "assets" / (
+    "VideoDevour.ico" if sys.platform.startswith("win") else "VideoDevour.icns"
+)
+ICON_PATH = str(_ICON) if _ICON.is_file() else None
+
 
 def _target():
     """解析目标平台标识，与 desktop/bin/<target>/ 目录名一致。"""
@@ -168,6 +174,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=ICON_PATH,
 )
 
 coll = COLLECT(

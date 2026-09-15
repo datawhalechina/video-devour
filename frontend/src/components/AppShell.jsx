@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { NavLink, Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Link2, Upload, BookOpen, History, Settings, ArrowUpRight, ChevronRight, Play, Plus } from 'lucide-react'
+import { LayoutDashboard, Link2, Upload, BookOpen, History, Settings, ArrowUpRight, ChevronRight, Plus } from 'lucide-react'
 
 const navigation = [
   { to: '/', label: '工作台', icon: LayoutDashboard, end: true },
@@ -19,7 +19,7 @@ export default function AppShell({ children }) {
     <div className="app-shell">
       <a className="skip-link" href="#workspace-content">跳转到内容</a>
       <aside className="app-sidebar">
-        <Link to="/" className="brand-lockup" aria-label="VideoDevour 工作台"><span className="brand-mark"><Play size={19} fill="currentColor" /></span><span>VideoDevour<span className="brand-caption">让视频成为你的知识</span></span></Link>
+        <Link to="/" className="brand-lockup" aria-label="VideoDevour 工作台"><span className="brand-mark"><img src="/favicon-32.png" alt="" width="32" height="32" /></span><span>VideoDevour<span className="brand-caption">让视频成为你的知识</span></span></Link>
         <Link to="/link" className="sidebar-create"><Plus size={18} /> 新建解析 <span>+</span></Link>
         <div className="nav-caption">工作空间</div>
         <nav className="workspace-nav" aria-label="主导航">{navigation.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} aria-label={label} title={label} className={({ isActive }) => `nav-item ${isActive || (to === '/history' && ['report', 'processing', 'editor'].includes(section)) ? 'is-active' : ''}`}><Icon size={18} /><span>{label}</span></NavLink>)}</nav>

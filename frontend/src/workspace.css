@@ -101,11 +101,13 @@ input::placeholder {
   place-items:center;
   flex-shrink:0;
   width:34px;
-  height:38px;
+  height:34px;
   border-radius:10px;
-  background:var(--accent);
-  color:#fff;
+  overflow:hidden;
+  /* 品牌图标自带透明底与留白，不再用纯色块 + 播放三角 */
+  background:transparent;
 }
+.brand-mark img { width:100%; height:100%; object-fit:contain; }
 
 .brand-caption {
   display:block;
@@ -1284,7 +1286,7 @@ content and state colours remain semantic. */
   }
   .brand-mark {
     width:29px;
-    height:34px;
+    height:29px;
   }
   .workspace-nav {
     flex-direction:row;

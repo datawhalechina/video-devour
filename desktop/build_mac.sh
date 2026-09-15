@@ -123,6 +123,8 @@ build_one() {
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>VideoDevour</string>
+    <key>CFBundleIconFile</key>
+    <string>VideoDevour</string>
     <key>LSMinimumSystemVersion</key>
     <string>11.0</string>
     <key>NSHighResolutionCapable</key>
@@ -134,6 +136,13 @@ build_one() {
 PLIST
 
   cp -R "${out_dir}/${APP_NAME}/." "${app_bundle}/Contents/Resources/"
+
+  # 应用图标（Dock / Finder / 关于本机）：由 desktop/assets/VideoDevour.icns 提供
+  if [ -f "${SCRIPT_DIR}/assets/${APP_NAME}.icns" ]; then
+    cp "${SCRIPT_DIR}/assets/${APP_NAME}.icns" "${app_bundle}/Contents/Resources/"
+  else
+    echo "[警告] 缺少 desktop/assets/${APP_NAME}.icns，应用将显示默认图标"
+  fi
 
   cat > "${app_bundle}/Contents/MacOS/${APP_NAME}" <<'LAUNCH'
 #!/bin/bash
