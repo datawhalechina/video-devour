@@ -115,13 +115,17 @@ def _keep_only_report_images(report: str, result: str) -> str:
     return re.sub(r"(!\[[^\]]*\]\(([^)]+)\))\n?", _replace, result)
 
 
-def generate_style(output_dir, scope: str, education_level: str = None) -> Path:
-    """生成指定文体的成品文案并落盘；已存在则直接复用（缓存）。"""
+def generate_style(output_dir, scope: str, education_level: str = None, force: bool = False) -> Path:
+    """生成指定文体的成品文案并落盘；已存在则直接复用（缓存）。
+
+    force=True 时忽略缓存重新生成：处理中途生成的产物会基于「还没有关键帧的
+    半成品大纲」，配图因此缺失且被永久缓存，需要这个入口来修复。
+    """
     if scope not in STYLE_TYPES:
         raise ValueError(f"不支持的文体: {scope}")
     filename, label, _ = STYLE_TYPES[scope]
     out_path = Path(output_dir) / filename
-    if out_path.exists() and out_path.stat().st_size > 0:
+    if not force and out_path.exists() and out_path.stat().st_size > 0:
         return out_path
 
     report = _read_base_report(output_dir)

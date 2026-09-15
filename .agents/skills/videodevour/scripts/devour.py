@@ -283,8 +283,10 @@ def cmd_wechat(args):
 def cmd_douyin(args):
     """抖音：检查登录 Cookie 状态（--check），或下载分享链接视频（仅下载不处理）。
 
-    抖音下载需要登录态 Cookie（设置页「抖音 cookies」或一键读取浏览器 Cookie）；
-    匿名请求会收到「请先登录」（status_code=2483）。
+    抖音下载需要登录态 Cookie（设置页「抖音 cookies」或一键读取浏览器 Cookie）。
+    下载走 App 接口直连（aweme.snssdk.com）：web 接口自 2026 起受 Argus 浏览器
+    签名校验拦截，仅带 Cookie 也会返回 403；yt-dlp 会把它误报成
+    「Fresh cookies are needed」，看到该提示时不必反复重配 Cookie。
     """
     home = project_home(args.home)
     setup_project(home)
@@ -480,7 +482,7 @@ def cmd_styles(args):
             continue
         label = STYLE_TYPES[scope][1]
         try:
-            path = generate_style(out_dir, scope, args.level or None)
+            path = generate_style(out_dir, scope, args.level or None, force=getattr(args, "force", False))
             result["styles"][scope] = {"label": label, "file": str(path)}
             print(f"已生成{label}: {path}")
         except Exception as e:
@@ -699,6 +701,8 @@ def main():
     p_styles.add_argument("--dir", default=None, help="指定任务输出目录")
     p_styles.add_argument("--kind", default="",
                           help="逗号分隔，可选：quantum,wechat,xiaohongshu（默认全部）")
+    p_styles.add_argument("--force", action="store_true",
+                          help="忽略已有缓存重新生成（修复处理中途生成导致的缺图产物）")
     p_styles.add_argument("--level", default=None,
                           choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
     p_styles.set_defaults(func=cmd_styles)

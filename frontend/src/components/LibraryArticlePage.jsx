@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Download, FileDown, Loader2, FileText } from 'lucide-react'
+import { ArrowLeft, Download, FileDown, Loader2, FileText, RefreshCw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -17,23 +17,45 @@ function LibraryArticlePage() {
   const navigate = useNavigate()
   const [article, setArticle] = useState(null)
   const [error, setError] = useState(null)
+  const [repairing, setRepairing] = useState(false)
+
+  const load = async (cancelledRef) => {
+    const q = runId ? `?run_id=${encodeURIComponent(runId)}` : ''
+    const res = await fetch(`/api/library/article/${docId}/${scope}${q}`)
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      throw new Error(d.detail || `HTTP ${res.status}`)
+    }
+    const data = await res.json()
+    if (!cancelledRef?.cancelled) setArticle(data)
+  }
+
+  // 处理中途生成的产物会缺配图：丢弃缓存、基于完整报告重新生成后重载
+  const repair = async () => {
+    if (repairing) return
+    setRepairing(true)
+    try {
+      const body = new FormData()
+      if (runId) body.append('run_id', runId)
+      const res = await fetch(
+        `/api/library/article/${docId}/${scope}/generate?force=true`,
+        { method: 'POST', body })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.detail || `HTTP ${res.status}`)
+      }
+      await load()
+    } catch (err) {
+      setError(`重新生成失败：${err.message}`)
+    } finally {
+      setRepairing(false)
+    }
+  }
 
   useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const q = runId ? `?run_id=${encodeURIComponent(runId)}` : ''
-        const res = await fetch(`/api/library/article/${docId}/${scope}${q}`)
-        if (!res.ok) {
-          const d = await res.json().catch(() => ({}))
-          throw new Error(d.detail || `HTTP ${res.status}`)
-        }
-        if (!cancelled) setArticle(await res.json())
-      } catch (err) {
-        if (!cancelled) setError(err.message)
-      }
-    })()
-    return () => { cancelled = true }
+    const ref = { cancelled: false }
+    load(ref).catch((err) => { if (!ref.cancelled) setError(err.message) })
+    return () => { ref.cancelled = true }
   }, [docId, scope, runId])
 
   // Markdown 里的相对路径图片 → 静态目录（补任务输出目录层）。
@@ -61,6 +83,17 @@ function LibraryArticlePage() {
           <div className="flex items-center gap-2">
             {article && (
               <>
+                {article.needs_image_repair && (
+                  <button
+                    onClick={repair}
+                    disabled={repairing}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-sm font-medium hover:bg-amber-100 disabled:opacity-60"
+                    title="该文体生成时报告还没插入关键帧，因此没有配图；点此基于完整报告重新生成"
+                  >
+                    {repairing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    {repairing ? '重新生成中…' : '重新生成（补图）'}
+                  </button>
+                )}
                 <a
                   href={`/api/library/article/${docId}/${scope}/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=md`}
                   download=""
