@@ -255,6 +255,9 @@ class ASRProcessor:
         2. 时间间隔超过 3 秒时分块
         3. 当前块文本长度达到 200 字符时分块
         
+        每个块除合并后的 text 外，还带 sentences（逐句时间戳），
+        供详细报告「一行一句」展示；分块数量不变，不影响大纲章节对齐。
+        
         Args:
             speaker_dialogue (list[dict]): 对话列表
             
@@ -267,6 +270,19 @@ class ASRProcessor:
 
         chunks = []
         current_chunk = []
+
+        def _emit(items):
+            """把若干句合成一个块（text 供 LLM 使用，sentences 供原文展示）。"""
+            return {
+                'speaker': items[0]['speaker'],
+                'start': items[0]['start'],
+                'end': items[-1]['end'],
+                'text': "".join(d['text'] for d in items),
+                'sentences': [
+                    {'start': d['start'], 'end': d['end'], 'text': d['text']}
+                    for d in items
+                ],
+            }
 
         for item in speaker_dialogue:
             # 第一个条目
@@ -282,13 +298,7 @@ class ASRProcessor:
 
             if speaker_changed or time_gap_exceeded:
                 # 保存当前块
-                text = "".join(d['text'] for d in current_chunk)
-                chunks.append({
-                    'speaker': current_chunk[0]['speaker'],
-                    'start': current_chunk[0]['start'],
-                    'end': current_chunk[-1]['end'],
-                    'text': text
-                })
+                chunks.append(_emit(current_chunk))
                 current_chunk = [item]
                 continue
 
@@ -298,24 +308,12 @@ class ASRProcessor:
 
             # 检查长度限制
             if current_len >= 200:
-                text = "".join(d['text'] for d in current_chunk)
-                chunks.append({
-                    'speaker': current_chunk[0]['speaker'],
-                    'start': current_chunk[0]['start'],
-                    'end': current_chunk[-1]['end'],
-                    'text': text
-                })
+                chunks.append(_emit(current_chunk))
                 current_chunk = []
 
         # 保存最后一个块
         if current_chunk:
-            text = "".join(d['text'] for d in current_chunk)
-            chunks.append({
-                'speaker': current_chunk[0]['speaker'],
-                'start': current_chunk[0]['start'],
-                'end': current_chunk[-1]['end'],
-                'text': text
-            })
+            chunks.append(_emit(current_chunk))
         
         logging.info(f"分块完成，共生成 {len(chunks)} 个块")
         return chunks

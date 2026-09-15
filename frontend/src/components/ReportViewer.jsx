@@ -18,6 +18,7 @@ const STYLE_TABS = [
 const STYLE_KEYS = STYLE_TABS.map(t => t.key);
 import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
 import { triggerDownload, openExternal } from "../utils/helpers";
+import { useConfigGate } from "./ConfigGateProvider";
 import QuizPanel from "./QuizPanel";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -25,6 +26,8 @@ import { mermaidMarkdownComponents } from './MermaidBlock';
 
 
 const ReportViewer = ({ report, onBack, error, onRetry }) => {
+  // 配置引导：生成类操作（衍生文体/思维导图/知识图谱/学习卡片）在缺 LLM 时先弹引导
+  const { guardConfig } = useConfigGate();
   const [activeTab, setActiveTab] = useState("outline");
   const [cardLoading, setCardLoading] = useState(false)
   const [timing, setTiming] = useState(null)

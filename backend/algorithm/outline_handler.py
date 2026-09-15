@@ -133,10 +133,16 @@ def generate_detailed_outline(outline_content, headings, matched_data, output_di
                     if heading in matched_data and matched_data[heading]:
                         f.write('\n> **匹配的文本片段:**\n>\n')
                         for chunk in matched_data[heading]:
-                            start_str = f"{int(chunk['start'] // 60):02d}:{int(chunk['start'] % 60):02d}"
-                            end_str = f"{int(chunk['end'] // 60):02d}:{int(chunk['end'] % 60):02d}"
-                            # 格式化为引用块
-                            f.write(f"> - **[{start_str} - {end_str}] {chunk['speaker']}:** {chunk['text']}\n")
+                            # 一个块含多句时逐句成行（引用块内），避免整段挤成一行
+                            sentences = chunk.get("sentences")
+                            if sentences:
+                                for s in sentences:
+                                    t = f"{int(s['start'] // 60):02d}:{int(s['start'] % 60):02d}"
+                                    f.write(f"> - **[{t}]** {s['text']}\n")
+                            else:
+                                start_str = f"{int(chunk['start'] // 60):02d}:{int(chunk['start'] % 60):02d}"
+                                end_str = f"{int(chunk['end'] // 60):02d}:{int(chunk['end'] % 60):02d}"
+                                f.write(f"> - **[{start_str} - {end_str}] {chunk['speaker']}:** {chunk['text']}\n")
                         f.write('\n')
             
         logging.info("--- 详细大纲生成成功 ---")
@@ -634,9 +640,32 @@ def generate_detailed_report(detailed_outline_path, output_dir, education_level:
             return f"{m:02d}:{s:02d}"
 
         def _raw_of(heading):
-            """本章原文：完整输出整块字幕，不截断、不切割。"""
-            return "\n".join(f"[{_mmss(c['start'])}] {c['text']}"
-                             for c in chapter_chunks.get(heading, []))
+            """本章原文（供 LLM 参考）：逐句一行，带各自时间戳，不截断、不切割。"""
+            lines = []
+            for c in chapter_chunks.get(heading, []):
+                sentences = c.get("sentences")
+                if sentences:
+                    lines.extend(f"[{_mmss(s['start'])}] {s['text']}" for s in sentences)
+                else:
+                    lines.append(f"[{_mmss(c['start'])}] {c['text']}")
+            return "\n".join(lines)
+
+        def _raw_display(heading):
+            """本章原文（供阅读）：一句一行、列为条目并带时间戳。
+
+            Markdown 会把单个换行折叠成空格，若直接输出纯文本行，整章会挤成一大段
+            （原实现即如此）。改为列表项后，网页、PDF、导出的 .md 三种渲染都能保持
+            「一行一句」，便于逐句对照与按时间戳回看。
+            """
+            lines = []
+            for c in chapter_chunks.get(heading, []):
+                sentences = c.get("sentences")
+                if sentences:
+                    lines.extend(f"- **[{_mmss(s['start'])}]** {s['text']}"
+                                 for s in sentences)
+                else:
+                    lines.append(f"- **[{_mmss(c['start'])}]** {c['text']}")
+            return "\n".join(lines)
 
         from backend.algorithm.llm_handler import LLMHandler, get_level_instruction
         llm = LLMHandler(education_level=education_level)
@@ -671,7 +700,8 @@ def generate_detailed_report(detailed_outline_path, output_dir, education_level:
                 parts.append(f"*本章对应视频 {_mmss(chunks[0]['start'])} - "
                              f"{_mmss(chunks[-1]['end'])}*\n")
             parts.append("### 视频原文\n")
-            parts.append((raw if raw else "（本章无对应语音内容）") + "\n")
+            raw_display = _raw_display(heading)
+            parts.append((raw_display if raw_display else "（本章无对应语音内容）") + "\n")
 
             parts.append("### 整理笔记\n")
             if raw:

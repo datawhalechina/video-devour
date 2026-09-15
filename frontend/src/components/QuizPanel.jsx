@@ -258,7 +258,7 @@ export default function QuizPanel({ taskId, onClose }) {
 
               {/* 逐题回顾 */}
               <h4 className="text-sm font-bold text-gray-800 mb-2">逐题回顾</h4>
-              {result.questions.map((q, i) => {
+              {result.questions.map((q) => {
                 const v = VERDICT_STYLE[q.verdict];
                 return (
                   <div key={q.id} className="mb-4 pb-4 border-b border-gray-100 last:border-0">
