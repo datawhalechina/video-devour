@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { MotionConfig } from "framer-motion";
 import AppShell from "./components/AppShell";
+import ConfigGateProvider from "./components/ConfigGateProvider";
 import LandingPage from "./components/LandingPage";
 import MainApp from "./components/MainApp";
 import EditorTestPage from "./components/EditorTestPage";
@@ -14,7 +15,7 @@ import LibraryVideoPage from "./components/LibraryVideoPage";
 function App() {
   return (
     <Router>
-      <MotionConfig reducedMotion="user"><AppShell><Routes>
+      <MotionConfig reducedMotion="user"><ConfigGateProvider><AppShell><Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/link" element={<LinkProcess />} />
@@ -30,7 +31,7 @@ function App() {
         <Route path="/editor/:taskId" element={<EditorPage />} />
         <Route path="/editor-test" element={<EditorTestPage />} />
       </Routes>
-      </AppShell></MotionConfig>
+      </AppShell></ConfigGateProvider></MotionConfig>
     </Router>
   );
 }

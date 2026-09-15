@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ClipboardCheck, RotateCcw, Sparkles, X } from "lucide-react";
+import { useConfigGate } from "./ConfigGateProvider";
 
 // 学习测试面板：出题（单选/多选/判断）→ 作答 → 服务端判题 → 学习评估。
 // 独立组件：只依赖 task_id 与四个 REST 端点，便于后续升级或复用。
@@ -12,6 +13,7 @@ const VERDICT_STYLE = {
 };
 
 export default function QuizPanel({ taskId, onClose }) {
+  const { guardConfig } = useConfigGate();
   const [phase, setPhase] = useState("loading");   // loading | quiz | result | error
   const [error, setError] = useState("");
   const [quiz, setQuiz] = useState(null);          // 公开试卷（无答案）+ attempts
@@ -22,10 +24,25 @@ export default function QuizPanel({ taskId, onClose }) {
   const [submitting, setSubmitting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
 
+  // 已有试卷直接复用（服务端缓存）；需要新出题时才检查 LLM 配置
   const load = async (force = false) => {
-    const init = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force }) };
+    if (force && !(await guardConfig(["llm"]))) return;
     try {
-      const res = await fetch(`/api/task/${taskId}/quiz`, init);
+      if (!force) {
+        const cached = await fetch(`/api/task/${taskId}/quiz`);
+        if (cached.ok) {
+          setQuiz(await cached.json());
+          setPhase("quiz");
+          return;
+        }
+      }
+      // 尚未生成或要求重新出题：调用生成端点（需要 LLM）
+      if (!(await guardConfig(["llm"]))) { setPhase("error"); setError("请先在偏好设置中配置 LLM"); return; }
+      const res = await fetch(`/api/task/${taskId}/quiz`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "生成失败");
       setQuiz(data);

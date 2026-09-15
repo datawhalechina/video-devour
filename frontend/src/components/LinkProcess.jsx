@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle, Settings, KeyRound, NotebookPen } from 'lucide-react'
 import { getLinkInfo, searchLinkVideos, processLink, generateSubtitleNotes } from '../api/videoService'
 import ExtrasPicker, { getSelectedExtras } from './ExtrasPicker'
+import { useConfigGate } from './ConfigGateProvider'
 
 const PLATFORM_TABS = [
   { key: 'bilibili', label: 'B站', embed: (id) => `https://player.bilibili.com/player.html?bvid=${id}&autoplay=0` },
@@ -31,6 +32,7 @@ function formatDuration(seconds) {
 function LinkProcess() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { guardConfig } = useConfigGate()
   const [url, setUrl] = useState(location.state?.url || '')
   const [query, setQuery] = useState('')
   const [platform, setPlatform] = useState('bilibili')
@@ -88,6 +90,8 @@ function LinkProcess() {
 
   const handleProcess = async (link) => {
     if (processing) return
+    // 未配置 LLM/VLM/ASR 时先引导去设置，避免点完只看到报错
+    if (!(await guardConfig(['llm', 'vlm', 'asr']))) return
     setProcessing(true)
     setError(null)
     try {
@@ -102,6 +106,8 @@ function LinkProcess() {
   const handleNotes = async () => {
     const link = url.trim()
     if (!link || notesLoading) return
+    // 字幕速记不下载视频、不走 ASR，但需要 LLM 整理要点
+    if (!(await guardConfig(['llm']))) return
     setNotesLoading(true)
     setError(null)
     setNotesResult(null)
@@ -142,19 +148,31 @@ function LinkProcess() {
     return () => { cancelled = true }
   }, [notesResult])
 
-  // 新窗口打开：用 Blob URL 而非静态路径（避免中文/特殊字符编码导致打不开）
-  const handleOpenNotesWindow = () => {
+  // 新窗口打开：桌面客户端内 window.open 不可用（WebView 返回 null），
+  // 改走原生桥写临时文件后用系统浏览器打开；纯浏览器仍用 Blob URL
+  //（用 Blob 而非静态路径，避免中文/特殊字符编码导致打不开）
+  const buildNotesHtml = () => `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>${notesResult.title}</title>
+<style>body{max-width:820px;margin:32px auto;padding:0 20px;font:15px/1.8 -apple-system,"PingFang SC",sans-serif;color:#1f2937}
+pre{background:#f6f8fa;padding:12px;border-radius:8px;overflow:auto}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+h1,h2,h3{line-height:1.35}</style>
+</head><body><pre style="white-space:pre-wrap;font-family:inherit;background:none;padding:0">${notesResult.notes.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</pre></body></html>`
+
+  const handleOpenNotesWindow = async () => {
+    const html = buildNotesHtml()
+    const bridge = window.pywebview?.api
+    if (bridge?.open_html) {
+      try {
+        await bridge.open_html(html, `字幕笔记-${notesResult.title || ''}`)
+        return
+      } catch { /* 桥失败时退回窗口方式 */ }
+    }
     const win = window.open('', '_blank')
     if (!win) {
       alert('浏览器拦截了新窗口，请允许弹窗后重试')
       return
     }
-    win.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
-<title>${notesResult.title}</title>
-<style>body{max-width:820px;margin:32px auto;padding:0 20px;font:15px/1.8 -apple-system,"PingFang SC",sans-serif;color:#1f2937}
-pre{background:#f6f8fa;padding:12px;border-radius:8px;overflow:auto}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-h1,h2,h3{line-height:1.35}</style>
-</head><body><pre style="white-space:pre-wrap;font-family:inherit;background:none;padding:0">${notesResult.notes.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</pre></body></html>`)
+    win.document.write(html)
     win.document.close()
   }
 

@@ -22,6 +22,18 @@ $ProjectRoot = Split-Path -Parent $ScriptDir
 $DistDir = Join-Path $ScriptDir "dist"
 $Python = if ($env:PYTHON) { $env:PYTHON } else { Join-Path $ProjectRoot ".venv\Scripts\python.exe" }
 
+# 版本号单一来源：pyproject.toml（与 build_mac.sh 一致）。
+# 显式传给 ISCC，避免 installer.iss 里的兜底值与实际发布版本漂移。
+if (-not $env:APP_VERSION) {
+    $toml = Join-Path $ProjectRoot "pyproject.toml"
+    if (Test-Path $toml) {
+        $m = Select-String -Path $toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
+        if ($m) { $env:APP_VERSION = $m.Matches[0].Groups[1].Value }
+    }
+}
+if (-not $env:APP_VERSION) { $env:APP_VERSION = "0.0.0" }
+Write-Host "版本: $($env:APP_VERSION)"
+
 Write-Host "=========================================="
 Write-Host "  VideoDevour Windows 构建 (x64)"
 Write-Host "=========================================="
@@ -57,7 +69,7 @@ if ($Iscc) {
     Write-Host "[4/4] 生成安装包..."
     # 检查 ISCC 退出码：之前只判断"命令是否存在"，
     # 编译中止（如缺语言文件）也会打印"已生成"，导致误判。
-    & $Iscc.Source (Join-Path $ScriptDir "installer.iss")
+    & $Iscc.Source "/DAppVersion=$($env:APP_VERSION)" (Join-Path $ScriptDir "installer.iss")
     if ($LASTEXITCODE -ne 0) {
         throw "Inno Setup 编译失败（退出码 $LASTEXITCODE），详见上方输出"
     }

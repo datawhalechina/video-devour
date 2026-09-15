@@ -17,7 +17,7 @@ const STYLE_TABS = [
 ];
 const STYLE_KEYS = STYLE_TABS.map(t => t.key);
 import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
-import { triggerDownload } from "../utils/helpers";
+import { triggerDownload, openExternal } from "../utils/helpers";
 import QuizPanel from "./QuizPanel";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -76,6 +76,8 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
     try {
       let content = await readStyle(scope);
       if (content === null) {
+        // 需要新生成时才检查 LLM 配置（已生成过的直接读，不打扰用户）
+        if (!(await guardConfig(["llm"]))) return;
         const res = await fetch(`/api/library/article/${report.task_id}/${scope}/generate`, { method: 'POST' });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
@@ -111,14 +113,19 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
     if (htmlLoading[kind]) return;
     const fileName = kind === "mindmap" ? "思维导图" : "知识图谱";
     const cachedPath = kind === "mindmap" ? "mindmap.html" : "knowledge_graph.html";
+    // 已生成过直接预览；需要新生成时才检查 LLM 配置
+    const cacheUrl = `/static/${report.output_dir}/${cachedPath}`;
+    let cached = false;
+    try {
+      const probe = await fetch(cacheUrl, { method: "HEAD" });
+      cached = probe.ok;
+    } catch { /* 探测失败按未生成处理 */ }
+    if (!cached && !(await guardConfig(["llm"]))) return;
     setHtmlLoading(prev => ({ ...prev, [kind]: true }));
     try {
       const fn = kind === "mindmap" ? generateMindmap : generateKnowledgeGraph;
       await fn(report.task_id);
-      setPreview({
-        title: fileName,
-        url: `/static/${report.output_dir}/${cachedPath}`,
-      });
+      setPreview({ title: fileName, url: cacheUrl });
     } catch (err) {
       alert(`${fileName}生成失败: ${err.message}`);
     } finally {
@@ -129,13 +136,17 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
   // 生成学习卡片（移植自 light 版），页面内模态预览
   const handleGenerateCard = async () => {
     if (cardLoading) return;
+    const cacheUrl = `/static/${report.output_dir}/learning_card.html`;
+    let cached = false;
+    try {
+      const probe = await fetch(cacheUrl, { method: "HEAD" });
+      cached = probe.ok;
+    } catch { /* 探测失败按未生成处理 */ }
+    if (!cached && !(await guardConfig(["llm"]))) return;
     setCardLoading(true);
     try {
       await generateCard(report.task_id);
-      setPreview({
-        title: "学习卡片",
-        url: `/static/${report.output_dir}/learning_card.html`,
-      });
+      setPreview({ title: "学习卡片", url: cacheUrl });
     } catch (err) {
       alert(`学习卡片生成失败: ${err.message}`);
     } finally {
@@ -348,11 +359,10 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
               rel="noreferrer"
               title={report.source_url}
               onClick={(e) => {
-                // 应用内浏览器/弹窗策略可能拦截 target=_blank：
-                // 阻止默认后显式新开窗口，失败则当前页跳转（避免“点了没反应”）
+                // 交给系统浏览器打开：客户端内直接导航会把 SPA 替掉且无法返回，
+                // window.open 在 WebView 里又会返回 null（禁止用 location.href 兜底）
                 e.preventDefault();
-                const win = window.open(report.source_url, '_blank', 'noopener');
-                if (!win) window.location.href = report.source_url;
+                openExternal(report.source_url);
               }}
             >
               <Link2 size={14} /> 查看原视频 <ArrowUpRight size={12} />
@@ -420,10 +430,9 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
                 <div className="flex items-center gap-2">
                   <a href={preview.url} target="_blank" rel="noreferrer"
                      onClick={(e) => {
-                       // 应用内浏览器可能拦截 target=_blank，显式新开，失败则当前页跳转
+                       // 交给系统浏览器：客户端内直接导航会把 SPA 替掉且无法返回
                        e.preventDefault();
-                       const win = window.open(preview.url, '_blank', 'noopener');
-                       if (!win) window.location.href = preview.url;
+                       openExternal(preview.url);
                      }}
                      className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
                     浏览器打开

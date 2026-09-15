@@ -9,7 +9,11 @@
 ; - 不对可执行文件做数字签名时，SmartScreen 会提示，属预期行为
 
 #define AppName "VideoDevour"
-#define AppVersion "0.1.3"
+; 版本号单一来源：pyproject.toml。build_win.ps1 会以 /DAppVersion=... 传入；
+; 单独调用 iscc 时用下面的兜底值（改版本请改 pyproject.toml，勿只改这里）。
+#ifndef AppVersion
+  #define AppVersion "0.1.4"
+#endif
 #define AppPublisher "VideoDevour"
 #define AppExeName "VideoDevour.exe"
 

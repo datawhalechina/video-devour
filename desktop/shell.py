@@ -234,6 +234,41 @@ class Bridge:
             subprocess.Popen(["xdg-open", str(target)])
         return True
 
+    def open_external(self, url: str):
+        """在系统默认浏览器打开 http(s) 链接（桌面端专用）。
+
+        客户端内 JS 的 window.open 会被 WebKit 判为普通导航（navigationType=Other，
+        非 LinkActivated），pywebview 的 createWebView 委托不接管，返回 nil，
+        于是 JS 侧 window.open 得到 null；调用方常见的
+        `if (!win) location.href = url` 兜底就把整个 SPA 导航走了——
+        用户看到原视频页面、没有返回入口，只能强杀应用。故外部链接统一交给系统浏览器。
+        """
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            return False
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", url])
+        elif sys.platform.startswith("win"):
+            os.startfile(url)  # noqa: S606
+        else:
+            subprocess.Popen(["xdg-open", url])
+        return True
+
+    def open_html(self, html: str, title: str = "VideoDevour"):
+        """把一段 HTML 落到临时文件并用系统浏览器打开。
+
+        用于「新窗口打开」这类场景：WebView 内 window.open 不可用，
+        Blob URL 又无法交给系统浏览器（只在本会话内有效），故落临时文件。
+        """
+        if not isinstance(html, str) or not html.strip():
+            return False
+        import re as _re
+        safe = _re.sub(r'[\\/:*?"<>|\s]+', "_", (title or "preview"))[:60] or "preview"
+        out_dir = _data_root() / "preview"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"{safe}.html"
+        path.write_text(html, encoding="utf-8")
+        return self.open_path(str(path))
+
     @staticmethod
     def _normalize_pywebview_cookies(raw) -> list:
         """
@@ -435,6 +470,59 @@ def _install_signal_handlers(backend: "BackendProcess"):
                 pass
 
 
+# 外部链接护栏：任何指向站外的链接/新窗口一律交给系统浏览器，
+# 绝不让主窗口被导航走（客户端没有浏览器那样的后退按钮，跳走就只能强杀重开）。
+# 前端已改用 bridge 的 open_external，这里再兜一层，覆盖疏漏的链接与第三方代码。
+_EXTERNAL_LINK_GUARD = r"""
+(() => {
+  if (window.__vdExternalGuard) return;
+  window.__vdExternalGuard = true;
+  const isExternal = (href) => {
+    if (typeof href !== 'string' || !/^https?:\/\//i.test(href)) return false;
+    try { return new URL(href, location.href).origin !== location.origin; }
+    catch (e) { return true; }
+  };
+  const openExternal = (url) => {
+    try { window.pywebview.api.open_external(url); } catch (e) {}
+  };
+  document.addEventListener('click', (event) => {
+    const anchor = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+    if (!anchor) return;
+    const href = anchor.getAttribute('href');
+    if (isExternal(href)) {
+      event.preventDefault();
+      event.stopPropagation();
+      openExternal(anchor.href);
+    }
+  }, true);
+  const originalOpen = window.open;
+  window.open = function (url, ...rest) {
+    if (isExternal(url)) {
+      openExternal(url);
+      // 返回占位对象：调用方常有 `if (!win) location.href = url` 兜底，
+      // 返回 null 会触发它，把 SPA 导航走（正是跳走无返回的成因）。
+      return { closed: false, focus() {}, blur() {}, close() {}, postMessage() {}, document: null };
+    }
+    return originalOpen.apply(window, [url, ...rest]);
+  };
+})();
+"""
+
+
+def _install_external_link_guard(window):
+    """页面每次加载后注入外链护栏（SPA 路由变化不会移除 document 级监听）。"""
+    def _inject():
+        try:
+            window.evaluate_js(_EXTERNAL_LINK_GUARD)
+        except Exception as e:
+            logging.warning(f"外链护栏注入失败（不影响使用）: {e}")
+
+    try:
+        window.events.loaded += _inject
+    except Exception as e:
+        logging.warning(f"外链护栏注册失败（不影响使用）: {e}")
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -477,6 +565,9 @@ def main():
         backend.stop()
 
     window.events.closed += _on_closed
+
+    # 兜底拦截站外链接：客户端没有后退按钮，一旦主窗口被导航到站外就只能重开
+    _install_external_link_guard(window)
 
     # WebView2 数据目录：
     # - private_mode=False：销毁「应用内登录窗口」时不会触发 pywebview 删除共享的

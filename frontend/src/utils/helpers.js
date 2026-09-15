@@ -101,6 +101,37 @@ export const triggerDownload = (url) => {
 };
 
 /**
+ * 打开站外链接（原视频、项目文档等）。
+ *
+ * 桌面客户端里绝不能用 `window.open` + `location.href` 兜底：
+ * window.open 在 WebView 中返回 null，兜底会把主窗口导航到站外，
+ * 而客户端没有后退按钮，用户只能重开软件。这里优先用原生桥交给系统浏览器；
+ * 纯浏览器环境退回新标签页（保留 noopener）。
+ *
+ * @param {string} url - 站外 http(s) 链接
+ * @returns {Promise<boolean>} 是否已交给外部浏览器
+ */
+export const openExternal = async (url) => {
+  if (!url) return false;
+  let absolute = url;
+  try {
+    absolute = new URL(url, window.location.href).href;   // 同源相对路径也转绝对
+  } catch {
+    return false;
+  }
+  if (!/^https?:\/\//i.test(absolute)) return false;
+  const bridge = window.pywebview?.api;
+  if (bridge?.open_external) {
+    try {
+      await bridge.open_external(absolute);
+      return true;
+    } catch { /* 桥调用失败时退回浏览器方式 */ }
+  }
+  window.open(absolute, "_blank", "noopener");
+  return true;
+};
+
+/**
  * 延迟函数
  * @param {number} ms - 延迟毫秒数
  * @returns {Promise}

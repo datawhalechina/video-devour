@@ -4,8 +4,10 @@ import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, Play
 import { Link } from 'react-router-dom'
 import { uploadVideo } from '../api/videoService'
 import ExtrasPicker, { getSelectedExtras } from './ExtrasPicker'
+import { useConfigGate } from './ConfigGateProvider'
 
 function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProcessing }) {
+  const { guardConfig } = useConfigGate()
   const [selectedFiles, setSelectedFiles] = useState([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({})
@@ -66,6 +68,8 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
 
   const handleUploadAll = async () => {
     if (selectedFiles.length === 0) return
+    // 本地视频处理需要 ASR 转写 + LLM/VLM 生成报告，缺配置先引导去设置
+    if (!(await guardConfig(['llm', 'vlm', 'asr']))) return
 
     setUploading(true)
     setError(null)
