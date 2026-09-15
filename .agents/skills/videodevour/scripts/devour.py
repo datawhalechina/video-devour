@@ -29,6 +29,9 @@ VideoDevour skill 入口脚本（跨 agent 通用，遵循 .agents/skills 约定
   devour.py library get <doc_id> --scope report [--run-id RUN]
   devour.py library export <doc_id> --scope report [--out 目录]
   devour.py library export-all [--out 目录]
+  devour.py quiz generate [--latest | --dir 输出目录] [--count 10] [--force]
+  devour.py quiz grade --answers '{"q1":[0],"q2":[0,2]}' [--latest | --dir 输出目录]
+  devour.py quiz advice --attempt-id ID [--latest | --dir 输出目录]
 """
 import argparse
 import json
@@ -525,6 +528,49 @@ def cmd_pdf(args):
                      ensure_ascii=False, indent=2))
 
 
+# ---------------------------------------------------------------------------
+# 学习测试（生成 / 判题 / 评估；逻辑在 backend/algorithm/quiz.py）
+# ---------------------------------------------------------------------------
+
+def cmd_quiz(args):
+    """学习测试：generate 出题（单选/多选/判断）、grade 判题、advice 学习建议。
+
+    出题基于任务报告（LLM），落盘 quiz.json 复用；判题纯本地（秒级）。
+    answers 支持 JSON 字符串或指向 .json 文件的路径，格式 {"题目id": [选项下标...]}。
+    """
+    home = project_home(args.home)
+    setup_project(home)
+    out_dir = _resolve_task_dir(home, args)
+
+    from backend.algorithm import quiz as quiz_module
+
+    action = args.action
+    if action == "generate":
+        quiz = quiz_module.generate_quiz(
+            out_dir, education_level=args.level or None,
+            count=args.count, force=args.force,
+        )
+        result = {**quiz_module.quiz_public(quiz),
+                  "file": str(out_dir / quiz_module.QUIZ_FILE),
+                  "attempts": quiz_module.attempts_summary(out_dir),
+                  "hint": "作答格式 {'题目id': [选项下标...]}，用 quiz grade 提交判题",
+                  }
+    elif action == "grade":
+        raw = (args.answers or "").strip()
+        if raw.endswith(".json") or raw.startswith(("/", "~")):
+            raw = Path(raw).expanduser().read_text(encoding="utf-8")
+        try:
+            answers = json.loads(raw)
+        except json.JSONDecodeError as e:
+            print(f"错误: answers 不是合法 JSON（{e}）", file=sys.stderr)
+            sys.exit(1)
+        result = quiz_module.grade_quiz(out_dir, answers)
+    else:  # advice
+        result = quiz_module.quiz_advice(out_dir, args.attempt_id)
+
+    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
 def main():
     parser = argparse.ArgumentParser(description="VideoDevour 视频转图文报告")
     parser.add_argument("--home", default=None, help="VideoDevour 项目根目录")
@@ -591,6 +637,31 @@ def main():
     lib_ea = lib_sub.add_parser("export-all", help="导出整库为 ZIP")
     lib_ea.add_argument("--out", default=None, help="导出目录（默认 ~/Downloads）")
     lib_ea.set_defaults(func=cmd_library)
+
+    p_quiz = sub.add_parser("quiz", help="学习测试：出题（单选/多选/判断）/ 判题 / 学习建议")
+    quiz_sub = p_quiz.add_subparsers(dest="action", required=True)
+
+    quiz_g = quiz_sub.add_parser("generate", help="依据任务报告出题（落盘 quiz.json，复用缓存）")
+    quiz_g.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
+    quiz_g.add_argument("--dir", default=None, help="指定任务输出目录")
+    quiz_g.add_argument("--count", type=int, default=10, help="题目数量（3-30，默认 10）")
+    quiz_g.add_argument("--force", action="store_true", help="重新出题（覆盖已有试卷）")
+    quiz_g.add_argument("--level", default=None,
+                        choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
+    quiz_g.set_defaults(func=cmd_quiz)
+
+    quiz_gr = quiz_sub.add_parser("grade", help="提交作答并判题（本地判题，秒级）")
+    quiz_gr.add_argument("--answers", required=True,
+                         help="JSON 字符串或 .json 文件路径，格式 {\"q1\": [0], \"q2\": [0,2]}")
+    quiz_gr.add_argument("--latest", action="store_true")
+    quiz_gr.add_argument("--dir", default=None)
+    quiz_gr.set_defaults(func=cmd_quiz)
+
+    quiz_a = quiz_sub.add_parser("advice", help="基于某次作答生成 LLM 学习建议")
+    quiz_a.add_argument("--attempt-id", required=True, help="作答记录 ID（grade 输出里的 attempt_id）")
+    quiz_a.add_argument("--latest", action="store_true")
+    quiz_a.add_argument("--dir", default=None)
+    quiz_a.set_defaults(func=cmd_quiz)
 
     p_notes = sub.add_parser("notes", help="字幕速记：用平台字幕生成纯文本笔记（B站/YouTube，秒级）")
     p_notes.add_argument("url", help="B站/YouTube 视频链接或分享文案")

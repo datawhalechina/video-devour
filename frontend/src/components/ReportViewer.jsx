@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Clock, FileText, Image, Edit3, LayoutGrid, FileDown, ChevronDown, ArrowUpRight, Check,
-  Timer, Share2, Network, BookOpen, Link2, Zap, Newspaper, Sparkles } from "lucide-react";
+  Timer, Share2, Network, BookOpen, Link2, Zap, Newspaper, Sparkles, ClipboardCheck } from "lucide-react";
 
 const PLATFORM_LABELS = {
   bilibili: "B站",
@@ -18,6 +18,7 @@ const STYLE_TABS = [
 const STYLE_KEYS = STYLE_TABS.map(t => t.key);
 import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
 import { triggerDownload } from "../utils/helpers";
+import QuizPanel from "./QuizPanel";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { mermaidMarkdownComponents } from './MermaidBlock';
@@ -29,6 +30,8 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
   const [timing, setTiming] = useState(null)
   const [timingLoading, setTimingLoading] = useState(false);
   const [htmlLoading, setHtmlLoading] = useState({});
+  // 学习测试（单选/多选/判断 + 判题评估）：独立面板，按需打开
+  const [quizOpen, setQuizOpen] = useState(false);
 
   // 衍生文体（量子速读/公众号/小红书）：scope -> 正文；未生成时为 undefined
   const [styles, setStyles] = useState({});
@@ -370,6 +373,9 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
           <button onClick={() => handleOpenHtml("graph")} disabled={htmlLoading.graph} className="report-tool-button">
             <Network size={16} /> {htmlLoading.graph ? "生成中…" : "知识图谱"}
           </button>
+          <button onClick={() => setQuizOpen(true)} className="report-tool-button">
+            <ClipboardCheck size={16} /> 测试习题
+          </button>
         </div>
         <div className="report-tool-group report-file-tools">
           <button onClick={handleShowTiming} disabled={timingLoading} className="report-tool-button report-timing-button">
@@ -401,6 +407,9 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
       </section>
 
         {/* 内嵌预览模态（思维导图 / 知识图谱 / 学习卡片） */}
+        {quizOpen && (
+          <QuizPanel taskId={report.task_id} onClose={() => setQuizOpen(false)} />
+        )}
         {preview && (
           <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4"
                onClick={() => setPreview(null)}>

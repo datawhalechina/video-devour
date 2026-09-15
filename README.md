@@ -71,6 +71,7 @@
 
 ### 🎓 学习增强
 - **附加产物可选**：上传/链接处理时可勾选「完成后生成」——思维导图 / 知识图谱 / 学习卡片，勾选才生成（默认不勾，报告完成即结束，最快出结果）；报告页也保留手动生成按钮。
+- **学习测试**：报告页一键「测试习题」——依据报告自动出题（单选 / 多选 / 判断），服务端判题（答案不下发），逐题解析、分章掌握度、历次成绩，并可基于错题生成 LLM 学习建议，用于检验对视频的掌握情况。
 - **学习阶段**：九档可选——自由学习（默认）/ 小学 / 初中 / 高中 / 大学 / 硕士 / 博士 / 深入研究 / 垂直领域研究，内容深度随之调整。
 - **学习卡片**：一键将报告转换为手机尺寸 Bento Grid 风格 HTML 学习卡片。
 - **思维导图**：报告自动整理为三层分支结构的交互式导图（缩放/折叠），快速建立整体框架。
@@ -97,6 +98,9 @@ python3 .agents/skills/videodevour/scripts/devour.py douyin "https://www.douyin.
 python3 .agents/skills/videodevour/scripts/devour.py process "https://www.bilibili.com/video/BV..." --level 高中
 # 读取最新报告
 python3 .agents/skills/videodevour/scripts/devour.py report --latest
+# 学习测试：出题（单选/多选/判断）→ 判题评估 → 学习建议
+python3 .agents/skills/videodevour/scripts/devour.py quiz generate --latest
+python3 .agents/skills/videodevour/scripts/devour.py quiz grade --answers '{"q1":[0],"q2":[0,2]}' --latest
 # 检索本地文档库（复用历史任务的报告/笔记，BM25 搜索）
 python3 .agents/skills/videodevour/scripts/devour.py library search "关键词" --top 5
 ```

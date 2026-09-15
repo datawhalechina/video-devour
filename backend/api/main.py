@@ -1340,6 +1340,112 @@ async def get_task_card(task_id: str):
     return {"html": card_path.read_text(encoding="utf-8"), "cached": True}
 
 
+# --- 学习测试（生成 / 判题 / 评估；逻辑见 backend/algorithm/quiz.py，与主流水线解耦） ---
+
+class QuizGenerateRequest(BaseModel):
+    force: bool = False        # 重新出题（覆盖已有试卷）
+    count: int = 10            # 题目数量（3-30）
+
+
+class QuizSubmitRequest(BaseModel):
+    answers: Dict[str, List[int]]   # {题目id: [选项下标...]}
+
+
+class QuizAdviceRequest(BaseModel):
+    attempt_id: str
+
+
+def _quiz_public_with_history(output_dir) -> dict:
+    from backend.algorithm import quiz as quiz_module
+    quiz = quiz_module.load_quiz(output_dir)
+    if not quiz:
+        raise HTTPException(status_code=404, detail="测试卷尚未生成")
+    return {**quiz_module.quiz_public(quiz), "attempts": quiz_module.attempts_summary(output_dir)}
+
+
+@app.post("/api/task/{task_id}/quiz")
+async def generate_task_quiz(task_id: str, req: QuizGenerateRequest = None):
+    """生成学习测试题（单选/多选/判断；结果缓存到任务目录，force 重新出题）。
+
+    下发的题目不含答案——判题在服务端完成，答案与解析在提交后才返回。
+    """
+    output_dir = _find_task_output_dir(task_id)
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="任务不存在或尚未完成")
+    req = req or QuizGenerateRequest()
+
+    from backend.algorithm import quiz as quiz_module
+    cached = (output_dir / quiz_module.QUIZ_FILE).exists() and not req.force
+    education_level = _get_task_education_level(task_id, default="自由学习")
+
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        try:
+            await loop.run_in_executor(
+                executor, quiz_module.generate_quiz,
+                output_dir, education_level, req.count, req.force,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        except Exception as e:
+            logging.error(f"测试题生成失败: {e}", exc_info=True)
+            raise HTTPException(status_code=502, detail=f"测试题生成失败: {e}")
+
+    return {**_quiz_public_with_history(output_dir), "cached": cached}
+
+
+@app.get("/api/task/{task_id}/quiz")
+async def get_task_quiz(task_id: str):
+    """读取已生成的测试卷（不含答案）与历次作答概览"""
+    output_dir = _find_task_output_dir(task_id)
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return _quiz_public_with_history(output_dir)
+
+
+@app.post("/api/task/{task_id}/quiz/submit")
+async def submit_task_quiz(task_id: str, req: QuizSubmitRequest):
+    """提交作答并判题（本地判题，秒级）：返回逐题对错、正确答案、解析与整体评估"""
+    output_dir = _find_task_output_dir(task_id)
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    from backend.algorithm import quiz as quiz_module
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        try:
+            result = await loop.run_in_executor(
+                executor, quiz_module.grade_quiz, output_dir, req.answers,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@app.post("/api/task/{task_id}/quiz/advice")
+async def quiz_task_advice(task_id: str, req: QuizAdviceRequest):
+    """基于某次作答生成 LLM 学习建议（只生成一次，缓存进作答记录）"""
+    output_dir = _find_task_output_dir(task_id)
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    from backend.algorithm import quiz as quiz_module
+    import concurrent.futures
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        try:
+            return await loop.run_in_executor(
+                executor, quiz_module.quiz_advice, output_dir, req.attempt_id,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            logging.error(f"学习建议生成失败: {e}", exc_info=True)
+            raise HTTPException(status_code=502, detail=f"学习建议生成失败: {e}")
+
+
 @app.get("/api/export/{task_id}")
 async def export_task_markdown(task_id: str, type: str = "all", mode: str = "inline",
                                fmt: str = "md"):

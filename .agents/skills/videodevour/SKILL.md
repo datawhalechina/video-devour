@@ -1,6 +1,6 @@
 ---
 name: videodevour
-description: 使用 VideoDevour 把视频（B站/YouTube/抖音链接、微信视频号分享链接或本地文件）处理成中文图文报告。当用户要求"处理这个视频"、"视频转笔记/报告/图文大纲"、"下载并总结B站/YouTube/抖音/视频号视频"时使用。支持搜索视频、查询链接信息、一键生成带关键帧的图文报告（精简/详细），改写成量子速读/公众号文章/小红书笔记、导出 PDF，并可检索项目本地已积累的文档库（历史任务报告/笔记，支持 BM25 搜索与导出，也可通过 MCP 服务供其他 LLM 调用）。
+description: 使用 VideoDevour 把视频（B站/YouTube/抖音链接、微信视频号分享链接或本地文件）处理成中文图文报告。当用户要求"处理这个视频"、"视频转笔记/报告/图文大纲"、"下载并总结B站/YouTube/抖音/视频号视频"时使用。支持搜索视频、查询链接信息、一键生成带关键帧的图文报告（精简/详细），改写成量子速读/公众号文章/小红书笔记、导出 PDF，生成学习测试题（单选/多选/判断，判题与学习评估），并可检索项目本地已积累的文档库（历史任务报告/笔记，支持 BM25 搜索与导出，也可通过 MCP 服务供其他 LLM 调用）。
 license: Apache-2.0
 compatibility: 需要 Python 3.12+ 与项目 .venv（uv sync），ffmpeg；任何支持 .agents/skills 约定的 agent 均可调用
 ---
@@ -251,6 +251,26 @@ python3 $S library export-all --out ~/Desktop
 - stdio 协议，无需端口；`command` 用项目 `.venv` 的 python，`args` 指向服务脚本绝对路径
 - 端到端自测：`python mcp_server/test_mcp_client.py`（逐个调用全部工具并校验导出副作用）
 
+### 13. 学习测试（出题 / 判题 / 评估）
+
+依据任务报告生成测试习题（**单选题 / 多选题 / 判断题**）检验学习掌握情况：
+服务端判题（答案不下发，防偷看）、逐题解析、分章掌握度、历次成绩，并可按需生成
+LLM 学习建议（基于本次错题）。试卷落盘 `quiz.json` 复用，作答记录落盘 `quiz_attempts.json`。
+
+```bash
+S=<skill目录>/scripts/devour.py
+# 出题（默认 10 题；--count 调整，--force 重新出题）。输出不含答案的题目列表
+python3 $S quiz generate --latest --count 10
+# 向用户呈现题目收集作答后判题：answers 格式 {"题目id": [选项下标...]}（多选多个下标）
+python3 $S quiz grade --answers '{"q1":[0],"q2":[0,2]}' --latest
+# 逐题对错/正确答案/解析 + 总分 + 分章掌握度；grade 输出含 attempt_id
+# 基于本次错题生成学习建议（LLM，只生成一次并缓存）
+python3 $S quiz advice --attempt-id <grade输出的attempt_id> --latest
+```
+
+- 判题规则：单选/判断全对得分；多选**全对满分、漏选得一半、错选不得分**；未答 0 分
+- 用户说「考考我」「测试一下学习效果」「出几道题」时使用；**不要在用户未要求时主动生成**
+
 ## 推荐组合工作流
 
 **默认（最快路径，适合只要报告的用户）**：
@@ -283,6 +303,14 @@ python3 $S pdf --latest --type detailed            # 导出 PDF
 ```bash
 S=<skill目录>/scripts/devour.py
 python3 $S process "https://www.bilibili.com/video/BV..." --level 高中 --extras "mindmap,graph,card"
+```
+
+**检验学习效果（用户想自测时，先出题再判题）**：
+
+```bash
+S=<skill目录>/scripts/devour.py
+python3 $S quiz generate --latest          # 出题 → 呈现给用户作答
+python3 $S quiz grade --answers '...' --latest   # 判题 + 评估，必要时再 quiz advice
 ```
 
 向用户交付时建议按「报告全文 → 思维导图 → 知识图谱」的顺序呈现：先细节后框架，便于学习理解。
