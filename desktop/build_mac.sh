@@ -154,11 +154,25 @@ LAUNCH
 
   if [ "${DO_SIGN}" -eq 1 ]; then
     echo "[3/3] ad-hoc 签名（${arch}）..."
-    # 先签内部所有二进制/动态库，再签外层（顺序不能反）
-    find "${app_bundle}/Contents/Resources" \
-      \( -name "*.so" -o -name "*.dylib" -o -name "ffmpeg" -o -name "ffprobe" -o -name "${APP_NAME}" \) \
-      -exec codesign --force --sign - {} \; 2>/dev/null || true
-    codesign --force --deep --sign - "${app_bundle}"
+    # 签名规则（顺序不能反）：
+    # 1) 先逐个签所有 Mach-O（.so/.dylib/可执行）——find 跟随 -type f 排除 symlink，
+    #    symlink 指向的目标会被单独覆盖到
+    # 2) 最后签外层 .app。不用 --deep：Apple 不推荐，且对本 onedir 结构无增益
+    # 3) 签完必须 verify；失败即退出——seal 损坏的包会被 Gatekeeper 判
+    #    "已损坏，无法打开"（xattr -cr 也无法解），绝不能流出
+    while IFS= read -r -d '' f; do
+      codesign --force --sign - "${f}" || {
+        echo "[错误] 签名失败: ${f}"; exit 1;
+      }
+    done < <(find "${app_bundle}/Contents/Resources" -type f \
+      \( -name "*.so" -o -name "*.dylib" -o -name "ffmpeg" -o -name "ffprobe" -o -name "${APP_NAME}" \) -print0)
+    codesign --force --sign - "${app_bundle}" || {
+      echo "[错误] 外层签名失败"; exit 1;
+    }
+    codesign --verify --deep --strict "${app_bundle}" || {
+      echo "[错误] 签名校验失败，产物不可分发"; exit 1;
+    }
+    echo "  ✓ 签名与 seal 校验通过"
   else
     echo "[3/3] 跳过签名（加 --sign 启用）"
   fi

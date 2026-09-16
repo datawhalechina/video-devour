@@ -150,9 +150,15 @@ def load_tasks():
     else:
         processing_tasks = {}
     # 服务重启后，内存中的处理协程已不存在：
-    # 把遗留的 pending/processing/downloading 任务标记为失败，避免历史页出现永久"处理中"的僵尸任务
-    for task in processing_tasks.values():
+    # 把遗留的 pending/processing/downloading 任务标记为失败，避免历史页出现永久"处理中"的僵尸任务。
+    # 但若报告已落盘（说明处理实际已完成，只是状态没来得及写），
+    # 则按完成处理——否则会因状态误判而永久禁止生成衍生内容。
+    for task_id, task in processing_tasks.items():
         if task.get("status") in ("pending", "processing", "downloading"):
+            if _task_has_report(task_id):
+                task.update({"status": "completed", "stage": "completed", "progress": 100,
+                             "message": "处理完成（服务重启后按已落盘报告判定）"})
+                continue
             task.update({
                 "status": "failed",
                 "stage": "error",
@@ -161,6 +167,16 @@ def load_tasks():
                 "error": task.get("error") or "服务重启导致任务中断，请重新提交",
             })
     _backfill_video_identity()
+
+
+def _task_has_report(task_id: str) -> bool:
+    """任务目录里是否已有可用的成稿报告（用于重启后判定中断任务是否实际已完成）。"""
+    for d in sorted(OUTPUT_DIR.glob(f"frames_{task_id}_*"), reverse=True):
+        for name in ("final_report.md", "detailed_report.md", "detailed_outline.md"):
+            f = d / name
+            if f.exists() and f.stat().st_size > 0:
+                return True
+    return False
 
 
 def _backfill_video_identity():
@@ -1237,11 +1253,53 @@ def _get_task_education_level(task_id: str, default: str = "高中") -> str:
     return task.get("education_level") or default
 
 
+def _task_status(task_id: str) -> str:
+    """任务状态：completed | processing | failed | unknown。
+
+    内存优先（处理中是实时的），其次回落到 tasks.json——服务重启后内存为空，
+    但历史任务仍能从落盘记录判断状态。
+    """
+    task = processing_tasks.get(task_id)
+    if task and task.get("status"):
+        return task["status"]
+    try:
+        tasks_file = OUTPUT_DIR.parent / "tasks.json"
+        if tasks_file.exists():
+            record = json.loads(tasks_file.read_text(encoding="utf-8")).get(task_id) or {}
+            if record.get("status"):
+                return record["status"]
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _require_settled(task_id: str):
+    """生成类操作的前置门禁：任务必须先处理完成。
+
+    为什么必须拦：处理流水线是「先写无图大纲 → 抽帧 → 插关键帧 → 再写报告」，
+    中途目录里已有大纲文件，文档库会立刻索引到它。若此时生成衍生文体/导图/卡片，
+    会基于**还没有关键帧的半成品**生成，图片被清洗掉，而且结果落盘被当成缓存复用，
+    任务完成后也不会自动修正（实测：报告最终 6 张图，文体却是 0 张，永久如此）。
+
+    unknown 放行：老任务/手工放置的目录没有状态记录，不应因此拒之门外。
+    """
+    status = _task_status(task_id)
+    if status in ("processing", "pending"):
+        raise HTTPException(
+            status_code=409,
+            detail="任务仍在处理中，报告与关键帧尚未就绪。请等待处理完成后再生成"
+                   "（勾选「完成后生成」可在处理结束自动产出）。",
+        )
+    if status == "failed":
+        raise HTTPException(status_code=409, detail="任务处理失败，无法生成衍生内容，请先重新处理。")
+
+
 @app.post("/api/task/{task_id}/card")
 async def generate_task_card(task_id: str):
     """
     根据任务的最终报告生成学习卡片HTML（结果缓存到任务目录，生成逻辑见 report_viz）
     """
+    _require_settled(task_id)
     output_dir = _find_task_output_dir(task_id)
     if not output_dir:
         raise HTTPException(status_code=404, detail="任务不存在或尚未完成")
@@ -1265,6 +1323,7 @@ async def generate_task_card(task_id: str):
 
 async def _viz_html(task_id: str, kind: str) -> dict:
     """生成或读取缓存的知识可视化 HTML（mindmap / knowledge-graph 共用）"""
+    _require_settled(task_id)
     output_dir = _find_task_output_dir(task_id)
     if not output_dir:
         raise HTTPException(status_code=404, detail="任务不存在或尚未完成")
@@ -1662,11 +1721,12 @@ async def library_search(q: str = "", scope: str = "all", top_k: int = 10):
 
 
 @app.post("/api/library/article/{doc_id}/{scope}/generate")
-async def library_generate_style(doc_id: str, scope: str, run_id: str = ""):
+async def library_generate_style(doc_id: str, scope: str, run_id: str = "", force: bool = False):
     """按需生成衍生文体（量子速读 / 公众号文章 / 小红书笔记），结果落盘复用。
 
     这些文体基于已有报告改写，不在处理流程里预生成——用户点开时才算，
-    避免每个任务都多花三次 LLM 调用。
+    避免每个任务都多花三次 LLM 调用。force=true 丢弃缓存重新生成
+    （用于修复处理中途生成、因缺关键帧而没有配图的旧产物）。
     """
     from backend.algorithm.document_library import GENERATABLE_SCOPES
     from backend.algorithm import style_articles
@@ -1688,9 +1748,11 @@ async def library_generate_style(doc_id: str, scope: str, run_id: str = ""):
         raise HTTPException(status_code=404, detail="版本不存在")
 
     output_dir = OUTPUT_DIR / run["dir"]
+    # 处理尚未结束就生成，会基于「还没有关键帧的半成品大纲」产出无图文体并永久缓存
+    _require_settled(run.get("doc_id") or doc_id)
     try:
         await _run_link_probe(style_articles.generate_style, output_dir=output_dir, scope=scope,
-                              education_level=run.get("education_level"))
+                              education_level=run.get("education_level"), force=force)
     except Exception as e:
         logging.error(f"生成 {scope} 失败: {e}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"生成失败: {e}")
@@ -1726,6 +1788,8 @@ async def library_get_article(doc_id: str, scope: str, run_id: str = ""):
         "version_count": doc.get("version_count"),
         "output_dir": doc["dir"],
         "content": result["content"],
+        # 该文体本该配图却一张都没有（处理中途生成的典型症状）：前端据此提示「重新生成」
+        "needs_image_repair": bool(result.get("needs_image_repair")),
         "download_url": f"/api/library/article/{doc_id}/{scope}/download"
                         + (f"?run_id={run_id}" if run_id else ""),
     }

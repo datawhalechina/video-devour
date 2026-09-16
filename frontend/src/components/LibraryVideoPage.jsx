@@ -142,6 +142,17 @@ function LibraryVideoPage() {
       setLoading(false)
       return
     }
+    // 任务还在处理中：目录里已有大纲文件，但关键帧尚未插入、报告也未定稿。
+    // 此时生成出来会「没图」，且结果被当作缓存复用、任务完成后也不会自动修正。
+    // 因此不提示生成，等处理结束（勾选「完成后生成」可在结束时自动产出）。
+    if (activeRun.status && activeRun.status !== 'completed' && activeRun.status !== 'unknown') {
+      setLoading(false)
+      setArticle(null)
+      setError(activeRun.status === 'failed'
+        ? '任务处理失败，无法生成衍生内容，请先重新处理。'
+        : '任务仍在处理中，报告与关键帧尚未就绪；处理完成后即可生成衍生内容。')
+      return
+    }
     let cancelled = false
     setLoading(true)
     setError(null)

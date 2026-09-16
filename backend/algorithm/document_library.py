@@ -246,6 +246,9 @@ def scan_videos() -> List[Dict]:
             "education_level": meta.get("education_level") or "自由学习",
             "created_at": datetime.fromtimestamp(created_ts).isoformat(),
             "articles": articles,
+            # 任务状态：处理中途目录里已有大纲文件（库会立即索引到），
+            # 前端据此避免在处理未完成时提示生成衍生内容（那时报告还没有关键帧）。
+            "status": meta.get("status") or "unknown",
             "_sort": created_ts,
         })
 
@@ -324,6 +327,29 @@ def get_video(identifier: str) -> Optional[Dict]:
     }
 
 
+def _needs_image_repair(dir_path: Path, scope: str, content: str) -> bool:
+    """判断该文体是否「该有配图却一张都没有」——处理中途生成的典型症状。
+
+    背景：流水线先写无图大纲、之后才插入关键帧。若在中途生成衍生文体，会基于
+    半成品产出无图成品并落盘缓存，任务完成后也不会自动修正。
+    仅在报告已有图、而该文体的图文类型本该带图却一张都没有时才提示修复。
+    """
+    try:
+        from backend.algorithm.style_articles import STYLE_TYPES
+        meta = STYLE_TYPES.get(scope)
+        if not meta or not meta[2]:        # 非图文类型（如量子速读）不涉及配图
+            return False
+    except Exception:
+        return False
+    if re.search(r"!\[[^\]]*\]\(", content):
+        return False                        # 已有图，正常
+    for name in ("final_report.md", "detailed_outline.md"):
+        rep = dir_path / name
+        if rep.exists() and rep.stat().st_size > 0:
+            return bool(re.search(r"!\[[^\]]*\]\(", rep.read_text(encoding="utf-8")))
+    return False
+
+
 def get_article(doc_id: str, scope: str, run_id: str = "") -> Optional[Dict]:
     """获取单篇文章全文（md）。
 
@@ -355,14 +381,20 @@ def get_article(doc_id: str, scope: str, run_id: str = "") -> Optional[Dict]:
             if run_id:
                 if not hit["file"]:
                     return None
-                hit["content"] = Path(hit["file"]).read_text(encoding="utf-8")
-                return hit
+                return _with_content(hit, scope)
             if hit["file"] and (fallback is None or run["version"] >= fallback["doc"]["version"]):
                 fallback = hit          # 无 run_id：保留最新的可用版本
     if fallback is None:
         return None
-    fallback["content"] = Path(fallback["file"]).read_text(encoding="utf-8")
-    return fallback
+    return _with_content(fallback, scope)
+
+
+def _with_content(hit: Dict, scope: str) -> Dict:
+    """补全文正文与「是否需要补图」标记（两处返回路径共用）。"""
+    hit["content"] = Path(hit["file"]).read_text(encoding="utf-8")
+    hit["needs_image_repair"] = _needs_image_repair(
+        OUTPUT_DIR / hit["doc"]["dir"], scope, hit["content"])
+    return hit
 
 
 def _snippet(text: str, query: str, width: int = 140) -> str:
@@ -497,6 +529,8 @@ def list_videos() -> Dict:
                     "version_label": run["version_label"],
                     "education_level": run["education_level"],
                     "created_at": run["created_at"],
+                    # 任务状态：前端据此避免在处理未完成时提示生成（此时报告还没有关键帧）
+                    "status": run.get("status") or "unknown",
                     "articles": [
                         {"scope": sc, "label": info["label"], "size": info["size"]}
                         for sc, info in run["articles"].items()
