@@ -64,9 +64,25 @@ jobs:
           chmod +x desktop/build_mac.sh
           PYTHON_ARM64=python ./desktop/build_mac.sh --arm64 --sign
 
+      # 关键：必须先打成 zip 再上传。
+      # upload-artifact@v4 不保留符号链接（.app 内 PyInstaller 产物有 ~109 个
+      # symlink，如 Python.framework/Versions/Current、opencv 的 .dylibs），
+      # 链接被物化后签名 seal 与文件树不符，用户下载后 Gatekeeper 直接判
+      # "已损坏，无法打开"（xattr -cr 也无法解）。ditto 打的 zip 保留 symlink，
+      # 发布时直接使用该 zip，不再经 .app 目录中转。
+      - name: 打包分发 zip（保留 symlink）并回验签名
+        run: |
+          cd desktop/dist/arm64
+          ditto -c -k --keepParent --sequesterRsrc VideoDevour.app VideoDevour-macos-arm64.zip
+          # 模拟用户：解压 zip 后校验签名，防 seal 损坏流出
+          rm -rf "$RUNNER_TEMP/unz" && mkdir -p "$RUNNER_TEMP/unz"
+          ditto -x -k VideoDevour-macos-arm64.zip "$RUNNER_TEMP/unz"
+          codesign --verify --deep --strict "$RUNNER_TEMP/unz/VideoDevour.app"
+          echo "✓ zip 解压后签名校验通过"
+
       - name: 冒烟测试（后端启动 + health）
         run: |
-          ./desktop/dist/arm64/VideoDevour.app/Contents/Resources/VideoDevour --backend-only \
+          "$RUNNER_TEMP/unz/VideoDevour.app/Contents/Resources/VideoDevour" --backend-only \
             --port 0 --data-dir "$RUNNER_TEMP/vd-data" \
             --handshake-file "$RUNNER_TEMP/hs.json" > /dev/null 2>&1 &
           for i in $(seq 1 90); do [ -f "$RUNNER_TEMP/hs.json" ] && break; sleep 1; done
@@ -75,15 +91,15 @@ jobs:
           curl -f -o /dev/null "http://127.0.0.1:$PORT/"
 
       - name: 校验架构
-        run: file desktop/dist/arm64/VideoDevour.app/Contents/Resources/VideoDevour
+        run: file "$RUNNER_TEMP/unz/VideoDevour.app/Contents/Resources/VideoDevour"
 
       - name: 记录体积
-        run: du -sh desktop/dist/arm64/VideoDevour.app
+        run: du -sh desktop/dist/arm64/VideoDevour-macos-arm64.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: VideoDevour-macos-arm64
-          path: desktop/dist/arm64/VideoDevour.app
+          path: desktop/dist/arm64/VideoDevour-macos-arm64.zip
           retention-days: 14
 
   build-macos-x64:
@@ -122,9 +138,19 @@ jobs:
           chmod +x desktop/build_mac.sh
           PYTHON_X64=python ./desktop/build_mac.sh --x64 --sign
 
+      # 同 arm64：artifact 必须是保留 symlink 的 zip（详见 arm64 job 内注释）
+      - name: 打包分发 zip（保留 symlink）并回验签名
+        run: |
+          cd desktop/dist/x64
+          ditto -c -k --keepParent --sequesterRsrc VideoDevour.app VideoDevour-macos-x64.zip
+          rm -rf "$RUNNER_TEMP/unz" && mkdir -p "$RUNNER_TEMP/unz"
+          ditto -x -k VideoDevour-macos-x64.zip "$RUNNER_TEMP/unz"
+          codesign --verify --deep --strict "$RUNNER_TEMP/unz/VideoDevour.app"
+          echo "✓ zip 解压后签名校验通过"
+
       - name: 冒烟测试（后端启动 + health）
         run: |
-          ./desktop/dist/x64/VideoDevour.app/Contents/Resources/VideoDevour --backend-only \
+          "$RUNNER_TEMP/unz/VideoDevour.app/Contents/Resources/VideoDevour" --backend-only \
             --port 0 --data-dir "$RUNNER_TEMP/vd-data" \
             --handshake-file "$RUNNER_TEMP/hs.json" > /dev/null 2>&1 &
           for i in $(seq 1 90); do [ -f "$RUNNER_TEMP/hs.json" ] && break; sleep 1; done
@@ -134,7 +160,7 @@ jobs:
 
       - name: 校验架构与 cryptography（x64 曾因 OpenSSL 符号缺失失败）
         run: |
-          file desktop/dist/x64/VideoDevour.app/Contents/Resources/VideoDevour
+          file "$RUNNER_TEMP/unz/VideoDevour.app/Contents/Resources/VideoDevour"
           python - <<'PY'
           import glob
           so = glob.glob("desktop/dist/x64/VideoDevour.app/Contents/Resources/_internal/cryptography/hazmat/bindings/_rust.abi3.so")
@@ -143,12 +169,12 @@ jobs:
           PY
 
       - name: 记录体积
-        run: du -sh desktop/dist/x64/VideoDevour.app
+        run: du -sh desktop/dist/x64/VideoDevour-macos-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: VideoDevour-macos-x64
-          path: desktop/dist/x64/VideoDevour.app
+          path: desktop/dist/x64/VideoDevour-macos-x64.zip
           retention-days: 14
 
   build-windows:
