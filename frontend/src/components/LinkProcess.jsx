@@ -10,8 +10,9 @@ const PLATFORM_TABS = [
   { key: 'bilibili', label: 'B站', searchable: true, embed: (id) => `https://player.bilibili.com/player.html?bvid=${id}&autoplay=0` },
   { key: 'youtube', label: 'YouTube', searchable: true, embed: (id) => `https://www.youtube.com/embed/${id}` },
   { key: 'douyin', label: '抖音', searchable: true, embed: null },   // 抖音无可公开内嵌播放器
-  // X：官方 embed 播放器；关键词搜索需登录 GraphQL 不做，仅支持粘贴推文链接
-  { key: 'x', label: 'X', searchable: false, embed: (id) => `https://platform.twitter.com/embed/Tweet.html?id=${id}` },
+  // X：官方 embed 在未登录/受限网络下常加载不出，改为提示 + cookie 说明（同抖音）；
+  // 关键词搜索需登录 GraphQL 不做，仅支持粘贴推文链接
+  { key: 'x', label: 'X', searchable: false, embed: null },
 ]
 
 const PLATFORM_LABELS = {
@@ -231,7 +232,7 @@ h1,h2,h3{line-height:1.35}</style>
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleProbe()}
               aria-label="视频链接或分享文案"
-              placeholder="支持 B站 / YouTube / 抖音 / 微信视频号链接，可直接粘贴分享文案（如 v.douyin.com/...）"
+              placeholder="支持 B站 / YouTube / 抖音 / X / 微信视频号链接，可直接粘贴分享文案（如 v.douyin.com/...）"
               className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
             />
             <button
@@ -435,15 +436,19 @@ h1,h2,h3{line-height:1.35}</style>
                       allow="encrypted-media; fullscreen"
                       title={preview.title}
                     />
-                  ) : preview.platform === 'wechat' || preview.platform === 'douyin' ? (
+                  ) : preview.platform === 'wechat' || preview.platform === 'douyin' || preview.platform === 'x' ? (
                     <div className="w-full h-[420px] flex flex-col items-center justify-center gap-3 text-gray-400 px-8 text-center">
                       <MessageCircle className="w-12 h-12" />
                       <p className="text-sm font-medium text-gray-300">
-                        {preview.platform === 'douyin' ? '抖音内容不支持网页内嵌预览' : '微信视频号内容不支持网页内嵌预览'}
+                        {preview.platform === 'douyin' ? '抖音内容不支持网页内嵌预览'
+                          : preview.platform === 'x' ? 'X 内容不支持网页内嵌预览'
+                          : '微信视频号内容不支持网页内嵌预览'}
                       </p>
                       <p className="text-xs text-gray-500 leading-relaxed">
                         {preview.platform === 'douyin'
                           ? '点击右上角「生成图文报告」将直接下载并处理；抖音下载需要登录态 Cookie，可在设置页「抖音 cookies」配置（桌面客户端可用「应用内登录读取」，或从浏览器读取/手动粘贴）'
+                          : preview.platform === 'x'
+                          ? '点击右上角「生成图文报告」将直接下载并处理；X 下载需要登录态 Cookie（需含 auth_token），可在设置页「X cookies」配置（桌面客户端可用「应用内登录读取」，或从浏览器读取/手动粘贴）'
                           : '点击右上角「生成图文报告」将调用解析服务下载；若解析失败（链接过期/服务限流），请用本地工具下载后到「上传视频」页上传处理'}
                       </p>
                     </div>
