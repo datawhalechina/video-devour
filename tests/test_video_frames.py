@@ -27,7 +27,10 @@ class DirectFramesTests(unittest.TestCase):
             self.assertTrue((Path(tmp) / 'chapters.json').exists())
             for cmd in calls:
                 self.assertLess(cmd.index('-ss'), cmd.index('-i'))
-                self.assertIn('-t', cmd)
+                # 4b1c102 起改为逐帧精确定位抽取：每条命令只出 1 帧
+                # （-ss 在 -i 前快速定位 + -frames:v 1），不再用 -t + fps 滤镜
+                self.assertIn('-frames:v', cmd)
+                self.assertEqual(cmd[cmd.index('-frames:v') + 1], '1')
                 self.assertNotIn('libx264', cmd)
 
 
