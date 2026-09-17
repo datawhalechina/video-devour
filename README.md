@@ -62,10 +62,11 @@
 - **中文输出保障**：无论视频原语言是什么，大纲与报告一律输出简体中文（专有名词保留原文）。
 - **LLM 限流重试**：限流/超时自动指数退避重试，保证长任务稳定性。
 
-### 🔗 在线视频链接处理（B站 / YouTube / 抖音 / 微信视频号）
+### 🔗 在线视频链接处理（B站 / YouTube / 抖音 / X / 微信视频号）
 - **粘贴链接直接处理**：自动识别平台（可直接粘贴 App 分享文案），预览窗口内嵌官方播放器在线播放，一键下载并进入完整处理流水线。
 - **关键词搜索**：内置 B站官方搜索、YouTube 搜索与抖音搜索（抖音需登录 Cookie），封面/时长/UP主卡片式展示。
-- **抖音**：支持 `douyin.com/video/{id}` 视频页与 `v.douyin.com` 短链（自动跟随重定向）。**下载需要登录态 Cookie**（设置页「抖音 cookies」或一键读取浏览器 Cookie）；抖音的**下载与关键词搜索都需登录态**（匿名搜索返回「请先登录」），配置抖音 cookies 后即可正常搜索抖音视频。
+- **抖音**：支持 `douyin.com/video/{id}` 视频页与 `v.douyin.com` 短链（自动跟随重定向）。**下载需要登录态 Cookie**（设置页「抖音 cookies」或一键读取浏览器 Cookie）；抖音的**下载与关键词搜索都需登录态**（匿名搜索返回「请先登录」），配置抖音 cookies 后即可正常搜索抖音视频。抖音下载改走 **App 接口直连**（web 接口自 2026 起受 Argus 浏览器签名校验拦截，仅带 Cookie 也会返回 403），无需浏览器签名即可下载；自动选 H.264 档，优先不超过 720p 的最高可用画质（该档通常带抖音水印；设 `VIDEO_DEVOUR_DOUYIN_CLEAN=1` 可改为优先无水印源）。
+- **X（Twitter）**：支持 `x.com` / `twitter.com` 推文视频（`/{user}/status/{id}`、`/i/status/{id}` 等自动归一化）。**下载需要登录态 Cookie**（设置页「X cookies」或一键读取浏览器 Cookie，需含 `auth_token`）；X 不支持关键词搜索，只能粘贴推文链接。
 - **微信视频号**：支持 `weixin.qq.com/sph/...` 分享链接。在设置页填入腾讯元宝 Cookie 后走**直连解析**（元宝解析 → 视频号 feed 接口 → 本地 ISAAC64 解密，无第三方依赖）；也可选配自建解析服务（`WECHAT_RESOLVER_URL`）或使用本地捕获工具（[ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download)）下载后上传处理。
 - 由 `yt-dlp` 驱动，含 B站风控退避重试与 YouTube cookies 支持（`YTDLP_COOKIES_FILE`）。
 
@@ -215,13 +216,13 @@ pip install -r requirements.txt
 
 配置保存在项目根目录的 `settings.json`（已被 gitignore，含密钥请勿提交），并在每次任务执行时注入运行时配置。
 
-### 在线视频链接处理（B站 / YouTube / 抖音 / 微信视频号）
+### 在线视频链接处理（B站 / YouTube / 抖音 / X / 微信视频号）
 
 前端「链接处理」页面支持不上传文件、直接通过视频链接生成报告：
 
 - **粘贴链接**：自动识别平台并展示预览窗口（B站用官方播放器嵌入，YouTube/抖音用 embed 播放器），可在线播放预览；直接粘贴 App 分享文案也可以（自动提取其中的纯链接）
 - **关键词搜索**：内置 B站（官方搜索接口）、YouTube（ytsearch）与抖音（需登录 Cookie）搜索，结果卡片含封面/时长/UP主，点击即预览
-- **一键下载处理**：yt-dlp 下载（自动合并 mp4）→ 接入标准处理流水线（ASR → 大纲 → 关键帧 → 报告）；同一视频重复处理直接复用本地下载缓存，不重复下载
+- **一键下载处理**：下载（自动合并 mp4；抖音走 App 接口直连，其余平台由 yt-dlp 驱动）→ 接入标准处理流水线（ASR → 大纲 → 关键帧 → 报告）；同一视频重复处理直接复用本地下载缓存，不重复下载
 
 说明：
 - B站未登录最高可取 720p 左右画质，高清晰度需自行配置登录态；短时间高频请求可能触发平台风控，服务端已带 cookie 指纹与自动重试
@@ -357,7 +358,7 @@ video-devour/
 │   ├── 📁 api/
 │   │   └── main.py              # FastAPI 主应用（全部 API 端点）
 │   └── 📁 devour/               # 视频获取与 ASR 引擎
-│       ├── video_downloader.py  # 链接下载（B站/YouTube/抖音/微信视频号，含搜索）
+│       ├── video_downloader.py  # 链接下载（B站/YouTube/抖音/X/微信视频号，含搜索）
 │       ├── download_cache.py    # 下载缓存与存储映射表（同视频复用，不重复下载）
 │       ├── asr_factory.py       # ASR 引擎工厂（离线/在线切换）
 │       ├── asr_engine_paraformer_v2.py  # 本地 FunASR 引擎

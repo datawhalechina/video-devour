@@ -7,9 +7,11 @@ import ExtrasPicker, { getSelectedExtras } from './ExtrasPicker'
 import { useConfigGate } from './ConfigGateProvider'
 
 const PLATFORM_TABS = [
-  { key: 'bilibili', label: 'B站', embed: (id) => `https://player.bilibili.com/player.html?bvid=${id}&autoplay=0` },
-  { key: 'youtube', label: 'YouTube', embed: (id) => `https://www.youtube.com/embed/${id}` },
-  { key: 'douyin', label: '抖音', embed: null },   // 抖音无可公开内嵌播放器
+  { key: 'bilibili', label: 'B站', searchable: true, embed: (id) => `https://player.bilibili.com/player.html?bvid=${id}&autoplay=0` },
+  { key: 'youtube', label: 'YouTube', searchable: true, embed: (id) => `https://www.youtube.com/embed/${id}` },
+  { key: 'douyin', label: '抖音', searchable: true, embed: null },   // 抖音无可公开内嵌播放器
+  // X：官方 embed 播放器；关键词搜索需登录 GraphQL 不做，仅支持粘贴推文链接
+  { key: 'x', label: 'X', searchable: false, embed: (id) => `https://platform.twitter.com/embed/Tweet.html?id=${id}` },
 ]
 
 const PLATFORM_LABELS = {
@@ -17,6 +19,7 @@ const PLATFORM_LABELS = {
   youtube: 'YouTube',
   wechat: '微信视频号',
   douyin: '抖音',
+  x: 'X',
 }
 
 function formatDuration(seconds) {
@@ -269,7 +272,7 @@ h1,h2,h3{line-height:1.35}</style>
               <Search className="w-4 h-4 text-primary-600" />
               <h3 className="text-sm font-bold text-gray-900">或搜索视频</h3>
               <div className="flex items-center space-x-1 ml-2">
-                {PLATFORM_TABS.map((t) => (
+                {PLATFORM_TABS.filter((t) => t.searchable).map((t) => (
                   <button
                     key={t.key}
                     aria-pressed={platform === t.key}

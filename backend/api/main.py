@@ -599,7 +599,8 @@ async def import_cookies_from_browser(request: BrowserCookieRequest):
         settings_store.update_settings(fields)
     found = {k: bool(v) for k, v in fields.items()}
     labels = {"bilibili_sessdata": "B站 SESSDATA", "youtube_cookies": "YouTube cookies",
-              "wechat_yuanbao_cookie": "元宝 Cookie", "douyin_cookies": "抖音 cookies"}
+              "wechat_yuanbao_cookie": "元宝 Cookie", "douyin_cookies": "抖音 cookies",
+              "x_cookies": "X cookies"}
     # 用 labels.get 兜底：新增平台字段而漏配标签时不再抛 KeyError（曾导致 500）
     hit = [labels.get(k, k) for k in fields if fields.get(k)]
     locked = any("App-Bound" in str(a) or "占用" in str(a)
@@ -632,7 +633,8 @@ async def import_cookies_from_webview(request: WebviewCookieRequest):
         raise HTTPException(status_code=400, detail="没有可保存的 Cookie 字段")
     settings_store.update_settings(fields)
     labels = {"bilibili_sessdata": "B站 SESSDATA", "youtube_cookies": "YouTube cookies",
-              "wechat_yuanbao_cookie": "元宝 Cookie", "douyin_cookies": "抖音 cookies"}
+              "wechat_yuanbao_cookie": "元宝 Cookie", "douyin_cookies": "抖音 cookies",
+              "x_cookies": "X cookies"}
     hit = [labels.get(k, k) for k in fields]
     logging.info(f"应用内登录 Cookie 已保存: {'、'.join(hit)}")
     return {"found": {k: True for k in fields},

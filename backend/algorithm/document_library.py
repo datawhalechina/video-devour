@@ -50,7 +50,7 @@ GENERATABLE_SCOPES = ("quantum", "wechat", "xiaohongshu")
 ARTICLE_ORDER = ("outline", "report", "detailed", "quantum", "wechat", "xiaohongshu")
 
 PLATFORM_LABELS = {
-    "bilibili": "B站", "youtube": "YouTube", "wechat": "微信视频号", "upload": "本地上传",
+    "bilibili": "B站", "youtube": "YouTube", "wechat": "微信视频号", "douyin": "抖音", "x": "X", "upload": "本地上传",
 }
 
 

@@ -65,6 +65,7 @@ function SettingsPage() {
         wechat_resolver_token: data.wechat_resolver_token || '',
         youtube_cookies: data.youtube_cookies || '',
         douyin_cookies: data.douyin_cookies || '',
+        x_cookies: data.x_cookies || '',
         bilibili_sessdata: data.bilibili_sessdata || '',
         cookie_browser: data.cookie_browser || '',
       })
@@ -138,6 +139,7 @@ function SettingsPage() {
         youtube_cookies: data.youtube_cookies || prev.youtube_cookies,
         bilibili_sessdata: data.bilibili_sessdata || prev.bilibili_sessdata,
         douyin_cookies: data.douyin_cookies || prev.douyin_cookies,
+        x_cookies: data.x_cookies || prev.x_cookies,
       }))
     } catch (err) {
       setCookieImport({ loading: false, message: `读取失败: ${err.message}`, attempts: [] })
@@ -158,6 +160,7 @@ function SettingsPage() {
           youtube_cookies: data.youtube_cookies || prev.youtube_cookies,
           bilibili_sessdata: data.bilibili_sessdata || prev.bilibili_sessdata,
           douyin_cookies: data.douyin_cookies || prev.douyin_cookies,
+        x_cookies: data.x_cookies || prev.x_cookies,
         }))
         setLoginCapture({ loading: '', ok: true, message: `已读取并保存 ${result.label || ''} 登录态（${result.count || 0} 个 cookie）` })
       } else {
@@ -173,6 +176,7 @@ function SettingsPage() {
     { key: 'youtube', label: 'YouTube' },
     { key: 'yuanbao', label: '腾讯元宝' },
     { key: 'douyin', label: '抖音' },
+    { key: 'x', label: 'X' },
   ]
 
   const handleTest = async (target) => {
@@ -543,6 +547,29 @@ function SettingsPage() {
               value={form.douyin_cookies || ''}
               onChange={(e) => setField('douyin_cookies', e.target.value)}
               placeholder="# Netscape HTTP Cookie File&#10;.douyin.com	TRUE	/	TRUE	0	sessionid	..."
+              rows={5}
+              className={`${inputClass} font-mono text-xs`}
+            />
+          </div>
+        </motion.section>
+
+        {/* X（Twitter）cookies */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.17 }}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
+        >
+          <h2 className="text-base font-bold text-gray-900 mb-2">X（Twitter）cookies（下载需要登录态）</h2>
+          <p className="text-xs text-gray-500 leading-relaxed mb-4">
+            X 对未登录访问限制较严，下载推文视频通常需要登录态。配置后可下载 x.com / twitter.com 的推文视频。
+            获取方式：登录 x.com 后用浏览器扩展导出 cookies.txt（Netscape 格式，需含 auth_token），
+            粘贴到下方；也可用上方「一键读取浏览器 Cookie」或「应用内登录读取」自动获取。
+          </p>
+          <div>
+            <label className={labelClass}>cookies.txt 内容（Netscape 格式）</label>
+            <textarea
+              value={form.x_cookies || ''}
+              onChange={(e) => setField('x_cookies', e.target.value)}
+              placeholder="# Netscape HTTP Cookie File&#10;.x.com	TRUE	/	TRUE	0	auth_token	..."
               rows={5}
               className={`${inputClass} font-mono text-xs`}
             />

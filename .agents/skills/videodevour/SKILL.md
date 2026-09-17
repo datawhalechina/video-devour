@@ -1,6 +1,6 @@
 ---
 name: videodevour
-description: 使用 VideoDevour 把视频（B站/YouTube/抖音链接、微信视频号分享链接或本地文件）处理成中文图文报告。当用户要求"处理这个视频"、"视频转笔记/报告/图文大纲"、"下载并总结B站/YouTube/抖音/视频号视频"时使用。支持搜索视频、查询链接信息、一键生成带关键帧的图文报告（精简/详细），改写成量子速读/公众号文章/小红书笔记、导出 PDF，生成学习测试题（单选/多选/判断，判题与学习评估），并可检索项目本地已积累的文档库（历史任务报告/笔记，支持 BM25 搜索与导出，也可通过 MCP 服务供其他 LLM 调用）。
+description: 使用 VideoDevour 把视频（B站/YouTube/抖音/X 链接、微信视频号分享链接或本地文件）处理成中文图文报告。当用户要求"处理这个视频"、"视频转笔记/报告/图文大纲"、"下载并总结B站/YouTube/抖音/X/视频号视频"时使用。支持搜索视频、查询链接信息、一键生成带关键帧的图文报告（精简/详细），改写成量子速读/公众号文章/小红书笔记、导出 PDF，生成学习测试题（单选/多选/判断，判题与学习评估），并可检索项目本地已积累的文档库（历史任务报告/笔记，支持 BM25 搜索与导出，也可通过 MCP 服务供其他 LLM 调用）。
 license: Apache-2.0
 compatibility: 需要 Python 3.12+ 与项目 .venv（uv sync），ffmpeg；任何支持 .agents/skills 约定的 agent 均可调用
 ---
@@ -17,7 +17,7 @@ compatibility: 需要 Python 3.12+ 与项目 .venv（uv sync），ffmpeg；任�
 
 ## 必要输入
 
-- **视频来源**：B站/YouTube/抖音链接、微信视频号分享链接（weixin.qq.com/sph/...，可直接粘贴含链接的分享文案）、或本地视频文件路径（MP4 等）
+- **视频来源**：B站/YouTube/抖音/X 链接、微信视频号分享链接（weixin.qq.com/sph/...，可直接粘贴含链接的分享文案）、或本地视频文件路径（MP4 等）
 - 可选：学习阶段（自由学习[默认]/小学/初中/高中/大学/硕士/博士/深入研究/垂直领域研究）
 
 ## 使用前检查（首次使用时执行一次）
@@ -92,11 +92,34 @@ python3 <skill目录>/scripts/devour.py douyin "https://v.douyin.com/xxxxxx/"
 
 - **下载需要登录态 Cookie**：在设置页「抖音 cookies」填写，或点「一键读取浏览器 Cookie」
   自动获取（需浏览器已登录抖音）；也可写入 `settings.json` 的 `douyin_cookies`。
-  Cookie 缺失或失效时，脚本返回明确的配置指引（yt-dlp 会提示 Fresh cookies are needed）。
+  Cookie 缺失或失效时，脚本返回明确的配置指引。
+- 抖音下载走 **App 接口直连**（`aweme.snssdk.com`）：web 端接口自 2026 起受 Argus
+  浏览器签名校验拦截，仅带登录 Cookie 也会返回 `403 Blocked by ArgusSecurityPlugin`，
+  yt-dlp 会把它误报成「Fresh cookies are needed」。**看到该提示时不要反复重配 Cookie**，
+  先确认下载是否已走 App 接口成功；仅当 App 接口也失败时才需要重新读取登录态。
 - 支持三种链接形态：`douyin.com/video/{id}` 视频页、`douyin.com/note/{id}` 图文、
   含 `?modal_id={id}` 的搜索页链接、`v.douyin.com` 短链（脚本自动归一化）。
-- 下载默认取 720p H.264（抖音的 bytevc1/H.265 直链会 403，脚本已固定选 H.264 格式）。
+- 下载默认取 720p H.264（抖音的 bytevc1/H.265 直链会 403，脚本已固定选 H.264 档，
+  优先不超过 720p 的最高可用画质）。该档通常是带抖音水印的 `download_addr`；
+  需要干净画面（如关键帧配图）时设 `VIDEO_DEVOUR_DOUYIN_CLEAN=1`，改为优先无水印源
+  （分辨率可能更低）。
 - `process` 命令同样直接支持抖音链接（自动先下载再处理）；`douyin` 用于只要视频文件的场景。
+
+### 4b. X（Twitter）链接（x.com / twitter.com 推文）
+
+```bash
+# 下载 X 推文视频到项目 uploads/（仅下载）
+python3 <skill目录>/scripts/devour.py process "https://x.com/{user}/status/{id}"
+# 或只下载不处理：info 查看 / process 处理，均支持 X 链接
+```
+
+- **下载需要登录态 Cookie**：X 对未登录访问限制较严。在设置页「X cookies」填写，或点
+  「一键读取浏览器 Cookie」/「应用内登录读取」自动获取（需含 `auth_token`）；也可写入
+  `settings.json` 的 `x_cookies`。未登录时 yt-dlp 常返回「No video could be found」。
+- 支持 `x.com` / `twitter.com`、`/{user}/status/{id}`、`/i/status/{id}`、`/i/web/status/{id}`、
+  `mobile.twitter.com`、带 `?s=` 追踪参数等形态（脚本自动归一化）。
+- **X 不支持关键词搜索**（需要登录 GraphQL），只能粘贴推文链接。
+- `process` 命令同样直接支持 X 链接（自动先下载再处理）。
 
 ### 5. 字幕速记（B站/YouTube，秒级纯文本笔记）
 

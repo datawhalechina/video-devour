@@ -7,6 +7,8 @@ const PLATFORM_LABELS = {
   bilibili: "B站",
   youtube: "YouTube",
   wechat: "微信视频号",
+  douyin: "抖音",
+  x: "X",
 };
 
 // 衍生文体：不在处理流程里预生成，点开时按需生成（结果落盘复用）

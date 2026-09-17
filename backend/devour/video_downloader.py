@@ -30,6 +30,13 @@ _MOBILE_UA = (
     "(KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.49"
 )
 
+# 抖音 App 端 UA：App 接口对 web 端 UA 会返回空体，必须用 App 标识
+_DOUYIN_APP_UA = (
+    "com.ss.android.ugc.aweme/190500 (Linux; U; Android 12; zh_CN; Pixel 5; "
+    "Build/SQ3A.220705.004; Cronet/58.0.2991.0)"
+)
+_DOUYIN_APP_DETAIL_URL = "https://aweme.snssdk.com/aweme/v1/aweme/detail/"
+
 # 公共解析服务（ltaoo/wx_channels_download 作者提供，第三方服务非微信官方）
 DEFAULT_WECHAT_RESOLVER = "https://sph.litao.workers.dev"
 
@@ -83,7 +90,7 @@ def _get_ydl(**extra):
 
 
 def detect_platform(url: str) -> str:
-    """根据链接判断来源平台：youtube | bilibili | wechat | douyin | other"""
+    """根据链接判断来源平台：youtube | bilibili | wechat | douyin | x | other"""
     url = (url or "").lower()
     if re.search(r"(youtube\.com|youtu\.be)", url):
         return "youtube"
@@ -93,6 +100,10 @@ def detect_platform(url: str) -> str:
         return "wechat"
     if re.search(r"(douyin\.com|iesdouyin\.com)", url):
         return "douyin"
+    # X（原 Twitter）：x.com / twitter.com 的推文链接。
+    # 否定后视避免把 max.com 之类的域名误判；域名后紧跟 / 以定位真实站点。
+    if re.search(r"(?<![a-z0-9])(?:x|twitter)\.com/", url):
+        return "x"
     return "other"
 
 
@@ -122,7 +133,31 @@ def _extract_video_id(url: str, platform: str) -> Optional[str]:
             return m.group(1)
         m = re.search(r"v\.douyin\.com/([A-Za-z0-9]+)", url)
         return m.group(1) if m else None
+    if platform == "x":
+        # 推文：/{user}/status/{id}、/i/status/{id}、/i/web/status/{id}
+        m = re.search(r"/status(?:es)?/(\d+)", url)
+        if m:
+            return m.group(1)
+        return None
     return None
+
+
+def normalize_x_url(url: str) -> str:
+    """
+    X（Twitter）链接归一化：把各种形式统一为 x.com/{user}/status/{id}。
+    覆盖：mobile.twitter.com、twitter.com→x.com、/i/status/{id}、/i/web/status/{id}、
+    带 ?s= / ?ref_src= 等追踪参数的链接。无法识别推文 id 时原样返回（由调用方给引导）。
+    """
+    if not url or "x.com" not in url.lower() and "twitter.com" not in url.lower():
+        return url
+    tid = _extract_video_id(url, "x")
+    if not tid:
+        return url
+    # 尽量保留用户名，拿不到就用 /i/status/{id}
+    m = re.search(r"(?:x\.com|twitter\.com)/([A-Za-z0-9_]{1,15})/status(?:es)?/\d+", url, re.IGNORECASE)
+    if m:
+        return f"https://x.com/{m.group(1)}/status/{tid}"
+    return f"https://x.com/i/status/{tid}"
 
 
 def _simplify_info(info: Dict, platform: str) -> Dict:
@@ -203,6 +238,8 @@ def probe_video_info(url: str) -> Dict:
     # 抖音链接统一归一化（modal_id 搜索页 / 短链 / note 页 → 视频页）
     if platform == "douyin":
         url = normalize_douyin_url(url)
+    if platform == "x":
+        url = normalize_x_url(url)
     if platform == "wechat":
         # 视频号不支持 yt-dlp：分享页兜底信息 + 直连链路尽力补全真实元数据
         info = _wechat_share_info(url)
@@ -224,12 +261,31 @@ def probe_video_info(url: str) -> Dict:
                 return _bilibili_view_info(bvid)
             except Exception as e:
                 logging.warning(f"B站 view API 获取失败，回退 yt-dlp: {e}")
-    # 抖音元数据接口也需要登录态 cookie（与下载一致）
+    # 抖音：web 接口已被 Argus 浏览器签名校验拦截（HTTP 403），优先走 App 接口
+    app_error = None
+    if platform == "douyin":
+        aweme_id = _extract_video_id(url, "douyin")
+        if aweme_id and aweme_id.isdigit():
+            try:
+                return _probe_douyin_app(aweme_id)
+            except Exception as e:
+                app_error = e
+                logging.warning(f"抖音 App 接口获取元数据失败，回退 yt-dlp: {e}")
+    # 抖音 yt-dlp 兜底同样需要登录态 cookie（与下载一致）
     probe_opts = {}
+    probe_tmp_cookie = None
     if platform == "douyin":
         _ck = _douyin_cookiefile()
         if _ck:
             probe_opts["cookiefile"] = _ck
+            probe_tmp_cookie = _ck
+    # X（Twitter）：未登录常拿不到视频，预览与下载同样需要 auth_token
+    if platform == "x":
+        _xk, _xtmp = _x_cookiefile()
+        if _xk:
+            probe_opts["cookiefile"] = _xk
+            if _xtmp:
+                probe_tmp_cookie = _xk
 
     try:
         with _get_ydl(referer=_platform_referer(platform), **probe_opts) as ydl:
@@ -245,15 +301,31 @@ def probe_video_info(url: str) -> Dict:
                     "或直接在抖音 App 内下载视频后到「本地上传」处理。"
                 )
             if "cookies" in msg.lower() or "Fresh cookies" in msg:
+                # 该提示是 yt-dlp 在签名校验 403 后的通用措辞，并非真的 Cookie 缺失；
+                # 同时给出 App 接口的失败原因，避免把用户引向无效的重配 Cookie
                 raise ValueError(
-                    "抖音下载需要登录态 Cookie。请在设置控制台「抖音 cookies」配置，"
-                    "或点击「一键读取浏览器 Cookie」自动获取（需在浏览器登录过抖音）。"
+                    "抖音解析失败：web 接口被平台签名校验拦截（403），App 接口兜底也未取到数据。"
+                    "请确认「抖音 cookies」为最新登录态（浏览器登录抖音后点「一键读取浏览器 Cookie」"
+                    "重新读取），或稍后重试。"
+                    + (f"（App 接口：{str(app_error)[:100]}）" if app_error else "")
                 )
         if platform == "youtube" and ("Sign in" in str(e) or "not a bot" in str(e)):
             # YouTube bot 检查：按 youtube-downloader 工具的实践回退 oEmbed
             logging.warning("YouTube bot 检查拦截，回退 oEmbed 获取元数据")
             return _youtube_oembed_info(url)
+        if platform == "x" and "no video" in str(e).lower():
+            raise ValueError(
+                "未在该 X 推文中找到视频。可能是这条推文本身为纯文字/图文，"
+                "或 X 对未登录访问做了限制。若确认推文含视频，请在设置页配置「X cookies」"
+                "（浏览器登录 x.com 后点「一键读取浏览器 Cookie」重新读取，需含 auth_token）后重试。"
+            )
         raise
+    finally:
+        if probe_tmp_cookie:
+            try:
+                os.remove(probe_tmp_cookie)
+            except OSError:
+                pass
     if not info:
         raise ValueError(f"无法获取视频信息: {url}")
     if "entries" in info:  # 命中了合集/列表，取第一个
@@ -297,6 +369,7 @@ def _platform_referer(platform: str) -> str:
         "youtube": "https://www.youtube.com/",
         "douyin": "https://www.douyin.com/",
         "wechat": "https://weixin.qq.com/",
+        "x": "https://x.com/",
     }.get(platform, "https://www.bilibili.com/")
 
 
@@ -1047,6 +1120,46 @@ def _douyin_cookiefile() -> Optional[str]:
     return path
 
 
+def _x_cookiefile() -> tuple:
+    """
+    把设置里的 X（Twitter）cookies 写成临时 cookiefile（yt-dlp 用）。
+
+    返回 (路径, 是否临时文件)；未配置返回 (None, False)。
+    X 的登录态核心是 auth_token；同时为 .x.com 与 .twitter.com 两个域写入，
+    兼容链接归一化后的任一域名。支持 Netscape（制表符）与请求头（name=value;...）两种格式。
+    """
+    import tempfile
+    try:
+        from backend.algorithm.settings_store import load_settings
+        text = (load_settings().get("x_cookies") or "").strip()
+    except Exception:
+        text = ""
+    if not text or not ("x.com" in text.lower() or "twitter.com" in text.lower() or "auth_token" in text.lower()):
+        return None, False
+
+    fd, path = tempfile.mkstemp(prefix="x_cookies_", suffix=".txt")
+    domains = (".x.com", ".twitter.com")
+    with os.fdopen(fd, "w") as f:
+        f.write("# Netscape HTTP Cookie File\n")
+        if "\t" in text:                 # 已是 Netscape 表格格式：原样保留，同时补一份另一域名
+            f.write(text if text.endswith("\n") else text + "\n")
+            rows = [ln for ln in text.splitlines() if ln.strip() and not ln.startswith("#")]
+            for ln in rows:
+                cols = ln.split("\t")
+                if len(cols) >= 7:
+                    for d in domains:
+                        if cols[0] != d:
+                            f.write("\t".join([d] + cols[1:]) + "\n")
+        else:                             # 请求头格式 → 两域各写一份
+            for kv in text.split(";"):
+                kv = kv.strip()
+                if "=" in kv:
+                    name, value = kv.split("=", 1)
+                    for d in domains:
+                        f.write(f"{d}\tTRUE\t/\tTRUE\t0\t{name.strip()}\t{value.strip()}\n")
+    return path, True
+
+
 def _load_douyin_cookies_header() -> str:
     """从设置读取抖音 cookies.txt，转成请求头 Cookie 字符串（无则空）"""
     try:
@@ -1071,6 +1184,224 @@ def _load_douyin_cookies_header() -> str:
         return "; ".join(pairs)
     # 请求头格式：直接可用
     return text.strip().rstrip(";")
+
+
+# ---------------------------------------------------------------------------
+# 抖音 App 接口兜底
+#
+# web 端接口（www.douyin.com/aweme/v1/web/aweme/detail/）自 2026 起由 Argus
+# 安全插件校验浏览器签名，仅带登录 Cookie 也会返回
+# 「HTTP 403 Blocked by ArgusSecurityPlugin Uifid Not Found」；yt-dlp 拿不到
+# 数据后统一报「Fresh cookies (not necessarily logged in) are needed」，
+# 容易被误判成 Cookie 失效。实测 App 端接口（aweme.snssdk.com）用同一份
+# Cookie 可正常返回，因此抖音改走 App 接口，yt-dlp 仅作兜底。
+# ---------------------------------------------------------------------------
+
+def _douyin_app_detail(aweme_id: str, cookie_header: str = "") -> Dict:
+    """
+    调用抖音 App 接口取 aweme 详情（无浏览器签名校验）。
+
+    App 接口必须带 App 标识的 UA：换 web UA 会返回 HTTP 200 空体。
+    Cookie 缺失时同样返回空体（下载仍需登录态），由调用方给出配置指引。
+    """
+    import requests
+
+    headers = {"User-Agent": _DOUYIN_APP_UA, "Accept": "application/json"}
+    if cookie_header:
+        headers["Cookie"] = cookie_header
+    resp = requests.get(
+        _DOUYIN_APP_DETAIL_URL,
+        params={"aweme_id": aweme_id},
+        headers=headers, timeout=(10, 30),
+    )
+    resp.raise_for_status()
+    payload = _safe_json(resp)
+    if not isinstance(payload, dict):
+        raise ValueError("抖音 App 接口无有效返回（Cookie 可能已失效）")
+    code = payload.get("status_code")
+    detail = payload.get("aweme_detail")
+    if not isinstance(detail, dict):
+        # 空体是最常见的失败形态：Cookie 缺失/失效，或内容已删除/不可见
+        reason = (payload.get("status_msg") or "").strip()
+        raise ValueError(
+            "抖音 App 接口未返回视频详情（Cookie 缺失或失效，或该内容已删除/不可见）"
+            + (f"（status_code={code} {reason}）" if reason or code not in (None, 0) else "")
+        )
+    return detail
+
+
+def _douyin_app_h264_candidates(video: Dict) -> List[Dict]:
+    """
+    从 App 接口的 video 段抽取 H.264 直链候选。
+
+    抖音 bit_rate 里的档位基本都是 bytevc1(H.265)，其分片会被 CDN 403，
+    因此只保留 H.264 来源：play_addr_h264 / play_addr（无水印，分辨率较低）、
+    download_addr（带抖音水印，但通常是最高可用的 H.264 档）。
+    元素含 url/width/height/tier/size/watermark，tier=短边（用于比较画质档位）。
+    """
+    candidates = []
+
+    def _add(addr, watermark):
+        if not isinstance(addr, dict):
+            return
+        urls = addr.get("url_list") or []
+        if not urls:
+            return
+        width = int(addr.get("width") or 0)
+        height = int(addr.get("height") or 0)
+        # 竖屏/横屏统一按短边衡量画质档位（540x810 与 1920x1080 都取短边）
+        tier = min(width, height) if width and height else (height or width)
+        candidates.append({
+            "url": urls[0],
+            "width": width,
+            "height": height,
+            "tier": tier,
+            "size": int(addr.get("data_size") or 0),
+            "watermark": watermark,
+        })
+
+    for item in video.get("bit_rate") or []:
+        if item.get("is_h265") or item.get("is_bytevc1"):
+            continue          # H.265 分片会 403，跳过
+        _add(item.get("play_addr"), False)
+
+    # 顶层 is_h265 为真时 play_addr 也是 H.265，不可用（改为只认 play_addr_h264）
+    if not (video.get("is_h265") or video.get("is_bytevc1")):
+        _add(video.get("play_addr"), False)
+    _add(video.get("play_addr_h264"), False)
+    _add(video.get("download_addr"), True)
+
+    seen, unique = set(), []
+    for cand in candidates:
+        if cand["url"] in seen:
+            continue
+        seen.add(cand["url"])
+        unique.append(cand)
+    return unique
+
+
+# 抖音画质取舍：默认优先最高可用 H.264 档（与「下载取 720p」约定一致，
+# 该档通常带抖音水印）。需要画面干净（如关键帧配图）时设环境变量
+# VIDEO_DEVOUR_DOUYIN_CLEAN=1，改为优先无水印源（分辨率可能更低）。
+def _douyin_prefer_clean() -> bool:
+    return os.getenv("VIDEO_DEVOUR_DOUYIN_CLEAN", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _douyin_app_pick_video(candidates: List[Dict], max_height: int = 720) -> Optional[Dict]:
+    """
+    选取下载候选：优先不超过上限的最高画质档；
+    全部高于上限时取最低档（与项目「缺低清则下载最低」的约定一致）。
+    默认按档位排序，仅在档位相同时偏好无水印源。
+    """
+    if not candidates:
+        return None
+    usable = [c for c in candidates if c["tier"]]
+    if not usable:
+        return candidates[0]
+    if _douyin_prefer_clean():
+        clean = [c for c in usable if not c["watermark"]]
+        if clean:
+            usable = clean
+    within = [c for c in usable if c["tier"] <= max_height]
+    if within:
+        # 不超过上限的档位里取最高；同档位优先无水印，再取体积更大（码率更高）者
+        return max(within, key=lambda c: (c["tier"], not c["watermark"], c["size"]))
+    # 全部高于上限：退化为最低档，避免下载远超处理档的高清源
+    return min(usable, key=lambda c: (c["tier"], c["watermark"], -c["size"]))
+
+
+def _douyin_app_info(detail: Dict, aweme_id: str) -> Dict:
+    """App 接口 aweme 详情 → 前端预览所需的精简元数据（复用 _simplify_info）。"""
+    video = detail.get("video") or {}
+    cover = video.get("cover") or video.get("origin_cover") or {}
+    cover_urls = cover.get("url_list") or []
+    duration_ms = video.get("duration") or detail.get("duration") or 0
+    info = {
+        "id": str(detail.get("aweme_id") or aweme_id),
+        "title": (detail.get("desc") or "").strip() or f"抖音视频 {aweme_id}",
+        "uploader": (detail.get("author") or {}).get("nickname") or "",
+        "duration": int(duration_ms / 1000) if duration_ms else None,
+        "thumbnail": cover_urls[0] if cover_urls else "",
+        "webpage_url": f"https://www.douyin.com/video/{aweme_id}",
+        "description": (detail.get("desc") or "").strip()[:200],
+    }
+    return _simplify_info(info, "douyin")
+
+
+def _probe_douyin_app(aweme_id: str) -> Dict:
+    """抖音元数据预览：走 App 接口（web 接口已被 Argus 签名拦截）。"""
+    detail = _douyin_app_detail(aweme_id, _load_douyin_cookies_header())
+    if detail.get("images"):
+        # 图文（note）没有视频流：交给 yt-dlp 兜底，避免这里断言下载可用
+        raise ValueError("该抖音内容是图文而非视频，无法下载视频流")
+    return _douyin_app_info(detail, aweme_id)
+
+
+def _download_douyin_app(aweme_id: str, target_dir: str,
+                         max_height: int = 720, progress_hook=None) -> Dict:
+    """
+    抖音 App 接口直连下载（绕过 web 接口的浏览器签名校验）。
+
+    流式写入 {aweme_id}.mp4，ffprobe 校验通过才算成功；
+    任何环节失败都抛异常，由 download_video 回退到 yt-dlp。
+    """
+    import requests
+
+    cookie_header = _load_douyin_cookies_header()
+    if not cookie_header:
+        raise ValueError(
+            "抖音下载需要登录态 Cookie。请在设置控制台「抖音 cookies」配置，"
+            "或点击「一键读取浏览器 Cookie」自动获取（需在浏览器登录过抖音）。"
+        )
+
+    def _hook(payload):
+        if progress_hook:
+            try:
+                progress_hook(payload)
+            except Exception:
+                pass
+
+    detail = _douyin_app_detail(aweme_id, cookie_header)
+    info = _douyin_app_info(detail, aweme_id)
+    if detail.get("images"):
+        raise ValueError("该抖音内容是图文而非视频，无法下载视频流")
+
+    picked = _douyin_app_pick_video(
+        _douyin_app_h264_candidates(detail.get("video") or {}), max_height)
+    if not picked:
+        raise ValueError("抖音 App 接口未返回可用的 H.264 直链")
+
+    target = Path(target_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    final_path = target / f"{aweme_id}.mp4"
+    headers = {"User-Agent": _DOUYIN_APP_UA, "Referer": "https://www.douyin.com/"}
+    try:
+        with requests.get(picked["url"], headers=headers, stream=True,
+                          timeout=(10, 60)) as resp:
+            resp.raise_for_status()
+            total = int(resp.headers.get("Content-Length") or picked["size"] or 0)
+            done = 0
+            _hook({"status": "downloading", "downloaded_bytes": 0,
+                   "total_bytes": total or None})
+            with open(final_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=1 << 20):
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    done += len(chunk)
+                    _hook({"status": "downloading", "downloaded_bytes": done,
+                           "total_bytes": total or None})
+    except Exception:
+        final_path.unlink(missing_ok=True)
+        raise
+
+    _hook({"status": "finished"})
+    if not _validate_video_file(final_path):
+        final_path.unlink(missing_ok=True)
+        raise ValueError("抖音 App 接口下载内容校验失败（非有效视频文件）")
+    logging.info(f"抖音下载完成（App 接口）: {final_path} "
+                 f"{picked['width']}x{picked['height']}")
+    return {"file_path": str(final_path), "info": info}
 
 
 def _douyin_search(query: str, max_results: int = 8) -> List[Dict]:
@@ -1317,8 +1648,21 @@ def download_video(url: str, target_dir: str, max_height: int = 720,
     platform = detect_platform(url)
     if platform == "douyin":
         url = normalize_douyin_url(url)
+    if platform == "x":
+        url = normalize_x_url(url)
     if platform == "wechat":
         return _download_wechat_video(url, target_dir, progress_hook=progress_hook)
+    if platform == "douyin":
+        # 优先走 App 接口：web 接口已被 Argus 浏览器签名校验拦截（403），
+        # yt-dlp 会把它误报成 Cookie 缺失。App 接口失败才回退 yt-dlp。
+        aweme_id = _extract_video_id(url, "douyin")
+        if aweme_id and aweme_id.isdigit():
+            try:
+                return _download_douyin_app(aweme_id, target_dir,
+                                            max_height=max_height,
+                                            progress_hook=progress_hook)
+            except Exception as e:
+                logging.warning(f"抖音 App 接口下载失败，回退 yt-dlp: {e}")
     # Referer 必须与平台匹配：抖音 CDN 会校验，用 B站 referer 会 403
     referer = _platform_referer(platform)
 
@@ -1379,6 +1723,10 @@ def download_video(url: str, target_dir: str, max_height: int = 720,
                     f.write(text if text.endswith("\n") else text + "\n")
                 return path, True
             return None, False
+        # X（Twitter）：yt-dlp 的 twitter 提取器靠 auth_token 等 cookie 识别登录态，
+        # 未登录时经常拿不到视频。cookie 需包含 auth_token，且覆盖 .x.com / .twitter.com 域。
+        if platform == "x":
+            return _x_cookiefile()
         return None, False
 
     def _remove_cookiefile(entry):
@@ -1416,10 +1764,21 @@ def download_video(url: str, target_dir: str, max_height: int = 720,
             message = str(e)
             if platform == "douyin" and ("cookies" in message.lower() or "Fresh cookies" in message):
                 _remove_cookiefile(cookie_entry)
+                # yt-dlp 在 web 接口被签名校验返回 403 后统一报「Fresh cookies」，
+                # 并非真的 Cookie 失效；App 接口已在上方尝试过，这里如实说明
                 raise ValueError(
-                    "抖音下载需要登录态 Cookie（yt-dlp 提示 Fresh cookies are needed）。"
-                    "请在设置控制台「抖音 cookies」粘贴浏览器导出的 cookies.txt（Netscape 格式，"
-                    "需含 douyin.com 的 cookie），或点击「一键读取浏览器 Cookie」自动获取。"
+                    "抖音下载失败：App 接口与 yt-dlp 均未成功。"
+                    "yt-dlp 走的是已被 Argus 签名校验拦截的 web 接口（其 Fresh cookies 提示不代表 "
+                    "Cookie 失效）。请确认「抖音 cookies」为最新登录态（浏览器登录抖音后点"
+                    "「一键读取浏览器 Cookie」重新读取），或稍后重试。"
+                )
+            if platform == "x" and ("no video" in message.lower() or "sign in" in message.lower()
+                                    or "log in" in message.lower() or "auth" in message.lower()):
+                _remove_cookiefile(cookie_entry)
+                raise ValueError(
+                    "X（Twitter）下载失败：未读取到该推文的视频。X 对未登录访问限制较严，"
+                    "请确认「X cookies」为最新登录态（浏览器登录 x.com 后点「一键读取浏览器 Cookie」"
+                    "重新读取，需含 auth_token），或该推文本身可能无视频/为纯图文。"
                 )
             if "Sign in" in message or "not a bot" in message:
                 _remove_cookiefile(cookie_entry)
