@@ -1,7 +1,10 @@
+import BackLink from './ui/BackLink'
+import ArticleImage from './lake/ArticleImage'
+import ReadingLayout from './lake/ReadingLayout'
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Download, FileDown, Loader2, FileText } from 'lucide-react'
+import { Download, FileDown, Loader2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -14,7 +17,6 @@ function LibraryArticlePage() {
   const { docId, scope } = useParams()
   const [searchParams] = useSearchParams()
   const runId = searchParams.get('run') || ''
-  const navigate = useNavigate()
   const [article, setArticle] = useState(null)
   const [error, setError] = useState(null)
 
@@ -44,20 +46,14 @@ function LibraryArticlePage() {
     if (src && !src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('/')) {
       imageSrc = `/static/${outputDir ? outputDir + '/' : ''}${src}`
     }
-    return <img src={imageSrc} alt={alt} {...props} className="max-w-full h-auto rounded-lg shadow-sm my-4" loading="lazy" />
+    return <ArticleImage src={imageSrc} alt={alt} {...props} className="max-w-full h-auto rounded-lg shadow-sm my-4" loading="lazy" />
   }
 
   return (
     <div className="workspace-page libraryarticlepage">
       <header className="page-toolbar">
         <div className="container mx-auto px-4 py-4 max-w-5xl flex items-center justify-between">
-          <button
-            onClick={() => navigate('/library')}
-            className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>返回文档库</span>
-          </button>
+          <BackLink to="/library" parent="知识库" current="阅读" />
           <div className="flex items-center gap-2">
             {article && (
               <>
@@ -110,16 +106,16 @@ function LibraryArticlePage() {
                 href={article.source_url}
                 target="_blank"
                 rel="noreferrer"
-                className="truncate max-w-[420px] hover:text-primary-600"
+                className="truncate max-w-[26.25rem] hover:text-primary-600"
               >
                 {article.source_url}
               </a>
             </div>
-            <div className="prose prose-lg max-w-none">
+            <ReadingLayout contentKey={article.content}><div className="prose prose-lg max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: imgOverride(article.output_dir) }}>
                 {article.content}
               </ReactMarkdown>
-            </div>
+            </div></ReadingLayout>
           </motion.article>
         )}
       </main>

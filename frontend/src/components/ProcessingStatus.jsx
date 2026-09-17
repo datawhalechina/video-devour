@@ -1,19 +1,19 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Loader2, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { Loader2, CheckCircle, XCircle, Clock, Download, Upload, Film, AudioLines, Mic, ListTree, Image, ScanEye, FileText, CircleCheck } from 'lucide-react'
 import { getTaskStatus } from '../api/videoService'
 
 const PROCESSING_STAGES = [
-  { key: 'downloading', label: '下载视频', icon: '⬇️' },
-  { key: 'uploading', label: '上传视频', icon: '📤' },
-  { key: 'preparing_video', label: '压缩视频', icon: '🎞️' },
-  { key: 'extracting_audio', label: '提取音频', icon: '🎵' },
-  { key: 'asr', label: '语音识别', icon: '🎙️' },
-  { key: 'generating_outline', label: '生成大纲', icon: '📝' },
-  { key: 'extracting_frames', label: '提取关键帧', icon: '🖼️' },
-  { key: 'vlm_analysis', label: 'VLM 分析', icon: '🤖' },
-  { key: 'generating_report', label: '生成报告', icon: '📄' },
-  { key: 'completed', label: '完成', icon: '✅' }
+  { key: 'downloading', label: '下载视频', icon: Download },
+  { key: 'uploading', label: '上传视频', icon: Upload },
+  { key: 'preparing_video', label: '压缩视频', icon: Film },
+  { key: 'extracting_audio', label: '提取音频', icon: AudioLines },
+  { key: 'asr', label: '语音识别', icon: Mic },
+  { key: 'generating_outline', label: '生成大纲', icon: ListTree },
+  { key: 'extracting_frames', label: '提取关键帧', icon: Image },
+  { key: 'vlm_analysis', label: 'VLM 分析', icon: ScanEye },
+  { key: 'generating_report', label: '生成报告', icon: FileText },
+  { key: 'completed', label: '完成', icon: CircleCheck }
 ]
 
 function ProcessingStatus({ taskId, onComplete, onCancel }) {
@@ -98,8 +98,10 @@ function ProcessingStatus({ taskId, onComplete, onCancel }) {
   const isError = status.stage === 'error'
   const isCompleted = status.stage === 'completed'
 
+  if (!taskId) return <div className="lake-empty"><Film size={32} /><h2>还没有正在处理的视频</h2><p>添加一段视频，开始整理你的知识。</p><button onClick={onCancel} className="lake-primary">添加视频</button></div>
+
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="lake-processing max-w-4xl mx-auto">
       {/* 状态卡片 */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
@@ -132,7 +134,7 @@ function ProcessingStatus({ taskId, onComplete, onCancel }) {
         {/* 进度条 */}
         {!isError && !isCompleted && (
           <div className="mb-8">
-            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+            <div role="progressbar" aria-label="视频整理进度" aria-valuenow={status.progress} aria-valuemin={0} aria-valuemax={100} className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
               <motion.div
                 className="h-full bg-primary-600"
                 initial={{ width: 0 }}
@@ -151,11 +153,11 @@ function ProcessingStatus({ taskId, onComplete, onCancel }) {
         )}
 
         {/* 处理阶段 */}
-        <div className="space-y-4">
+        <div className="lake-processing-stages">
           {PROCESSING_STAGES.map((stage, index) => {
             const isCurrent = index === currentStageIndex
             const isCompleted = index < currentStageIndex
-            const isPending = index > currentStageIndex
+            const StageIcon = stage.icon
 
             return (
               <motion.div
@@ -171,7 +173,7 @@ function ProcessingStatus({ taskId, onComplete, onCancel }) {
                     : 'bg-gray-50'
                 }`}
               >
-                <div className="text-3xl">{stage.icon}</div>
+                <StageIcon className="lake-stage-icon" aria-hidden="true" />
                 <div className="flex-1">
                   <p className={`font-semibold ${
                     isCurrent ? 'text-primary-700' : 
@@ -212,7 +214,7 @@ function ProcessingStatus({ taskId, onComplete, onCancel }) {
         {/* 提示信息 */}
         {!isError && !isCompleted && (
           <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-            <p className="font-semibold mb-1">💡 处理提示</p>
+            <p className="font-semibold mb-1">处理提示</p>
             <p>处理时间取决于视频长度和内容复杂度，请耐心等待。您可以关闭此页面，稍后在历史记录中查看结果。</p>
           </div>
         )}

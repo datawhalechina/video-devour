@@ -1,7 +1,27 @@
+import ContentNavigation from "../shared/reader/ContentNavigation";
+import { LEARNING_KEYS } from "../shared/reader/contentOptions";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Modal } from "antd";
+import { Button } from "../shared/ui/Workspace";
+import { App as AntApp } from "antd";
+import { WorkspaceSelect } from "./ui/Controls";
+import ReadingLayout from "./lake/ReadingLayout";
 import { useState, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
-import { ArrowLeft, Clock, FileText, Image, Edit3, LayoutGrid, FileDown, ChevronDown, ArrowUpRight, Check,
-  Timer, Share2, Network, BookOpen, Link2, Zap, Newspaper, Sparkles, ClipboardCheck } from "lucide-react";
+
+import {
+  Clock,
+  FileText,
+  Image,
+  Edit3,
+  FileDown,
+  ArrowUpRight,
+  Timer,
+  BookOpen,
+  Link2,
+  Zap,
+  Newspaper,
+  Sparkles,
+} from "lucide-react";
 
 const PLATFORM_LABELS = {
   bilibili: "B站",
@@ -11,30 +31,58 @@ const PLATFORM_LABELS = {
 
 // 衍生文体：不在处理流程里预生成，点开时按需生成（结果落盘复用）
 const STYLE_TABS = [
-  { key: "quantum", label: "量子速读", icon: Zap, description: "30 秒抓住大意，附一句可直接发朋友圈的话。" },
-  { key: "wechat", label: "公众号文章", icon: Newspaper, description: "图文成稿，可直接发布。" },
-  { key: "xiaohongshu", label: "小红书笔记", icon: Sparkles, description: "图文笔记，含话题标签。" },
+  {
+    key: "quantum",
+    label: "量子速读",
+    icon: Zap,
+    description: "30 秒抓住大意，附一句可直接发朋友圈的话。",
+  },
+  {
+    key: "wechat",
+    label: "公众号文章",
+    icon: Newspaper,
+    description: "图文成稿，可直接发布。",
+  },
+  {
+    key: "xiaohongshu",
+    label: "小红书笔记",
+    icon: Sparkles,
+    description: "图文笔记，含话题标签。",
+  },
 ];
-const STYLE_KEYS = STYLE_TABS.map(t => t.key);
-import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
+const STYLE_KEYS = STYLE_TABS.map((t) => t.key);
+
 import { triggerDownload, openExternal } from "../utils/helpers";
 import { useConfigGate } from "./ConfigGateProvider";
-import QuizPanel from "./QuizPanel";
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { mermaidMarkdownComponents } from './MermaidBlock';
 
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { mermaidMarkdownComponents } from "./MermaidBlock";
 
-const ReportViewer = ({ report, onBack, error, onRetry }) => {
+const ReportViewer = ({ report, error, onRetry }) => {
+  const { message } = AntApp.useApp();
+  const navigate = useNavigate();
+  const [exportFormat, setExportFormat] = useState("inline");
   // 配置引导：生成类操作（衍生文体/思维导图/知识图谱/学习卡片）在缺 LLM 时先弹引导
   const { guardConfig } = useConfigGate();
-  const [activeTab, setActiveTab] = useState("outline");
-  const [cardLoading, setCardLoading] = useState(false)
-  const [timing, setTiming] = useState(null)
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() =>
+    [
+      "outline",
+      "report",
+      "detailed",
+      "quantum",
+      "wechat",
+      "xiaohongshu",
+    ].includes(searchParams.get("scope"))
+      ? searchParams.get("scope")
+      : "outline",
+  );
+
+  const [timing, setTiming] = useState(null);
   const [timingLoading, setTimingLoading] = useState(false);
-  const [htmlLoading, setHtmlLoading] = useState({});
+
   // 学习测试（单选/多选/判断 + 判题评估）：独立面板，按需打开
-  const [quizOpen, setQuizOpen] = useState(false);
 
   // 衍生文体（量子速读/公众号/小红书）：scope -> 正文；未生成时为 undefined
   const [styles, setStyles] = useState({});
@@ -47,10 +95,14 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
   // 读取服务端已持久化的文体正文；不存在返回 null
   const readStyle = async (scope) => {
     try {
-      const res = await fetch(`/api/library/article/${report.task_id}/${scope}`);
+      const res = await fetch(
+        `/api/library/article/${report.task_id}/${scope}`,
+      );
       if (!res.ok) return null;
       const body = await res.json();
-      return typeof body.content === 'string' && body.content ? body.content : null;
+      return typeof body.content === "string" && body.content
+        ? body.content
+        : null;
     } catch {
       return null;
     }
@@ -62,12 +114,18 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
     if (!report?.task_id) return;
     let cancelled = false;
     (async () => {
-      const entries = await Promise.all(STYLE_KEYS.map(async (key) => [key, await readStyle(key)]));
+      const entries = await Promise.all(
+        STYLE_KEYS.map(async (key) => [key, await readStyle(key)]),
+      );
       if (cancelled) return;
-      const found = Object.fromEntries(entries.filter(([, content]) => content));
-      setStyles(prev => ({ ...found, ...prev }));
+      const found = Object.fromEntries(
+        entries.filter(([, content]) => content),
+      );
+      setStyles((prev) => ({ ...found, ...prev }));
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [report?.task_id]);
 
   // 生成单个文体：先查服务端持久化文件，确实没有才触发生成。
@@ -75,32 +133,43 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
   const ensureStyle = async (scope) => {
     if (styles[scope] !== undefined || styleInFlight.current.has(scope)) return;
     styleInFlight.current.add(scope);
-    setStyleLoading(prev => ({ ...prev, [scope]: true }));
+    setStyleLoading((prev) => ({ ...prev, [scope]: true }));
     try {
       let content = await readStyle(scope);
       if (content === null) {
         // 需要新生成时才检查 LLM 配置（已生成过的直接读，不打扰用户）
         if (!(await guardConfig(["llm"]))) return;
-        const res = await fetch(`/api/library/article/${report.task_id}/${scope}/generate`, { method: 'POST' });
+        const res = await fetch(
+          `/api/library/article/${report.task_id}/${scope}/generate`,
+          { method: "POST" },
+        );
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
           throw new Error(d.detail || `HTTP ${res.status}`);
         }
         content = await readStyle(scope);
-        if (content === null) throw new Error('生成完成但未取到内容');
+        if (content === null) throw new Error("生成完成但未取到内容");
       }
-      setStyles(prev => ({ ...prev, [scope]: content }));
+      setStyles((prev) => ({ ...prev, [scope]: content }));
     } catch (err) {
-      alert(`${STYLE_TABS.find(t => t.key === scope)?.label || scope} 生成失败: ${err.message}`);
+      message.error(
+        `${STYLE_TABS.find((t) => t.key === scope)?.label || scope} 生成失败: ${err.message}`,
+      );
     } finally {
       styleInFlight.current.delete(scope);
-      setStyleLoading(prev => { const next = { ...prev }; delete next[scope]; return next; });
+      setStyleLoading((prev) => {
+        const next = { ...prev };
+        delete next[scope];
+        return next;
+      });
     }
   };
 
   // 三个衍生文体并行发起：点开任一文体时，未生成的三个同时开始，不再逐个等待。
   // 各自独立成败互不影响，服务端按 scope 缓存、重复调用会直接命中磁盘文件。
-  const ensureAllStyles = () => { STYLE_KEYS.forEach(ensureStyle); };
+  const ensureAllStyles = () => {
+    STYLE_KEYS.forEach(ensureStyle);
+  };
 
   const pickTab = (key) => {
     setActiveTab(key);
@@ -108,102 +177,34 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
     if (STYLE_KEYS.includes(key)) ensureAllStyles();
   };
 
-  // 思维导图 / 知识图谱 / 学习卡片：统一用页面内模态预览。
-  // 不用 window.open——应用内浏览器/弹窗拦截会导致静默失败（用户只看到 alert）。
-  const [preview, setPreview] = useState(null)   // { title, url }
-
-  const handleOpenHtml = async (kind) => {
-    if (htmlLoading[kind]) return;
-    const fileName = kind === "mindmap" ? "思维导图" : "知识图谱";
-    const cachedPath = kind === "mindmap" ? "mindmap.html" : "knowledge_graph.html";
-    // 已生成过直接预览；需要新生成时才检查 LLM 配置
-    const cacheUrl = `/static/${report.output_dir}/${cachedPath}`;
-    let cached = false;
-    try {
-      const probe = await fetch(cacheUrl, { method: "HEAD" });
-      cached = probe.ok;
-    } catch { /* 探测失败按未生成处理 */ }
-    if (!cached && !(await guardConfig(["llm"]))) return;
-    setHtmlLoading(prev => ({ ...prev, [kind]: true }));
-    try {
-      const fn = kind === "mindmap" ? generateMindmap : generateKnowledgeGraph;
-      await fn(report.task_id);
-      setPreview({ title: fileName, url: cacheUrl });
-    } catch (err) {
-      alert(`${fileName}生成失败: ${err.message}`);
-    } finally {
-      setHtmlLoading(prev => ({ ...prev, [kind]: false }));
-    }
-  };
-
-  // 生成学习卡片（移植自 light 版），页面内模态预览
-  const handleGenerateCard = async () => {
-    if (cardLoading) return;
-    const cacheUrl = `/static/${report.output_dir}/learning_card.html`;
-    let cached = false;
-    try {
-      const probe = await fetch(cacheUrl, { method: "HEAD" });
-      cached = probe.ok;
-    } catch { /* 探测失败按未生成处理 */ }
-    if (!cached && !(await guardConfig(["llm"]))) return;
-    setCardLoading(true);
-    try {
-      await generateCard(report.task_id);
-      setPreview({ title: "学习卡片", url: cacheUrl });
-    } catch (err) {
-      alert(`学习卡片生成失败: ${err.message}`);
-    } finally {
-      setCardLoading(false);
-    }
-  };
-
   // 导出大纲+报告为单个 Markdown 文件（移植自 light 版）
   const handleShowTiming = async () => {
-    if (timingLoading) return
-    setTimingLoading(true)
+    if (timingLoading) return;
+    setTimingLoading(true);
     try {
-      const res = await fetch(`/api/task/${report.task_id}/timing`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || '获取失败')
-      setTiming(data)
+      const res = await fetch(`/api/task/${report.task_id}/timing`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "获取失败");
+      setTiming(data);
     } catch (err) {
-      alert(`耗时报告获取失败: ${err.message}`)
+      message.error(`耗时报告获取失败: ${err.message}`);
     } finally {
-      setTimingLoading(false)
+      setTimingLoading(false);
     }
-  }
+  };
 
-  const [exportMenu, setExportMenu] = useState(null)   // 当前展开的导出类型
+  const [exportMenu, setExportMenu] = useState(null); // 当前展开的导出类型
 
   const doExport = (type, mode) => {
     // PDF 是独立格式开关，不是打包模式
-    const url = mode === "pdf"
-      ? `/api/export/${report.task_id}?type=${type}&fmt=pdf`
-      : `/api/export/${report.task_id}?type=${type}&mode=${mode}`;
+    const url =
+      mode === "pdf"
+        ? `/api/export/${report.task_id}?type=${type}&fmt=pdf`
+        : `/api/export/${report.task_id}?type=${type}&mode=${mode}`;
     // 用带 download 属性的 <a> 触发：window.open 在桌面客户端里会静默无反应
     triggerDownload(url);
     setExportMenu(null);
   };
-
-  const exportRef = useRef(null);
-  useEffect(() => {
-    if (!exportMenu) return;
-    const closeOutside = (event) => {
-      if (!exportRef.current?.contains(event.target)) setExportMenu(null);
-    };
-    const closeOnEscape = (event) => {
-      if (event.key === "Escape") {
-        setExportMenu(null);
-        exportRef.current?.querySelector('button')?.focus();
-      }
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [exportMenu]);
 
   // 动态更新页面标题
   useEffect(() => {
@@ -212,7 +213,7 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
     } else {
       document.title = "视频分析报告 | VideoDevour";
     }
-    
+
     // 组件卸载时恢复默认标题
     return () => {
       document.title = "VideoDevour · 视频知识工作台";
@@ -220,7 +221,16 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
   }, [report]);
 
   if (error) {
-    return <div className="report-empty" role="alert"><FileText size={28} /><h2>暂时无法加载报告</h2><p>{error}</p><button className="report-primary-button mt-5" onClick={onRetry}>重新加载</button></div>;
+    return (
+      <div className="report-empty" role="alert">
+        <FileText size={28} />
+        <h2>暂时无法加载报告</h2>
+        <p>{error}</p>
+        <button className="report-primary-button mt-5" onClick={onRetry}>
+          重新加载
+        </button>
+      </div>
+    );
   }
 
   if (!report) {
@@ -228,7 +238,8 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
       <div className="report-loading" role="status" aria-live="polite">
         <div className="eyebrow">VIDEO NOTES</div>
         <p>正在加载视频报告…</p>
-        <div className="report-skeleton" /><div className="report-skeleton short" />
+        <div className="report-skeleton" />
+        <div className="report-skeleton short" />
       </div>
     );
   }
@@ -236,15 +247,15 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
   // 格式化视频时长 - 后端已返回格式化字符串，直接使用
   const formatDuration = (duration) => {
     // 如果是数字，按秒数格式化
-    if (typeof duration === 'number' && !isNaN(duration)) {
+    if (typeof duration === "number" && !isNaN(duration)) {
       const hours = Math.floor(duration / 3600);
       const minutes = Math.floor((duration % 3600) / 60);
       const secs = Math.floor(duration % 60);
-      
+
       if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
       } else {
-        return `${minutes}:${secs.toString().padStart(2, '0')}`;
+        return `${minutes}:${secs.toString().padStart(2, "0")}`;
       }
     }
     // 如果是字符串格式（后端已格式化），直接返回
@@ -253,63 +264,73 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
 
   const handleImageError = (e, originalSrc) => {
     const img = e.target;
-    const currentAttempt = parseInt(img.dataset.attempt || '0');
+    const currentAttempt = parseInt(img.dataset.attempt || "0");
 
     // 外部图片（可能是LLM误加的占位链接）加载失败直接隐藏，不做无意义重试
     if (/^https?:/i.test(originalSrc)) {
-      img.style.display = 'none';
+      img.style.display = "none";
       return;
     }
 
-    if (currentAttempt >= 1 || !report.output_dir || originalSrc.startsWith('/static/')) {
+    if (
+      currentAttempt >= 1 ||
+      !report.output_dir ||
+      originalSrc.startsWith("/static/")
+    ) {
       // 首选路径已失败，无更多可用候选，直接隐藏
-      img.style.display = 'none';
+      img.style.display = "none";
       return;
     }
 
-    img.dataset.attempt = '1';
+    img.dataset.attempt = "1";
     img.src = `/static/${report.output_dir}/${originalSrc}`;
   };
 
   // 渲染Markdown内容
   const renderMarkdown = (content) => {
     if (!content) return <div className="text-gray-500">暂无内容</div>;
-    
-    return (
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        className="prose prose-slate max-w-none"
-        components={{
-          ...mermaidMarkdownComponents,
-          img: ({ src, alt, ...props }) => {
-            // 相对路径 -> 后端静态目录。
-            // 注意：react-markdown v9 会对 URL 做一次百分号编码，这里必须先解码还原，
-            // 再交给浏览器自动编码；若手动 encodeURIComponent 会造成双重编码 404。
-            let imageSrc = src;
-            if (!/^https?:/i.test(src) && !src.startsWith('/')) {
-              let clean = src;
-              try { clean = decodeURIComponent(src); } catch (e) { /* 保持原样 */ }
-              const prefix = report.output_dir
-                ? `/static/${report.output_dir}/`
-                : '/static/';
-              imageSrc = `${prefix}${clean}`;
-            }
 
-            return (
-              <img
-                src={imageSrc}
-                alt={alt}
-                {...props}
-                onError={(e) => handleImageError(e, imageSrc)}
-                className="max-w-full h-auto rounded-lg shadow-sm"
-                loading="lazy"
-              />
-            );
-          }
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+    return (
+      <ReadingLayout contentKey={content}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          className="prose prose-slate max-w-none"
+          components={{
+            ...mermaidMarkdownComponents,
+            img: ({ src, alt, ...props }) => {
+              // 相对路径 -> 后端静态目录。
+              // 注意：react-markdown v9 会对 URL 做一次百分号编码，这里必须先解码还原，
+              // 再交给浏览器自动编码；若手动 encodeURIComponent 会造成双重编码 404。
+              let imageSrc = src;
+              if (!/^https?:/i.test(src) && !src.startsWith("/")) {
+                let clean = src;
+                try {
+                  clean = decodeURIComponent(src);
+                } catch (e) {
+                  /* 保持原样 */
+                }
+                const prefix = report.output_dir
+                  ? `/static/${report.output_dir}/`
+                  : "/static/";
+                imageSrc = `${prefix}${clean}`;
+              }
+
+              return (
+                <img
+                  src={imageSrc}
+                  alt={alt}
+                  {...props}
+                  onError={(e) => handleImageError(e, imageSrc)}
+                  className="max-w-full h-auto rounded-lg shadow-sm"
+                  loading="lazy"
+                />
+              );
+            },
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </ReadingLayout>
     );
   };
 
@@ -327,34 +348,70 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
   };
 
   const tabs = [
-    { key: "outline", label: "图文大纲", icon: Image, content: report.detailed_outline, description: "沿着核心观点，快速回顾视频内容。" },
-    { key: "report", label: "精简报告", icon: FileText, content: report.final_report, description: "提炼重点，留下值得记住的内容。" },
-    { key: "detailed", label: "详细报告", icon: BookOpen, content: report.detailed_report, description: "对照视频原文与整理笔记，深入理解每一个观点。" },
-    ...STYLE_TABS.map(t => ({ ...t, content: styles[t.key] })),
+    {
+      key: "outline",
+      label: "图文大纲",
+      icon: Image,
+      content: report.detailed_outline,
+      description: "沿着核心观点，快速回顾视频内容。",
+    },
+    {
+      key: "report",
+      label: "精简报告",
+      icon: FileText,
+      content: report.final_report,
+      description: "提炼重点，留下值得记住的内容。",
+    },
+    {
+      key: "detailed",
+      label: "详细报告",
+      icon: BookOpen,
+      content: report.detailed_report,
+      description: "对照视频原文与整理笔记，深入理解每一个观点。",
+    },
+    ...STYLE_TABS.map((t) => ({ ...t, content: styles[t.key] })),
   ];
-  const currentTab = tabs.find(tab => tab.key === activeTab);
+  const currentTab = tabs.find((tab) => tab.key === activeTab);
   // 导出下拉仅列分析报告：衍生文体走各自的下载入口
-  const exportTabs = tabs.filter(tab => !STYLE_KEYS.includes(tab.key));
+  const exportTabs = tabs.filter((tab) => !STYLE_KEYS.includes(tab.key));
   const isStyleTab = STYLE_KEYS.includes(activeTab);
   const sourceTitle = report.video_name || report.fileName || "视频分析报告";
-  const topicTags = [...sourceTitle.matchAll(/(?:^|\s)(#[^\s#]+)/g)].map(match => match[1]);
-  const displayTitle = sourceTitle.replace(/(?:^|\s)#[^\s#]+/g, '').trim() || sourceTitle;
+  const topicTags = [...sourceTitle.matchAll(/(?:^|\s)(#[^\s#]+)/g)].map(
+    (match) => match[1],
+  );
+  const displayTitle =
+    sourceTitle.replace(/(?:^|\s)#[^\s#]+/g, "").trim() || sourceTitle;
 
   return (
-    <div className="report-page">
-      <div className="report-navigation">
-        <button onClick={onBack} className="report-back"><ArrowLeft size={16} /> 返回处理记录</button>
-        <span className="report-complete"><Check size={13} /> 已完成解析</span>
-      </div>
-
+    <div className="vd-page vd-report">
       <header className="report-heading">
-        <div className="eyebrow">VIDEO NOTES / 视频报告</div>
         <h1>{displayTitle}</h1>
-        {topicTags.length > 0 && <div className="report-title-tags">{topicTags.map((tag, index) => <span key={`${tag}-${index}`}>{tag}</span>)}</div>}
+        {topicTags.length > 0 && (
+          <div className="report-title-tags">
+            {topicTags.map((tag, index) => (
+              <span key={`${tag}-${index}`}>{tag}</span>
+            ))}
+          </div>
+        )}
         <div className="report-metadata">
-          <span className="report-platform">{PLATFORM_LABELS[report.platform] || "本地视频"}</span>
-          <span><Clock size={14} /> {formatDuration(report.duration)}</span>
-          <span><FileText size={14} /> {report.created_at ? new Date(report.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : "时间未知"}</span>
+          <span className="report-platform">
+            {PLATFORM_LABELS[report.platform] || "本地视频"}
+          </span>
+          <span>
+            <Clock size={14} /> {formatDuration(report.duration)}
+          </span>
+          <span>
+            <FileText size={14} />{" "}
+            {report.created_at
+              ? new Date(report.created_at).toLocaleString("zh-CN", {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "时间未知"}
+          </span>
           {report.source_url && (
             <a
               href={report.source_url}
@@ -375,187 +432,173 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
       </header>
 
       <section className="report-tools" aria-label="报告工具">
-        <div className="report-tool-group">
-          <span className="report-tool-label">拓展学习</span>
-          <button onClick={handleGenerateCard} disabled={cardLoading} className="report-tool-button">
-            <LayoutGrid size={16} /> {cardLoading ? "生成中…" : "学习卡片"}
-          </button>
-          <button onClick={() => handleOpenHtml("mindmap")} disabled={htmlLoading.mindmap} className="report-tool-button">
-            <Share2 size={16} /> {htmlLoading.mindmap ? "生成中…" : "思维导图"}
-          </button>
-          <button onClick={() => handleOpenHtml("graph")} disabled={htmlLoading.graph} className="report-tool-button">
-            <Network size={16} /> {htmlLoading.graph ? "生成中…" : "知识图谱"}
-          </button>
-          <button onClick={() => setQuizOpen(true)} className="report-tool-button">
-            <ClipboardCheck size={16} /> 测试习题
-          </button>
-        </div>
         <div className="report-tool-group report-file-tools">
-          <button onClick={handleShowTiming} disabled={timingLoading} className="report-tool-button report-timing-button">
+          <button
+            onClick={handleShowTiming}
+            disabled={timingLoading}
+            className="report-tool-button report-timing-button"
+          >
             <Timer size={16} /> {timingLoading ? "加载中…" : "耗时分析"}
           </button>
-          <div className="report-export" ref={exportRef}>
-            <button onClick={() => setExportMenu(exportMenu ? null : activeTab)} aria-expanded={!!exportMenu} aria-controls="report-export-options" className="report-primary-button">
-              <FileDown size={16} /> 导出报告 <ChevronDown size={14} />
-            </button>
-            {exportMenu && (
-              <div id="report-export-options" className="report-export-panel">
-                <label htmlFor="export-document-type">选择导出内容</label>
-                <select id="export-document-type" value={exportMenu} onChange={event => setExportMenu(event.target.value)}>
-                  {exportTabs.map(tab => <option key={tab.key} value={tab.key}>{tab.label}</option>)}
-                </select>
-                <button onClick={() => doExport(exportMenu, "inline")}>
-                  <FileText size={18} /><span><strong>Markdown 单文件</strong><small>内嵌图片，便于分享与阅读</small></span><ArrowUpRight size={14} />
+          <Button variant="primary" onClick={() => setExportMenu(activeTab)}>
+            <FileDown />
+            导出报告
+          </Button>
+          <Modal
+            className="vd-modal"
+            title="导出报告"
+            open={!!exportMenu}
+            onCancel={() => setExportMenu(null)}
+            footer={null}
+            centered
+            width="25rem"
+          >
+            <label htmlFor="export-document-type">选择文档类型</label>
+            <WorkspaceSelect
+              id="export-document-type"
+              value={exportMenu}
+              onChange={setExportMenu}
+              options={exportTabs.map((tab) => ({
+                value: tab.key,
+                label: tab.label,
+              }))}
+            />
+            <p className="vd-muted">选择导出格式</p>
+            <div className="vd-format-options">
+              {[
+                ["inline", "Markdown"],
+                ["pdf", "PDF"],
+                ["zip", "ZIP"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  aria-pressed={exportFormat === key}
+                  onClick={() => setExportFormat(key)}
+                >
+                  <FileText size={24} />
+                  {label}
                 </button>
-                <button onClick={() => doExport(exportMenu, "zip")}>
-                  <FileDown size={18} /><span><strong>ZIP 原图打包</strong><small>Markdown 与原始图片一并保存</small></span><ArrowUpRight size={14} />
-                </button>
-                <button onClick={() => doExport(exportMenu, "pdf")}>
-                  <FileDown size={18} /><span><strong>PDF 文档</strong><small>图文排版，适合打印与分享</small></span><ArrowUpRight size={14} />
-                </button>
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+            <div className="vd-modal-actions">
+              <Button onClick={() => setExportMenu(null)}>取消</Button>
+              <Button
+                variant="primary"
+                onClick={() => doExport(exportMenu, exportFormat)}
+              >
+                导出
+              </Button>
+            </div>
+          </Modal>
         </div>
       </section>
 
-        {/* 内嵌预览模态（思维导图 / 知识图谱 / 学习卡片） */}
-        {quizOpen && (
-          <QuizPanel taskId={report.task_id} onClose={() => setQuizOpen(false)} />
-        )}
-        {preview && (
-          <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4"
-               onClick={() => setPreview(null)}>
-            <div className="bg-white rounded-xl shadow-2xl w-full h-full max-w-[95vw] max-h-[92vh] flex flex-col overflow-hidden"
-                 onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0">
-                <h3 className="text-base font-bold text-gray-900">{preview.title}</h3>
-                <div className="flex items-center gap-2">
-                  <a href={preview.url} target="_blank" rel="noreferrer"
-                     onClick={(e) => {
-                       // 交给系统浏览器：客户端内直接导航会把 SPA 替掉且无法返回
-                       e.preventDefault();
-                       openExternal(preview.url);
-                     }}
-                     className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                    浏览器打开
-                  </a>
-                  <button onClick={() => setPreview(null)}
-                          className="px-3 py-1.5 rounded-lg bg-gray-800 text-white text-xs font-medium hover:bg-gray-900">
-                    关闭
-                  </button>
-                </div>
+      <Modal
+        className="vd-modal"
+        title="处理耗时分析"
+        open={!!timing}
+        onCancel={() => setTiming(null)}
+        footer={null}
+        centered
+        width="30rem"
+      >
+        <div className="vd-timing-rows">
+          {(timing?.top_slowest || []).map((stage, index) => (
+            <div key={index}>
+              <span>{stage.name}</span>
+              <div className="vd-progress">
+                <i
+                  style={{
+                    width: `${(stage.total / (timing?.top_slowest?.[0]?.total || 1)) * 100}%`,
+                  }}
+                />
               </div>
-              <iframe
-                key={preview.url}
-                src={preview.url}
-                title={preview.title}
-                className="flex-1 w-full border-0 bg-white"
-              />
+              <small>{Number(stage.total).toFixed(1)} 秒</small>
             </div>
-          </div>
+          ))}
+        </div>
+        <div className="vd-timing-total">
+          总耗时{" "}
+          <strong>
+            {Number(timing?.summary?.total_elapsed || 0).toFixed(1)} 秒
+          </strong>
+        </div>
+        {timing?.timing_url && (
+          <a href={timing.timing_url} target="_blank" rel="noreferrer">
+            查看完整报告
+          </a>
         )}
-
-        {/* 耗时分析面板 */}
-        {timing && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-            className="report-timing-panel bg-white rounded-xl border border-gray-200 p-6"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                <Timer className="w-5 h-5 text-primary-600" />
-                耗时分析
-                <span className="text-xs font-normal text-gray-400">
-                  总耗时 {timing.summary?.total_elapsed}s
-                </span>
-              </h3>
-              <div className="flex items-center gap-2">
-                <a href={timing.timing_url} target="_blank" rel="noreferrer"
-                   className="text-xs text-primary-600 hover:underline">查看完整报告</a>
-                <button onClick={() => setTiming(null)}
-                        className="text-xs text-gray-400 hover:text-gray-600">关闭</button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              {(timing.top_slowest || []).map((p, i) => {
-                const maxTotal = timing.top_slowest[0]?.total || 1
-                return (
-                  <div key={i}>
-                    <div className="flex items-center justify-between text-xs mb-0.5">
-                      <span className="text-gray-700">
-                        {p.name}
-                        <span className="ml-2 text-gray-400">{p.category}</span>
-                        {p.count > 1 && <span className="ml-2 text-gray-400">×{p.count}</span>}
-                      </span>
-                      <span className="text-gray-600 font-medium">
-                        {p.total.toFixed(2)}s
-                        {p.count > 1 && <span className="text-gray-400 ml-1">(avg {p.avg.toFixed(2)}s)</span>}
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-primary-600 rounded-full"
-                           style={{ width: `${Math.max(2, (p.total / maxTotal) * 100)}%` }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <p className="mt-4 text-xs text-gray-400">
-              报告同时落盘在任务目录：timing_report.json（明细）/ timing_summary.txt（摘要）
-            </p>
-          </motion.div>
-        )}
+      </Modal>
 
       <section className="report-reader">
         <div className="report-reader-toolbar">
-          <div className="report-tabs" role="tablist" aria-label="报告内容" onKeyDown={event => {
-            const directions = { ArrowRight: 1, ArrowLeft: -1 };
-            let index = tabs.findIndex(tab => tab.key === activeTab);
-            if (event.key in directions) index = (index + directions[event.key] + tabs.length) % tabs.length;
-            else if (event.key === 'Home') index = 0;
-            else if (event.key === 'End') index = tabs.length - 1;
-            else return;
-            event.preventDefault();
-            setActiveTab(tabs[index].key);
-            pickTab(tabs[index].key);
-            event.currentTarget.querySelectorAll('[role="tab"]')[index].focus();
-          }}>
-            {tabs.map(({ key, label, icon: Icon }) => (
-              <button key={key} id={`report-tab-${key}`} role="tab" aria-selected={activeTab === key}
-                aria-controls="report-content" tabIndex={activeTab === key ? 0 : -1}
-                onClick={() => pickTab(key)}>
-                <Icon size={16} /><span>{label}</span>
-                {STYLE_KEYS.includes(key) && styles[key] === undefined && !styleLoading[key] && (
-                  <em className="report-tab-pending">生成</em>
-                )}
-                {styleLoading[key] && <em className="report-tab-pending">生成中…</em>}
-              </button>
-            ))}
-          </div>
+          <ContentNavigation
+            value={activeTab}
+            onChange={(key) =>
+              LEARNING_KEYS.includes(key)
+                ? navigate(`/learn/${report.task_id}/${key}`, {
+                    state: { reader: { path: `/report/${report.task_id}` } },
+                  })
+                : pickTab(key)
+            }
+          />
           {isStyleTab ? (
             <div className="report-style-tools">
-              <a href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=md`}
-                 download=""
-                 className="report-tool-button"><FileText size={15} /> 下载 .md</a>
-              <a href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=pdf`}
-                 download=""
-                 className="report-tool-button"><FileDown size={15} /> 下载 PDF</a>
+              <a
+                href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=md`}
+                download=""
+                className="report-tool-button"
+              >
+                <FileText size={15} /> 下载 .md
+              </a>
+              <a
+                href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=pdf`}
+                download=""
+                className="report-tool-button"
+              >
+                <FileDown size={15} /> 下载 PDF
+              </a>
             </div>
           ) : (
-            <button onClick={() => handleEdit(activeTab)} className="report-edit-button"><Edit3 size={15} /> 编辑报告</button>
+            <button
+              onClick={() => handleEdit(activeTab)}
+              className="report-edit-button"
+            >
+              <Edit3 size={15} /> 编辑报告
+            </button>
           )}
         </div>
-        <div id="report-content" role="tabpanel" aria-labelledby={`report-tab-${activeTab}`} tabIndex={0} className="report-content">
-          <p className="report-reading-note"><BookOpen size={14} /> {currentTab.description}</p>
+        <div
+          id="report-content"
+          role="tabpanel"
+          aria-label={currentTab.label}
+          tabIndex={0}
+          className="report-content"
+        >
+          <p className="report-reading-note">
+            <BookOpen size={14} /> {currentTab.description}
+          </p>
           <article className="report-prose">
             {styleLoading[activeTab] ? (
-              <div className="report-empty"><Timer size={28} /><h2>正在生成{currentTab.label}…</h2><p>基于已有报告改写，通常几秒到半分钟。</p></div>
-            ) : currentTab.content ? renderMarkdown(currentTab.content) : (
-              <div className="report-empty"><FileText size={28} /><h2>暂时没有{currentTab.label}</h2><p>该任务尚未生成这份内容，可以先查看其他报告。</p></div>
+              <div className="report-empty">
+                <Timer size={28} />
+                <h2>正在生成{currentTab.label}…</h2>
+                <p>基于已有报告改写，通常几秒到半分钟。</p>
+              </div>
+            ) : currentTab.content ? (
+              renderMarkdown(currentTab.content)
+            ) : (
+              <div className="report-empty">
+                <FileText size={28} />
+                <h2>暂时没有{currentTab.label}</h2>
+                <p>该任务尚未生成这份内容，可以先查看其他报告。</p>
+              </div>
             )}
           </article>
-          <footer className="report-reading-footer"><span>VideoDevour</span><span>从视频中汲取知识，让思考持续生长。</span></footer>
+          <footer className="report-reading-footer">
+            <span>VideoDevour</span>
+            <span>从视频中汲取知识，让思考持续生长。</span>
+          </footer>
         </div>
       </section>
     </div>

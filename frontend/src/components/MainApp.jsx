@@ -207,19 +207,16 @@ function MainApp({ initialView = "upload" }) {
     }
   }, [currentTask]);
 
+  if (currentView === "history") return <HistoryList onViewReport={handleViewReport} onBack={handleBackToUpload} onBackToProcessing={handleTaskDeleted} currentTask={currentTask}/>
+
+  if (currentView === "upload") return <VideoUpload onUploadSuccess={handleUploadSuccess} onViewHistory={handleViewHistory} currentTask={currentTask} onBackToProcessing={handleBackToProcessing}/>
+
+  if (currentView === "report") return <ReportViewer report={selectedReport} onBack={handleViewHistory} error={reportError} onRetry={() => setReportRetry(value => value + 1)}/>
+
   return (
     <div className="workspace-page flex flex-col">
       <main className="container mx-auto px-4 py-8 max-w-7xl flex-grow">
         <AnimatePresence mode="wait">
-          {currentView === "upload" && (
-            <VideoUpload
-              onUploadSuccess={handleUploadSuccess}
-              onViewHistory={handleViewHistory}
-              currentTask={currentTask}
-              onBackToProcessing={handleBackToProcessing}
-            />
-          )}
-
           {currentView === "processing" && (
             <motion.div
               key="processing"
@@ -236,34 +233,8 @@ function MainApp({ initialView = "upload" }) {
             </motion.div>
           )}
 
-          {currentView === "report" && (
-            <motion.div
-              key="report"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-            >
-              <ReportViewer report={selectedReport} onBack={handleViewHistory} error={reportError} onRetry={() => setReportRetry(value => value + 1)} />
-            </motion.div>
-          )}
 
-          {currentView === "history" && (
-            <motion.div
-              key="history"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-            >
-              <HistoryList
-              onViewReport={handleViewReport}
-              onBack={handleBackToUpload}
-              onBackToProcessing={handleTaskDeleted}
-              currentTask={currentTask}
-            />
-            </motion.div>
-          )}
+
         </AnimatePresence>
       </main>
 

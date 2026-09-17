@@ -1,0 +1,28 @@
+/* 所有尺寸、材质与主题色从这里进入组件。 */
+:root {
+  --vd-ink: #20242d;
+  --vd-muted: #7e8391;
+  --vd-line: rgb(100 113 135 / 0.14);
+  --vd-glass-rgb: 245 250 255;
+  --vd-panel-rgb: 255 255 255;
+  --vd-caption-rgb: 35 54 68;
+  --vd-bg: url("/lake/background.png");
+  --vd-accent: #22262e;
+  --vd-success: #4e7050;
+  --vd-danger: #bf5b40;
+  --vd-radius: 1.25rem;
+  --vd-control-radius: 1.75rem;
+  --vd-page-gap: clamp(1.5rem, 3.5vw, 3.75rem);
+  --vd-page-top: 4.75rem;
+  --vd-title-size: clamp(1.875rem, 2.65vw, 2.75rem);
+  --vd-body-size: 0.9375rem;
+  --vd-shell: rgb(var(--vd-glass-rgb) / var(--glass-alpha, 0.76));
+  --vd-panel: rgb(var(--vd-panel-rgb) / var(--panel-alpha, 0.83));
+  --vd-soft: rgb(var(--vd-panel-rgb) / 0.45);
+  --vd-caption: rgb(var(--vd-caption-rgb) / var(--caption-alpha, 0.64));
+}
+:root[data-ui-theme="coast"] {
+  --vd-glass-rgb: 255 250 244;
+  --vd-caption-rgb: 78 65 51;
+  --vd-bg: url("/coast/background.png");
+}

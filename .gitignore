@@ -47,3 +47,6 @@ downloads/
 
 # 图标生成的中间产物（.icns/.ico/主图已入库，iconset 只是临时目录）
 desktop/assets/VideoDevour.iconset/
+
+# Isolated UI preview data
+.ui-fixtures/

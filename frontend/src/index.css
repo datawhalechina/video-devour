@@ -15,14 +15,14 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 20rem;
   min-height: 100vh;
 }
 
 /* 自定义滚动条 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 0.5rem;
+  height: 0.5rem;
 }
 
 ::-webkit-scrollbar-track {
@@ -31,7 +31,7 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: #888;
-  border-radius: 4px;
+  border-radius: 0.25rem;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -100,7 +100,7 @@ body {
 @keyframes fade-in-up {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(1.25rem);
   }
   to {
     opacity: 1;
@@ -114,10 +114,10 @@ body {
     transform: translate(0, 0) scale(1);
   }
   33% {
-    transform: translate(30px, -50px) scale(1.1);
+    transform: translate(1.875rem, -3.125rem) scale(1.1);
   }
   66% {
-    transform: translate(-20px, 20px) scale(0.9);
+    transform: translate(-1.25rem, 1.25rem) scale(0.9);
   }
 }
 
@@ -137,9 +137,9 @@ body {
 .bg-grid-pattern {
   background-image: linear-gradient(
       to right,
-      rgba(0, 0, 0, 0.1) 1px,
-      transparent 1px
+      rgba(0, 0, 0, 0.1) 0.0625rem,
+      transparent 0.0625rem
     ),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.1) 1px, transparent 1px);
-  background-size: 20px 20px;
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.1) 0.0625rem, transparent 0.0625rem);
+  background-size: 1.25rem 1.25rem;
 }

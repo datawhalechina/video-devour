@@ -1,0 +1,12 @@
+@import "./tokens.css";
+@import "./shell.css";
+@import "./controls.css";
+@import "./pages/history.css";
+@import "./pages/library.css";
+@import "./pages/settings.css";
+@import "./pages/import.css";
+@import "./pages/learning.css";
+@import "./pages/home.css";
+@import "./pages/upload.css";
+
+@import "./pages/reader.css";
