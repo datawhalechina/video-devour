@@ -177,7 +177,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
             className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:border-primary-400 hover:text-primary-600 transition"
           >
             <Tv className="w-4 h-4" />
-            <span>通过 B站 / YouTube 链接处理</span>
+            <span>通过视频链接处理（B站 / YouTube / 抖音 / X / 视频号）</span>
           </Link>
         </div>
 

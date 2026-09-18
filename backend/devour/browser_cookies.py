@@ -84,6 +84,18 @@ PLATFORMS = {
         "required": ("sessionid", "passport_csrf_token", "ttwid"),
         "format": "netscape",
     },
+    "x": {
+        "label": "X",
+        "title": "登录 X（登录成功后会自动读取并关闭窗口）",
+        "login_url": "https://x.com/i/flow/login",
+        # 登录态 auth_token 写在 .x.com；老账号/跳转可能走 twitter.com，一并覆盖
+        "domains": [".x.com", ".twitter.com"],
+        "query_domain": ".x.com",
+        "field": "x_cookies",
+        # auth_token 是 X 识别登录态、换取媒体地址的核心
+        "required": ("auth_token",),
+        "format": "netscape",
+    },
 }
 
 # 数据库直读用：平台 → (查询域, 设置字段, 关键 cookie 名)
