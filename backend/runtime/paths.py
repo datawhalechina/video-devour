@@ -76,6 +76,42 @@ def subdir(name: str) -> Path:
     return path
 
 
+def media_root() -> Path:
+    """视频存储根：上传与下载缓存的可配置目录。
+
+    优先级：env VIDEO_DEVOUR_MEDIA_DIR > settings.json 的 video_storage_dir > data_root。
+    默认（未配置）返回 data_root，downloads/uploads 行为与旧版完全一致；
+    配置后（如指向外置盘）下载与上传的视频都落到该目录，便于集中管理与磁盘扩容。
+    这里直接读 settings.json 而不 import settings_store，避免循环依赖。
+    """
+    import json as _json
+
+    env = os.getenv("VIDEO_DEVOUR_MEDIA_DIR")
+    if env:
+        p = Path(env).expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    try:
+        sfile = data_root() / "settings.json"
+        if sfile.exists():
+            v = _json.loads(sfile.read_text(encoding="utf-8")).get("video_storage_dir")
+            if v and str(v).strip():
+                p = Path(str(v).strip()).expanduser()
+                p.mkdir(parents=True, exist_ok=True)
+                return p
+    except Exception:
+        pass
+    return data_root()
+
+
+def media_subdir(name: str) -> Path:
+    """media_root 下的子目录（downloads / uploads），确保存在。"""
+    path = media_root() / name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+
 # ---------------------------------------------------------------------------
 # 外部二进制解析
 # ---------------------------------------------------------------------------

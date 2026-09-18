@@ -66,6 +66,11 @@ TASKS_FILE = DATA_ROOT / "tasks.json"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+
+def _upload_dir() -> Path:
+    """上传/链接下载视频的存储目录（可经 settings.video_storage_dir 配置到外置盘）。"""
+    return Path(_rt_paths.media_subdir("uploads"))
+
 # 挂载静态文件服务，用于访问output目录中的图片
 app.mount("/static", StaticFiles(directory=str(OUTPUT_DIR)), name="static")
 
@@ -342,6 +347,7 @@ class SettingsUpdateRequest(BaseModel):
     tts_provider: Optional[str] = None             # stepfun
     tts_model: Optional[str] = None
     tts_voice: Optional[str] = None
+    video_storage_dir: Optional[str] = None        # 视频存储根目录（空=默认 data_root）
 
 
 class SettingsTestRequest(BaseModel):
@@ -728,7 +734,7 @@ async def process_link_video(request: LinkProcessRequest):
     extras_list = _parse_extras(request.extras)
 
     task_id = str(uuid.uuid4())
-    file_path = UPLOAD_DIR / f"{task_id}.mp4"
+    file_path = _upload_dir() / f"{task_id}.mp4"
 
     processing_tasks[task_id] = {
         "task_id": task_id,
@@ -793,7 +799,7 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
 
         # 2) 未命中：正常下载，完成后登记到缓存与映射表
         result = await loop.run_in_executor(
-            None, lambda: download_video(url, str(UPLOAD_DIR), progress_hook=_hook)
+            None, lambda: download_video(url, str(_upload_dir()), progress_hook=_hook)
         )
         downloaded_path = Path(result["file_path"])
         if downloaded_path.resolve() != file_path.resolve():
@@ -886,7 +892,7 @@ async def upload_video(file: UploadFile = File(...), education_level: str = Form
         
         # 保存上传的文件（仍使用task_id作为实际文件名）
         saved_filename = f"{task_id}{file_extension}"
-        file_path = UPLOAD_DIR / saved_filename
+        file_path = _upload_dir() / saved_filename
         
         # 读取并保存文件内容
         content = await file.read()
@@ -1952,6 +1958,20 @@ async def synthesize_speech(req: TTSRequest):
         logging.error(f"语音合成失败: {e}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"语音合成失败: {e}")
     return Response(content=audio, media_type="audio/mpeg")
+
+
+@app.get("/api/media/paths")
+async def media_paths():
+    """当前生效的视频存储路径（供设置页展示与 MCP/skill 发现视频源）。"""
+    from backend.algorithm.settings_store import load_settings
+    configured = (load_settings().get("video_storage_dir") or "").strip()
+    return {
+        "configured": configured,
+        "is_default": not configured,
+        "media_root": str(_rt_paths.media_root()),
+        "downloads": str(_rt_paths.media_subdir("downloads")),
+        "uploads": str(_rt_paths.media_subdir("uploads")),
+    }
 
 
 @app.get("/api/asr/offline-check")

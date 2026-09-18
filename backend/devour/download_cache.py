@@ -40,8 +40,17 @@ def _data_root() -> Path:
         return PROJECT_ROOT
 
 
+def _media_subdir(name: str) -> Path:
+    """视频存储根下的子目录（可经 settings.video_storage_dir 配置到外置盘）。"""
+    try:
+        from backend.runtime import paths as _rt_paths
+        return Path(_rt_paths.media_subdir(name))
+    except Exception:
+        return _data_root() / name
+
+
 def cache_dir() -> Path:
-    d = _data_root() / "downloads"
+    d = _media_subdir("downloads")
     d.mkdir(parents=True, exist_ok=True)
     return d
 

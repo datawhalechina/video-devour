@@ -35,10 +35,26 @@ function SettingsPage() {
   const [cacheInfo, setCacheInfo] = useState(null)
   const [offlineCheck, setOfflineCheck] = useState(null)
   const [error, setError] = useState(null)
+  const [mediaPaths, setMediaPaths] = useState(null)
 
   useEffect(() => {
     loadSettings()
+    fetch('/api/media/paths').then(r => r.ok ? r.json() : null).then(setMediaPaths).catch(() => {})
   }, [])
+
+  // 桌面端可视化选择视频存储目录
+  const pickStorageDir = async () => {
+    if (!isDesktopClient()) return
+    try {
+      const bridge = window.pywebview?.api
+      const dir = bridge?.pick_directory ? await bridge.pick_directory() : null
+      if (dir) {
+        setField('video_storage_dir', dir)
+        const r = await fetch('/api/media/paths')
+        if (r.ok) setMediaPaths(await r.json())
+      }
+    } catch (e) { /* 忽略 */ }
+  }
 
   const loadSettings = async () => {
     try {
@@ -60,6 +76,7 @@ function SettingsPage() {
         vlm_model_type: data.vlm_model_type,
         tts_model: data.tts_model || '',
         tts_voice: data.tts_voice || '',
+        video_storage_dir: data.video_storage_dir || '',
         default_education_level: data.default_education_level,
 
         wechat_yuanbao_cookie: data.wechat_yuanbao_cookie || '',
@@ -144,6 +161,7 @@ function SettingsPage() {
         x_cookies: data.x_cookies || prev.x_cookies,
         tts_model: data.tts_model || prev.tts_model,
         tts_voice: data.tts_voice || prev.tts_voice,
+        video_storage_dir: data.video_storage_dir ?? prev.video_storage_dir,
       }))
     } catch (err) {
       setCookieImport({ loading: false, message: `读取失败: ${err.message}`, attempts: [] })
@@ -629,6 +647,37 @@ function SettingsPage() {
                 ))}
               </div>
             </div>
+          </div>
+        </motion.section>
+
+        {/* 视频存储地址 */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.19 }}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
+        >
+          <h2 className="text-base font-bold text-gray-900 mb-2">视频存储地址</h2>
+          <p className="text-xs text-gray-500 leading-relaxed mb-4">
+            上传与下载的视频统一存放在此目录，可指向外置盘以节省系统盘空间。留空则使用默认位置；
+            修改后新下载/上传的视频落到新目录（已有文件不移动）。
+          </p>
+          <div>
+            <label className={labelClass}>存储目录（留空 = 默认）</label>
+            <div className="flex items-center gap-2">
+              <input type="text" value={form.video_storage_dir || ''}
+                onChange={(e) => setField('video_storage_dir', e.target.value)}
+                placeholder="默认：数据目录/downloads 与 uploads" className={inputClass} />
+              {isDesktopClient() && (
+                <button type="button" onClick={pickStorageDir}
+                  className="flex-shrink-0 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50">浏览…</button>
+              )}
+            </div>
+            {mediaPaths && (
+              <div className="mt-2 text-xs text-gray-500 space-y-0.5">
+                <div>当前生效根目录：<span className="font-mono text-gray-700">{mediaPaths.media_root}</span>{mediaPaths.is_default && '（默认）'}</div>
+                <div>下载缓存：<span className="font-mono">{mediaPaths.downloads}</span></div>
+                <div>上传目录：<span className="font-mono">{mediaPaths.uploads}</span></div>
+              </div>
+            )}
           </div>
         </motion.section>
 

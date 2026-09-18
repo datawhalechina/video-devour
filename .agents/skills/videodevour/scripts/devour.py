@@ -441,6 +441,26 @@ def cmd_viz(args, kind: str):
         print("已在浏览器打开")
 
 
+def cmd_list(args):
+    """列出视频存储目录里待处理的本地视频（作为信息源，供选一个用 process 处理）。"""
+    home = project_home(args.home)
+    setup_project(home)
+    from backend.runtime import paths as _rt
+    exts = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".flv", ".m4v")
+    items = []
+    for src in ("downloads", "uploads"):
+        d = _rt.media_subdir(src)
+        if not d.exists():
+            continue
+        for f in sorted(d.iterdir()):
+            if f.is_file() and f.suffix.lower() in exts:
+                st = f.stat()
+                items.append({"file": str(f), "source": src,
+                              "size_mb": round(st.st_size / 1024 / 1024, 1),
+                              "mtime": st.st_mtime})
+    print(json.dumps({"count": len(items), "videos": items}, ensure_ascii=False, indent=2))
+
+
 def cmd_report(args):
     home = project_home(args.home)
     if args.dir:
@@ -608,6 +628,9 @@ def main():
                       help="抖音链接（douyin.com/video/{id}、v.douyin.com 短链）或含链接的分享文案")
     p_dy.add_argument("--check", action="store_true", help="检查抖音 Cookie 是否已配置")
     p_dy.set_defaults(func=cmd_douyin)
+
+    p_list = sub.add_parser("list", help="列出视频存储目录里待处理的本地视频（信息源）")
+    p_list.set_defaults(func=cmd_list)
 
     p_lib = sub.add_parser("library", help="检索项目本地文档库（历史任务报告/笔记复用）")
     lib_sub = p_lib.add_subparsers(dest="action", required=True)
