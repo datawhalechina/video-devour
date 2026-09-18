@@ -348,6 +348,7 @@ class SettingsUpdateRequest(BaseModel):
     tts_model: Optional[str] = None
     tts_voice: Optional[str] = None
     video_storage_dir: Optional[str] = None        # 视频存储根目录（空=默认 data_root）
+    download_cache_dir: Optional[str] = None       # 下载缓存目录（空=跟随存储根）
 
 
 class SettingsTestRequest(BaseModel):
@@ -1965,11 +1966,13 @@ async def media_paths():
     """当前生效的视频存储路径（供设置页展示与 MCP/skill 发现视频源）。"""
     from backend.algorithm.settings_store import load_settings
     configured = (load_settings().get("video_storage_dir") or "").strip()
+    dl_configured = (load_settings().get("download_cache_dir") or "").strip()
     return {
         "configured": configured,
         "is_default": not configured,
+        "download_cache_configured": dl_configured,
         "media_root": str(_rt_paths.media_root()),
-        "downloads": str(_rt_paths.media_subdir("downloads")),
+        "downloads": str(_rt_paths.download_cache_root()),
         "uploads": str(_rt_paths.media_subdir("uploads")),
     }
 

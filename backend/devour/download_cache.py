@@ -49,8 +49,17 @@ def _media_subdir(name: str) -> Path:
         return _data_root() / name
 
 
+def _download_root() -> Path:
+    """下载缓存目录（可经 settings.download_cache_dir 独立配置）。"""
+    try:
+        from backend.runtime import paths as _rt_paths
+        return Path(_rt_paths.download_cache_root())
+    except Exception:
+        return _media_subdir("downloads")
+
+
 def cache_dir() -> Path:
-    d = _media_subdir("downloads")
+    d = _download_root()
     d.mkdir(parents=True, exist_ok=True)
     return d
 

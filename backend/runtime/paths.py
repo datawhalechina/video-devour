@@ -111,6 +111,32 @@ def media_subdir(name: str) -> Path:
     return path
 
 
+def download_cache_root() -> Path:
+    """下载缓存目录（可独立于视频存储根配置，如放更快的盘）。
+
+    优先级：env VIDEO_DEVOUR_DOWNLOAD_DIR > settings.json 的 download_cache_dir
+    > media_root/downloads > data_root/downloads。默认与 media_subdir("downloads") 一致。
+    """
+    import json as _json
+
+    env = os.getenv("VIDEO_DEVOUR_DOWNLOAD_DIR")
+    if env:
+        p = Path(env).expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    try:
+        sfile = data_root() / "settings.json"
+        if sfile.exists():
+            v = _json.loads(sfile.read_text(encoding="utf-8")).get("download_cache_dir")
+            if v and str(v).strip():
+                p = Path(str(v).strip()).expanduser()
+                p.mkdir(parents=True, exist_ok=True)
+                return p
+    except Exception:
+        pass
+    return media_root() / "downloads"
+
+
 
 # ---------------------------------------------------------------------------
 # 外部二进制解析

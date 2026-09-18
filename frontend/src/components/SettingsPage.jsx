@@ -16,7 +16,7 @@ const PROVIDER_PRESETS = {
   ],
   vlm: [
     { key: 'dashscope', label: 'DashScope 阿里云', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-vl-max', 'qwen-vl-plus'] },
-    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/v1', models: ['step-3.7-flash'] },
+    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/v1', models: ['water18-0910', 'step-3.7-flash'] },
     { key: 'ark', label: '火山方舟', url: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-seed-1-6-flash-250828'] },
     { key: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', models: ['gpt-4o'] },
   ],
@@ -42,14 +42,14 @@ function SettingsPage() {
     fetch('/api/media/paths').then(r => r.ok ? r.json() : null).then(setMediaPaths).catch(() => {})
   }, [])
 
-  // 桌面端可视化选择视频存储目录
-  const pickStorageDir = async () => {
+  // 桌面端可视化选择目录（视频存储根 / 下载缓存目录共用）
+  const pickDir = async (field) => {
     if (!isDesktopClient()) return
     try {
       const bridge = window.pywebview?.api
       const dir = bridge?.pick_directory ? await bridge.pick_directory() : null
       if (dir) {
-        setField('video_storage_dir', dir)
+        setField(field, dir)
         const r = await fetch('/api/media/paths')
         if (r.ok) setMediaPaths(await r.json())
       }
@@ -77,6 +77,7 @@ function SettingsPage() {
         tts_model: data.tts_model || '',
         tts_voice: data.tts_voice || '',
         video_storage_dir: data.video_storage_dir || '',
+        download_cache_dir: data.download_cache_dir || '',
         default_education_level: data.default_education_level,
 
         wechat_yuanbao_cookie: data.wechat_yuanbao_cookie || '',
@@ -162,6 +163,7 @@ function SettingsPage() {
         tts_model: data.tts_model || prev.tts_model,
         tts_voice: data.tts_voice || prev.tts_voice,
         video_storage_dir: data.video_storage_dir ?? prev.video_storage_dir,
+        download_cache_dir: data.download_cache_dir ?? prev.download_cache_dir,
       }))
     } catch (err) {
       setCookieImport({ loading: false, message: `读取失败: ${err.message}`, attempts: [] })
@@ -657,25 +659,38 @@ function SettingsPage() {
         >
           <h2 className="text-base font-bold text-gray-900 mb-2">视频存储地址</h2>
           <p className="text-xs text-gray-500 leading-relaxed mb-4">
-            上传与下载的视频统一存放在此目录，可指向外置盘以节省系统盘空间。留空则使用默认位置；
+            上传视频与下载缓存可分别指定目录，都能指向外置盘以节省系统盘空间。留空则使用默认位置；
             修改后新下载/上传的视频落到新目录（已有文件不移动）。
           </p>
-          <div>
-            <label className={labelClass}>存储目录（留空 = 默认）</label>
-            <div className="flex items-center gap-2">
-              <input type="text" value={form.video_storage_dir || ''}
-                onChange={(e) => setField('video_storage_dir', e.target.value)}
-                placeholder="默认：数据目录/downloads 与 uploads" className={inputClass} />
-              {isDesktopClient() && (
-                <button type="button" onClick={pickStorageDir}
-                  className="flex-shrink-0 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50">浏览…</button>
-              )}
+          <div className="space-y-4">
+            <div>
+              <label className={labelClass}>上传视频目录（留空 = 默认）</label>
+              <div className="flex items-center gap-2">
+                <input type="text" value={form.video_storage_dir || ''}
+                  onChange={(e) => setField('video_storage_dir', e.target.value)}
+                  placeholder="默认：数据目录/uploads" className={inputClass} />
+                {isDesktopClient() && (
+                  <button type="button" onClick={() => pickDir('video_storage_dir')}
+                    className="flex-shrink-0 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50">浏览…</button>
+                )}
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>下载缓存目录（留空 = 跟随上传目录/downloads）</label>
+              <div className="flex items-center gap-2">
+                <input type="text" value={form.download_cache_dir || ''}
+                  onChange={(e) => setField('download_cache_dir', e.target.value)}
+                  placeholder="默认：上传目录/downloads" className={inputClass} />
+                {isDesktopClient() && (
+                  <button type="button" onClick={() => pickDir('download_cache_dir')}
+                    className="flex-shrink-0 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50">浏览…</button>
+                )}
+              </div>
             </div>
             {mediaPaths && (
-              <div className="mt-2 text-xs text-gray-500 space-y-0.5">
-                <div>当前生效根目录：<span className="font-mono text-gray-700">{mediaPaths.media_root}</span>{mediaPaths.is_default && '（默认）'}</div>
-                <div>下载缓存：<span className="font-mono">{mediaPaths.downloads}</span></div>
-                <div>上传目录：<span className="font-mono">{mediaPaths.uploads}</span></div>
+              <div className="text-xs text-gray-500 space-y-0.5">
+                <div>上传目录：<span className="font-mono text-gray-700">{mediaPaths.uploads}</span>{mediaPaths.is_default && '（默认）'}</div>
+                <div>下载缓存：<span className="font-mono">{mediaPaths.downloads}</span>{mediaPaths.download_cache_configured && '（已单独指定）'}</div>
               </div>
             )}
           </div>
