@@ -78,6 +78,33 @@ class DetailedReportTests(unittest.TestCase):
         self.assertFalse(captured["translate"])
         self.assertNotIn("内容翻译", content)
 
+    def test_notes_for_chapter_passes_translate_flag_when_split(self):
+        """长章节分段时 translate 必须传给每段生成与合并（中文视频=False 不应被丢弃）。"""
+        long_raw = "\n".join(
+            f"[{i // 60:02d}:{i % 60:02d}] 第{i}句中文原话，足够长以触发分段。" * 4
+            for i in range(150))
+        captured = {"generate": [], "merge": []}
+
+        def notes_impl(llm, raw, heading, level, translate=True):
+            captured["generate"].append(translate)
+            return "笔记"
+
+        def merge_impl(llm, partials, heading, translate=True):
+            captured["merge"].append(translate)
+            return "合并"
+
+        with patch.object(outline_handler, "_generate_chapter_notes",
+                          side_effect=notes_impl), \
+             patch.object(outline_handler, "_merge_chapter_notes",
+                          side_effect=merge_impl):
+            result = outline_handler._notes_for_chapter(
+                None, long_raw, "第一章", "", translate=False)
+
+        self.assertGreater(len(captured["generate"]), 1)   # 确实触发了分段
+        self.assertEqual(result, "合并")
+        self.assertFalse(any(captured["generate"]))        # 每段都应收到 translate=False
+        self.assertEqual(captured["merge"], [False])       # 合并也应收到 translate=False
+
     def test_non_chinese_dialogue_keeps_translation_section(self):
         """英文原话必须保留「内容翻译」（逐句翻译为中文）。"""
         english = [{"speaker": "S", "text": f"Sentence {i} explains the concept in English.",

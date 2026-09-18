@@ -556,9 +556,10 @@ def _notes_for_chapter(llm, raw, heading, level_instruction, translate=True):
     workers = max(1, min(NOTES_PARALLEL, len(pieces)))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         partials = list(pool.map(
-            lambda piece: _generate_chapter_notes(llm, piece, heading, level_instruction),
+            lambda piece: _generate_chapter_notes(llm, piece, heading, level_instruction,
+                                                  translate),
             pieces))
-    return _merge_chapter_notes(llm, partials, heading)
+    return _merge_chapter_notes(llm, partials, heading, translate)
 
 
 def _build_mindmap(llm, outline):
