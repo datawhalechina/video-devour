@@ -2279,6 +2279,12 @@ async def run_pipeline_with_progress(video_path: str, task_id: str, education_le
     ))
     try:
         result = await asyncio.shield(future)
+        # 工作线程经 call_soon_threadsafe 投递的阶段事件此刻可能仍排在事件循环的
+        # ready 队列中：流水线极快完成时（如输入缺失立即失败），concurrent future
+        # 会在 _chain_future 注册回调前就已完成，shield 发现 future 已 done 会直接
+        # 返回而不挂起协程，事件循环因此没有机会执行这些回调。主动让出一次，
+        # 保证返回前所有已投递的进度/媒体事件都已应用到任务状态。
+        await asyncio.sleep(0)
         return {"success": True, "result": result}
     except asyncio.CancelledError:
         cancelled.set()
