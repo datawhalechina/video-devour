@@ -40,14 +40,20 @@ def _process_single_directory(directory, similarity_threshold=0.8):
         logging.info("该目录下没有找到图片。")
         return
 
-    # First, resize all images
+    # 轻量视频已统一为 720p/10fps（见 media_profile），帧不再无条件对半缩——
+    # 那会把 1280x720 压成 640x360，报告关键帧清晰度减半、VLM 选帧也看着缩半图。
+    # 仅当来源帧超过 720p 时才等比缩到 720p 以内（超大源视频的兜底）。
     for filename in image_files:
         filepath = os.path.join(directory, filename)
         try:
             img = cv2_imread(filepath)
             if img is None: continue
-            resized_img = cv2.resize(img, (img.shape[1] // 2, img.shape[0] // 2), interpolation=cv2.INTER_AREA)
-            cv2.imwrite(filepath, resized_img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            height, width = img.shape[:2]
+            if width > 1280 or height > 720:
+                scale = min(1280 / width, 720 / height)
+                img = cv2.resize(img, (max(2, round(width * scale)), max(2, round(height * scale))),
+                                 interpolation=cv2.INTER_AREA)
+            cv2.imwrite(filepath, img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
         except Exception as e:
             logging.error(f"处理图片 {filepath} 时出错: {e}")
             
