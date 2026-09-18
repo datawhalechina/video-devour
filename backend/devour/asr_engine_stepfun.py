@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 from backend.runtime import paths as _rt_paths
 
-DEFAULT_BASE_URL = "https://api.stepfun.com/step_plan/v1"
+DEFAULT_BASE_URL = "https://api.stepfun.com/v1"
 
 # 单次上传的音频体积上限：官方限制 100MB，留出 base64 膨胀（约 1.33 倍）
 # 与请求体余量后取 60MB —— 16kHz 单声道 16bit ≈ 32KB/s，即约 32 分钟/段

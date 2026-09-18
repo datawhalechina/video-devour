@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Download, FileDown, Loader2, FileText, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Download, FileDown, Loader2, FileText, RefreshCw, Volume2, Square } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -18,6 +18,41 @@ function LibraryArticlePage() {
   const [article, setArticle] = useState(null)
   const [error, setError] = useState(null)
   const [repairing, setRepairing] = useState(false)
+  // 语音朗读（TTS）：阶跃星辰 /audio/speech 合成后播放
+  const [speaking, setSpeaking] = useState(false)
+  const [ttsLoading, setTtsLoading] = useState(false)
+  const audioRef = useRef(null)
+
+  // Markdown → 纯文本（去图片/链接/标记），供 TTS 朗读
+  const toPlainText = (md) => (md || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')       // 图片
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')    // 链接保留文字
+    .replace(/^#{1,6}\s*/gm, '')                // 标题井号
+    .replace(/[*`>_~]/g, '')                    // 强调/引用/删除线标记
+    .replace(/\s+/g, ' ').trim().slice(0, 800)  // 压缩空白并截断（TTS 单次上限）
+
+  const speak = async () => {
+    if (speaking) { audioRef.current?.pause(); audioRef.current = null; setSpeaking(false); return }
+    if (!article || ttsLoading) return
+    setTtsLoading(true)
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: toPlainText(article.content) }),
+      })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || `HTTP ${res.status}`) }
+      const url = URL.createObjectURL(await res.blob())
+      if (!audioRef.current) audioRef.current = new Audio()
+      audioRef.current.src = url
+      audioRef.current.onended = () => { setSpeaking(false) }
+      await audioRef.current.play()
+      setSpeaking(true)
+    } catch (e) {
+      alert(`朗读失败：${e.message}`)
+    } finally {
+      setTtsLoading(false)
+    }
+  }
 
   const load = async (cancelledRef) => {
     const q = runId ? `?run_id=${encodeURIComponent(runId)}` : ''
@@ -83,6 +118,16 @@ function LibraryArticlePage() {
           <div className="flex items-center gap-2">
             {article && (
               <>
+                <button
+                  onClick={speak}
+                  disabled={ttsLoading}
+                  title="调用阶跃星辰 TTS 朗读本文（需在设置页配置阶跃星辰 API Key）"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
+                >
+                  {ttsLoading ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : speaking ? <Square className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                  {speaking ? '停止朗读' : '朗读'}
+                </button>
                 {article.needs_image_repair && (
                   <button
                     onClick={repair}

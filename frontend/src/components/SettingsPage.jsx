@@ -9,14 +9,14 @@ import { captureLogin, isDesktopClient } from '../api/desktopBridge'
 const PROVIDER_PRESETS = {
   llm: [
     { key: 'dashscope', label: 'DashScope 阿里云', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-max', 'qwen-plus', 'qwen-turbo'] },
-    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/step_plan/v1', models: ['step-3.7-flash', 'step-3.5-flash'] },
+    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/v1', models: ['water18-0910', 'step-3.7-flash', 'step-3.5-flash'] },
     { key: 'deepseek', label: 'DeepSeek', url: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-reasoner'] },
     { key: 'ark', label: '火山方舟', url: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-seed-1-6-flash-250828'] },
     { key: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini'] },
   ],
   vlm: [
     { key: 'dashscope', label: 'DashScope 阿里云', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-vl-max', 'qwen-vl-plus'] },
-    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/step_plan/v1', models: ['step-3.7-flash'] },
+    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/v1', models: ['step-3.7-flash'] },
     { key: 'ark', label: '火山方舟', url: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-seed-1-6-flash-250828'] },
     { key: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', models: ['gpt-4o'] },
   ],
@@ -58,6 +58,8 @@ function SettingsPage() {
         vlm_api_key: data.vlm_api_key,
         vlm_api_url: data.vlm_api_url,
         vlm_model_type: data.vlm_model_type,
+        tts_model: data.tts_model || '',
+        tts_voice: data.tts_voice || '',
         default_education_level: data.default_education_level,
 
         wechat_yuanbao_cookie: data.wechat_yuanbao_cookie || '',
@@ -140,6 +142,8 @@ function SettingsPage() {
         bilibili_sessdata: data.bilibili_sessdata || prev.bilibili_sessdata,
         douyin_cookies: data.douyin_cookies || prev.douyin_cookies,
         x_cookies: data.x_cookies || prev.x_cookies,
+        tts_model: data.tts_model || prev.tts_model,
+        tts_voice: data.tts_voice || prev.tts_voice,
       }))
     } catch (err) {
       setCookieImport({ loading: false, message: `读取失败: ${err.message}`, attempts: [] })
@@ -367,6 +371,18 @@ function SettingsPage() {
                   placeholder={form.online_asr_provider === 'stepfun' ? 'stepaudio-2.5-asr' : 'fun-asr-realtime'}
                   className={inputClass}
                 />
+                {form.online_asr_provider === 'stepfun' && (
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <span className="text-xs text-gray-400">快捷选择：</span>
+                    {['stepaudio-2.5-asr', 'stepaudio-3-asr-max'].map((m) => (
+                      <button key={m} type="button" onClick={() => setField('online_asr_model', m)}
+                        className={`px-2.5 py-1 rounded-full text-xs transition ${form.online_asr_model === m ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                        {m}
+                      </button>
+                    ))}
+                    <span className="text-xs text-gray-400">audio-3 系列需账号已开通</span>
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => handleTest('asr')}
@@ -573,6 +589,46 @@ function SettingsPage() {
               rows={5}
               className={`${inputClass} font-mono text-xs`}
             />
+          </div>
+        </motion.section>
+
+        {/* 语音合成 TTS（阶跃星辰 StepFun） */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
+        >
+          <h2 className="text-base font-bold text-gray-900 mb-2">语音合成 TTS（阶跃星辰 StepFun）</h2>
+          <p className="text-xs text-gray-500 leading-relaxed mb-4">
+            用于把报告/笔记朗读为语音，调用阶跃星辰 <code>/audio/speech</code> 接口，复用上方「阶跃星辰」的 API Key。
+            audio-3 系列模型需账号已开通（未开通会提示无权限）。
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>合成模型</label>
+              <input type="text" value={form.tts_model || ''} onChange={(e) => setField('tts_model', e.target.value)}
+                placeholder="stepaudio-2.5-tts" className={inputClass} />
+              <div className="flex flex-wrap gap-2 mt-2">
+                {['stepaudio-2.5-tts', 'stepaudio-3-tts', 'stepaudio-3-gen-preview'].map((m) => (
+                  <button key={m} type="button" onClick={() => setField('tts_model', m)}
+                    className={`px-2.5 py-1 rounded-full text-xs transition ${form.tts_model === m ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>音色 voice</label>
+              <input type="text" value={form.tts_voice || ''} onChange={(e) => setField('tts_voice', e.target.value)}
+                placeholder="cixingnansheng" className={inputClass} />
+              <div className="flex flex-wrap gap-2 mt-2">
+                {['cixingnansheng', 'linshuoboyin', 'cixingnvsheng'].map((v) => (
+                  <button key={v} type="button" onClick={() => setField('tts_voice', v)}
+                    className={`px-2.5 py-1 rounded-full text-xs transition ${form.tts_voice === v ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </motion.section>
 

@@ -339,6 +339,9 @@ class SettingsUpdateRequest(BaseModel):
     default_education_level: Optional[str] = None
     outline_match_strategy: Optional[str] = None   # auto | semantic | string
     preload_asr_on_startup: Optional[bool] = None
+    tts_provider: Optional[str] = None             # stepfun
+    tts_model: Optional[str] = None
+    tts_voice: Optional[str] = None
 
 
 class SettingsTestRequest(BaseModel):
@@ -1917,6 +1920,38 @@ async def clear_download_cache(max_age_days: int = 0, max_total_mb: int = 0):
         max_age_days=max_age_days,
         max_total_bytes=max_total_mb * 1024 * 1024,
     )
+
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: Optional[str] = None
+    model: Optional[str] = None
+    instruction: Optional[str] = None
+
+
+@app.post("/api/tts")
+async def synthesize_speech(req: TTSRequest):
+    """语音合成（TTS）：文本 → 音频。当前支持阶跃星辰 StepFun（/audio/speech）。"""
+    from backend.algorithm.settings_store import load_settings
+    from backend.devour.tts_engine_stepfun import StepFunTTS
+    settings = load_settings()
+    if settings.get("tts_provider", "stepfun") != "stepfun":
+        raise HTTPException(status_code=400, detail="当前仅支持阶跃星辰 StepFun TTS")
+    engine = StepFunTTS(
+        api_key=settings.get("stepfun_api_key") or None,
+        model=req.model or settings.get("tts_model") or "stepaudio-2.5-tts",
+        voice=req.voice or settings.get("tts_voice") or "cixingnansheng",
+    )
+    try:
+        audio = await _run_link_probe(engine.synthesize, text=req.text,
+                                      voice=req.voice, model=req.model,
+                                      instruction=req.instruction)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logging.error(f"语音合成失败: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"语音合成失败: {e}")
+    return Response(content=audio, media_type="audio/mpeg")
 
 
 @app.get("/api/asr/offline-check")

@@ -38,6 +38,10 @@ DEFAULT_SETTINGS = {
     "online_asr_model": "fun-asr-realtime",
     "online_asr_provider": "dashscope",   # dashscope | stepfun
     "stepfun_api_key": "",
+    # TTS 语音合成（阶跃星辰 StepFun /audio/speech）：provider 目前仅 stepfun
+    "tts_provider": "stepfun",
+    "tts_model": "stepaudio-2.5-tts",
+    "tts_voice": "cixingnansheng",
     # LLM（OpenAI 兼容接口）
     "llm_api_key": "",
     "llm_api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -77,6 +81,17 @@ PROVIDER_DEFAULT_ASR_MODEL = {
     "dashscope": "fun-asr-realtime",
     "stepfun": "stepaudio-2.5-asr",
 }
+
+# 各在线 ASR 提供商可选模型（设置页快捷选项；online_asr_model 仍可自由填写）。
+# stepaudio-3-asr-max 等 audio-3 系列需账号已开通，未开通时接口返回 404 model_invalid。
+PROVIDER_ASR_MODELS = {
+    "dashscope": ["fun-asr-realtime"],
+    "stepfun": ["stepaudio-2.5-asr", "stepaudio-3-asr-max"],
+}
+
+# 阶跃星辰 TTS 可选模型与音色（设置页快捷选项；均可自由填写）
+STEPFUN_TTS_MODELS = ["stepaudio-2.5-tts", "stepaudio-3-tts", "stepaudio-3-gen-preview"]
+STEPFUN_TTS_VOICES = ["cixingnansheng", "linshuoboyin", "cixingnvsheng"]
 
 # settings 字段 -> config 模块属性 的映射（仅非空时覆盖 config）
 _SETTINGS_TO_CONFIG = {
