@@ -125,3 +125,27 @@ VIDEO_DEVOUR_DATA_DIR=/tmp/vd-dev python desktop/shell.py
 - 未实现本地会话鉴权（方案 4.2 要求，阶段 B2）
 - 任务仍为内存态 + JSON，无队列与真实阶段事件（阶段 B3/B4）
 - 仅 ad-hoc 签名，正式分发需开发者证书 + 公证
+
+## 打包 / 发版 / 热更新
+
+打包、签名、发版与热更新的经验与坑清单，已沉淀为项目内 skill：
+
+**`.agents/skills/videodevour-desktop/`**
+
+| 文件 | 用途 |
+|------|------|
+| `SKILL.md` | 硬约束、构建环境、常用操作、排错索引 |
+| `references/pitfalls.md` | 20 项打包坑清单（按现象索引，排错先查这里） |
+| `references/release-checklist.md` | 发版 7 步清单（可直接执行） |
+| `references/update-design.md` | 热更新设计（三层可行性、弹窗、边界） |
+| `scripts/verify_bundle.sh` | **发版前校验**：签名 seal / symlink / 架构 / 模块收录 |
+
+```bash
+# 发版前必跑（30 秒内可抓出"已损坏"类问题）
+bash .agents/skills/videodevour-desktop/scripts/verify_bundle.sh \
+  desktop/dist/arm64/VideoDevour.app --expect-arch arm64
+```
+
+> **最重要的一条**：macOS 产物在签名后不得再修改 bundle 内任何文件，
+> 且分发 zip 必须用 `ditto -c -k --keepParent`（保留 ~109 个符号链接）。
+> 违反任一条，用户都会看到「已损坏，无法打开」，且 `xattr -cr` 无效。
