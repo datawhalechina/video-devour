@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { ArrowLeft, Settings, Save, Radio, HardDriveDownload, KeyRound, CheckCircle, XCircle, Loader2, GraduationCap, Globe } from 'lucide-react'
 import { getSettings, updateSettings, testSettings, importCookiesFromBrowser, youtubeEnvCheck } from '../api/settingsService'
 import { captureLogin, isDesktopClient } from '../api/desktopBridge'
+import DirectoryPicker from './DirectoryPicker'
 
 // 供应商预设：点击芯片自动填充接口地址与推荐模型
 const PROVIDER_PRESETS = {
@@ -42,18 +43,30 @@ function SettingsPage() {
     fetch('/api/media/paths').then(r => r.ok ? r.json() : null).then(setMediaPaths).catch(() => {})
   }, [])
 
-  // 桌面端可视化选择目录（视频存储根 / 下载缓存目录共用）
+  // 可视化选择目录（视频存储根 / 下载缓存目录共用）：
+  // 桌面端用原生目录选择器；网页端用服务端目录浏览弹窗（浏览器拿不到绝对路径）
+  const [dirPicker, setDirPicker] = useState(null)   // { field } | null
+
   const pickDir = async (field) => {
-    if (!isDesktopClient()) return
-    try {
-      const bridge = window.pywebview?.api
-      const dir = bridge?.pick_directory ? await bridge.pick_directory() : null
-      if (dir) {
-        setField(field, dir)
-        const r = await fetch('/api/media/paths')
-        if (r.ok) setMediaPaths(await r.json())
-      }
-    } catch (e) { /* 忽略 */ }
+    if (isDesktopClient()) {
+      try {
+        const bridge = window.pywebview?.api
+        const dir = bridge?.pick_directory ? await bridge.pick_directory() : null
+        if (dir) {
+          setField(field, dir)
+          const r = await fetch('/api/media/paths')
+          if (r.ok) setMediaPaths(await r.json())
+        }
+        return
+      } catch { /* 原生选择失败时回退弹窗 */ }
+    }
+    setDirPicker({ field })
+  }
+
+  const applyPickedDir = async (field, dir) => {
+    setField(field, dir)
+    const r = await fetch('/api/media/paths')
+    if (r.ok) setMediaPaths(await r.json())
   }
 
   const loadSettings = async () => {
@@ -669,10 +682,8 @@ function SettingsPage() {
                 <input type="text" value={form.video_storage_dir || ''}
                   onChange={(e) => setField('video_storage_dir', e.target.value)}
                   placeholder="默认：数据目录/uploads" className={inputClass} />
-                {isDesktopClient() && (
-                  <button type="button" onClick={() => pickDir('video_storage_dir')}
-                    className="flex-shrink-0 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50">浏览…</button>
-                )}
+                <button type="button" onClick={() => pickDir('video_storage_dir')}
+                  className="flex-shrink-0 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50">选择路径…</button>
               </div>
             </div>
             <div>
@@ -681,10 +692,8 @@ function SettingsPage() {
                 <input type="text" value={form.download_cache_dir || ''}
                   onChange={(e) => setField('download_cache_dir', e.target.value)}
                   placeholder="默认：上传目录/downloads" className={inputClass} />
-                {isDesktopClient() && (
-                  <button type="button" onClick={() => pickDir('download_cache_dir')}
-                    className="flex-shrink-0 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50">浏览…</button>
-                )}
+                <button type="button" onClick={() => pickDir('download_cache_dir')}
+                  className="flex-shrink-0 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50">选择路径…</button>
               </div>
             </div>
             {mediaPaths && (
@@ -991,7 +1000,13 @@ function SettingsPage() {
               ) : (
                 <p className="text-xs text-gray-400">暂无缓存视频。</p>
               )}
-              <p className="mt-3 text-xs text-gray-400">缓存目录：{cacheInfo.stats.cache_dir}</p>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <p className="text-xs text-gray-400 truncate" title={cacheInfo.stats.cache_dir}>缓存目录：{cacheInfo.stats.cache_dir}</p>
+                <button onClick={() => pickDir('download_cache_dir')}
+                        className="flex-shrink-0 px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium hover:bg-gray-50">
+                  更改缓存目录…
+                </button>
+              </div>
             </>
           ) : (
             <p className="text-xs text-gray-400">加载中…</p>
@@ -1019,6 +1034,14 @@ function SettingsPage() {
           </motion.button>
         </div>
       </main>
+      {dirPicker && (
+        <DirectoryPicker
+          open
+          initialPath={form[dirPicker.field] || mediaPaths?.media_root || ''}
+          onClose={() => setDirPicker(null)}
+          onPick={(dir) => applyPickedDir(dirPicker.field, dir)}
+        />
+      )}
     </div>
   )
 }

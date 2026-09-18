@@ -1977,6 +1977,32 @@ async def media_paths():
     }
 
 
+@app.get("/api/fs/dirs")
+async def list_dirs(path: str = ""):
+    """列出某路径下的子目录（供设置页可视化选择存储目录，网页/桌面通用）。
+
+    只返回目录名（不读文件内容、不返回文件列表），path 缺省时从用户主目录开始。
+    """
+    from pathlib import Path as _P
+    target = _P(path).expanduser() if path.strip() else _P.home()
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"路径不存在: {target}")
+    if not target.is_dir():
+        raise HTTPException(status_code=400, detail=f"不是目录: {target}")
+    dirs = []
+    try:
+        for child in sorted(target.iterdir(), key=lambda c: c.name.lower()):
+            try:
+                if child.is_dir() and not child.name.startswith("."):
+                    dirs.append(child.name)
+            except OSError:
+                continue          # 无权限的条目直接跳过
+    except PermissionError:
+        pass
+    parent = str(target.parent) if target.parent != target else ""
+    return {"path": str(target), "parent": parent, "dirs": dirs}
+
+
 @app.get("/api/asr/offline-check")
 async def offline_asr_check():
     """
