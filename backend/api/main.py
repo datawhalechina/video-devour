@@ -1984,7 +1984,9 @@ async def list_dirs(path: str = ""):
     只返回目录名（不读文件内容、不返回文件列表），path 缺省时从用户主目录开始。
     """
     from pathlib import Path as _P
-    target = _P(path).expanduser() if path.strip() else _P.home()
+    # 强制解析为绝对路径：前端传来的相对段（如 ".."）按调用方工作目录解析会指错位置，
+    # resolve 后 ".." 语义仍正确，且返回值永远是可继续导航的绝对路径。
+    target = _P(path).expanduser().resolve() if path.strip() else _P.home()
     if not target.exists():
         raise HTTPException(status_code=404, detail=f"路径不存在: {target}")
     if not target.is_dir():

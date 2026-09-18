@@ -8,6 +8,7 @@ import { ArrowUp, Check, Folder, Loader2, X } from "lucide-react";
  */
 export default function DirectoryPicker({ open, initialPath = "", onClose, onPick }) {
   const [path, setPath] = useState("");
+  const [parent, setParent] = useState("");
   const [dirs, setDirs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -26,6 +27,9 @@ export default function DirectoryPicker({ open, initialPath = "", onClose, onPic
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
       setPath(data.path);
+      // 记录后端返回的父目录（绝对路径）。「上一级」绝不能发相对路径（如 ".."）：
+      // 后端按其工作目录解析会指到完全无关的位置，且后续导航全部失效。
+      setParent(data.parent || "");
       setDirs(data.dirs || []);
     } catch (e) {
       setError(e.message);
@@ -58,8 +62,9 @@ export default function DirectoryPicker({ open, initialPath = "", onClose, onPic
             <p className="py-6 text-center text-rose-600 text-sm">{error}</p>
           ) : (
             <>
-              <button onClick={() => browse("..")}
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+              <button onClick={() => browse(parent)}
+                      disabled={!parent}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
                 <ArrowUp size={15} className="text-gray-400" /> 上一级
               </button>
               {dirs.map((d) => (
