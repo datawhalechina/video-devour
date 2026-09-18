@@ -74,6 +74,11 @@ DEFAULT_SETTINGS = {
     "bilibili_sessdata": "",
     # 一键读取浏览器 Cookie 时使用的浏览器（空 = 自动按序尝试）
     "cookie_browser": "",
+    # 视频存储地址：上传与下载缓存的根目录，可指向外置盘（空 = 默认 data_root，
+    # 即 data_root/downloads 与 data_root/uploads）。改后新下载/上传的视频落到该目录。
+    "video_storage_dir": "",
+    # 下载缓存目录（可独立于 video_storage_dir，如放更快的盘；空 = video_storage_dir/downloads）
+    "download_cache_dir": "",
 }
 
 # 各在线 ASR 提供商的默认模型名（切换 provider 时用于联动，避免模型名串台）

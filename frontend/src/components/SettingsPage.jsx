@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { ArrowLeft, Settings, Save, Radio, HardDriveDownload, KeyRound, CheckCircle, XCircle, Loader2, GraduationCap, Globe } from 'lucide-react'
 import { getSettings, updateSettings, testSettings, importCookiesFromBrowser, youtubeEnvCheck } from '../api/settingsService'
 import { captureLogin, isDesktopClient } from '../api/desktopBridge'
+import DirectoryPicker from './DirectoryPicker'
 
 // 供应商预设：点击芯片自动填充接口地址与推荐模型
 const PROVIDER_PRESETS = {
@@ -16,7 +17,7 @@ const PROVIDER_PRESETS = {
   ],
   vlm: [
     { key: 'dashscope', label: 'DashScope 阿里云', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-vl-max', 'qwen-vl-plus'] },
-    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/v1', models: ['step-3.7-flash'] },
+    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/v1', models: ['water18-0910', 'step-3.7-flash'] },
     { key: 'ark', label: '火山方舟', url: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-seed-1-6-flash-250828'] },
     { key: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', models: ['gpt-4o'] },
   ],
@@ -35,10 +36,38 @@ function SettingsPage() {
   const [cacheInfo, setCacheInfo] = useState(null)
   const [offlineCheck, setOfflineCheck] = useState(null)
   const [error, setError] = useState(null)
+  const [mediaPaths, setMediaPaths] = useState(null)
 
   useEffect(() => {
     loadSettings()
+    fetch('/api/media/paths').then(r => r.ok ? r.json() : null).then(setMediaPaths).catch(() => {})
   }, [])
+
+  // 可视化选择目录（视频存储根 / 下载缓存目录共用）：
+  // 桌面端用原生目录选择器；网页端用服务端目录浏览弹窗（浏览器拿不到绝对路径）
+  const [dirPicker, setDirPicker] = useState(null)   // { field } | null
+
+  const pickDir = async (field) => {
+    if (isDesktopClient()) {
+      try {
+        const bridge = window.pywebview?.api
+        const dir = bridge?.pick_directory ? await bridge.pick_directory() : null
+        if (dir) {
+          setField(field, dir)
+          const r = await fetch('/api/media/paths')
+          if (r.ok) setMediaPaths(await r.json())
+        }
+        return
+      } catch { /* 原生选择失败时回退弹窗 */ }
+    }
+    setDirPicker({ field })
+  }
+
+  const applyPickedDir = async (field, dir) => {
+    setField(field, dir)
+    const r = await fetch('/api/media/paths')
+    if (r.ok) setMediaPaths(await r.json())
+  }
 
   const loadSettings = async () => {
     try {
@@ -60,6 +89,8 @@ function SettingsPage() {
         vlm_model_type: data.vlm_model_type,
         tts_model: data.tts_model || '',
         tts_voice: data.tts_voice || '',
+        video_storage_dir: data.video_storage_dir || '',
+        download_cache_dir: data.download_cache_dir || '',
         default_education_level: data.default_education_level,
 
         wechat_yuanbao_cookie: data.wechat_yuanbao_cookie || '',
@@ -144,6 +175,8 @@ function SettingsPage() {
         x_cookies: data.x_cookies || prev.x_cookies,
         tts_model: data.tts_model || prev.tts_model,
         tts_voice: data.tts_voice || prev.tts_voice,
+        video_storage_dir: data.video_storage_dir ?? prev.video_storage_dir,
+        download_cache_dir: data.download_cache_dir ?? prev.download_cache_dir,
       }))
     } catch (err) {
       setCookieImport({ loading: false, message: `读取失败: ${err.message}`, attempts: [] })
@@ -632,6 +665,7 @@ function SettingsPage() {
           </div>
         </motion.section>
 
+        {/* 视频存储地址 */}
         {/* 应用内登录读取（桌面客户端，Windows 推荐） */}
         <motion.section
           initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.11 }}
@@ -927,7 +961,35 @@ function SettingsPage() {
               ) : (
                 <p className="text-xs text-gray-400">暂无缓存视频。</p>
               )}
-              <p className="mt-3 text-xs text-gray-400">缓存目录：{cacheInfo.stats.cache_dir}</p>
+              {/* 存储目录配置：与缓存映射表放在一起，改完目录顺手可见新缓存落点 */}
+              <div className="mt-5 pt-4 border-t border-gray-100 space-y-3">
+                <div>
+                  <label className={labelClass}>下载缓存目录（留空 = 跟随上传目录/downloads）</label>
+                  <div className="flex items-center gap-2">
+                    <input type="text" value={form.download_cache_dir || ''}
+                      onChange={(e) => setField('download_cache_dir', e.target.value)}
+                      placeholder="默认：上传目录/downloads" className={inputClass} />
+                    <button type="button" onClick={() => pickDir('download_cache_dir')}
+                      className="flex-shrink-0 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50">选择路径…</button>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>上传视频目录（留空 = 默认）</label>
+                  <div className="flex items-center gap-2">
+                    <input type="text" value={form.video_storage_dir || ''}
+                      onChange={(e) => setField('video_storage_dir', e.target.value)}
+                      placeholder="默认：数据目录/uploads" className={inputClass} />
+                    <button type="button" onClick={() => pickDir('video_storage_dir')}
+                      className="flex-shrink-0 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50">选择路径…</button>
+                  </div>
+                </div>
+                {mediaPaths && (
+                  <div className="text-xs text-gray-500 space-y-0.5">
+                    <div>上传目录：<span className="font-mono text-gray-700">{mediaPaths.uploads}</span>{mediaPaths.is_default && '（默认）'}</div>
+                    <div>下载缓存：<span className="font-mono">{mediaPaths.downloads}</span>{mediaPaths.download_cache_configured && '（已单独指定）'}</div>
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <p className="text-xs text-gray-400">加载中…</p>
@@ -955,6 +1017,14 @@ function SettingsPage() {
           </motion.button>
         </div>
       </main>
+      {dirPicker && (
+        <DirectoryPicker
+          open
+          initialPath={form[dirPicker.field] || mediaPaths?.media_root || ''}
+          onClose={() => setDirPicker(null)}
+          onPick={(dir) => applyPickedDir(dirPicker.field, dir)}
+        />
+      )}
     </div>
   )
 }

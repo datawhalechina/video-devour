@@ -234,6 +234,17 @@ class Bridge:
             subprocess.Popen(["xdg-open", str(target)])
         return True
 
+    def pick_directory(self):
+        """选择目录（用于可视化设置视频存储地址），返回绝对路径或 None。"""
+        try:
+            result = self._window.create_file_dialog(webview.FOLDER_DIALOG)
+        except Exception as e:
+            logging.warning(f"选择目录失败: {e}")
+            return None
+        if not result:
+            return None
+        return result[0] if isinstance(result, (list, tuple)) else result
+
     def open_external(self, url: str):
         """在系统默认浏览器打开 http(s) 链接（桌面端专用）。
 

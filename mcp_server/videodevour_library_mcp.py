@@ -44,6 +44,24 @@ from backend.algorithm.document_library import (
     search_library as _search_library,
 )
 
+# 视频存储目录与处理流水线（供 list_local_videos / process_local_video）
+_VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".flv", ".m4v")
+
+
+def _media_videos():
+    """扫描视频存储目录（downloads + uploads）里的视频文件，返回 [(路径, 来源, 大小, mtime)]。"""
+    from backend.runtime import paths as _rt
+    out = []
+    for src in ("downloads", "uploads"):
+        d = _rt.media_subdir(src)
+        if not d.exists():
+            continue
+        for f in sorted(d.iterdir()):
+            if f.is_file() and f.suffix.lower() in _VIDEO_EXTS:
+                st = f.stat()
+                out.append((str(f), src, st.st_size, st.st_mtime))
+    return out
+
 mcp = FastMCP(
     "videodevour-library",
     instructions=(
@@ -161,6 +179,53 @@ def export_library(target_dir: str = "") -> str:
     out_path = out_dir / name
     out_path.write_bytes(content)
     return f"已导出整库: {out_path}（{len(content) / 1024 / 1024:.1f} MB）"
+
+
+@mcp.tool()
+def list_local_videos() -> str:
+    """列出视频存储目录里待处理的本地视频（downloads + uploads）。
+
+    这些视频可作为信息源：用 process_local_video 处理其中一个生成图文报告，
+    再用 search_library / get_article 检索产物。返回每个视频的路径、来源、大小、修改时间。
+    """
+    from datetime import datetime
+    videos = _media_videos()
+    if not videos:
+        return "视频存储目录（downloads / uploads）里暂无视频文件。"
+    lines = [f"共 {len(videos)} 个本地视频：\n"]
+    for path, src, size, mtime in videos:
+        when = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+        lines.append(f"- [{src}] {Path(path).name}（{size / 1024 / 1024:.1f}MB，{when}）\n    路径: {path}")
+    lines.append("\n用 process_local_video 处理其中一个（传路径），处理后可用 get_article 取报告。")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def process_local_video(video_path: str, education_level: str = "自由学习") -> str:
+    """处理一个本地视频：ASR → 大纲 → 关键帧 → 中文图文报告（同步执行，约数分钟）。
+
+    Args:
+        video_path: 视频文件绝对路径（可用 list_local_videos 查看）
+        education_level: 自由学习/小学/初中/高中/大学/硕士/博士/深入研究/垂直领域研究
+    """
+    p = Path(video_path).expanduser()
+    if not p.is_file():
+        return f"视频文件不存在: {video_path}"
+    try:
+        from backend.algorithm import settings_store
+        settings_store.apply_to_config()
+        from backend.algorithm.pipeline import run_full_pipeline
+        result = run_full_pipeline(str(p), education_level=education_level or "自由学习")
+    except Exception as e:
+        return f"处理失败: {type(e).__name__}: {str(e)[:200]}"
+    out_dir = Path(result.get("output_dir", ""))
+    parts = [f"处理完成，输出目录: {out_dir}"]
+    for name, label in (("final_report.md", "精简报告"), ("detailed_report.md", "详细报告"),
+                        ("detailed_outline.md", "图文大纲")):
+        f = out_dir / name
+        if f.exists() and f.stat().st_size > 0:
+            parts.append(f"  {label}: {f}")
+    return "\n".join(parts)
 
 
 if __name__ == "__main__":
