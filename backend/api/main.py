@@ -1055,6 +1055,7 @@ async def get_task_report(task_id: str):
     detailed_outline = ""
     final_report = ""
     detailed_report = ""
+    transcript_md = ""
     duration = "未知"
     video_name = "未知视频"
     
@@ -1081,6 +1082,16 @@ async def get_task_report(task_id: str):
                 detailed_report = f.read()
         except Exception as e:
             print(f"读取详细报告失败: {e}")
+
+    # 原文对照（随详细报告生成；旧任务可能没有）。
+    # 用独立变量名 transcript_md：下方 ASR 解析复用 transcript 变量算时长，避免覆盖。
+    transcript_path = output_dir / "transcript.md"
+    if transcript_path.exists():
+        try:
+            with open(transcript_path, 'r', encoding='utf-8') as f:
+                transcript_md = f.read()
+        except Exception as e:
+            print(f"读取原文对照失败: {e}")
     
     # 优先从任务数据获取原始文件名
     if task_id in processing_tasks:
@@ -1142,6 +1153,7 @@ async def get_task_report(task_id: str):
         "detailed_outline": detailed_outline,
         "final_report": final_report,
         "detailed_report": detailed_report,
+        "transcript": transcript_md,
         "output_dir": output_dir.name,  # 添加输出目录名称
         "created_at": created_at,
         "source_url": source_url,

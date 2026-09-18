@@ -37,6 +37,8 @@ ARTICLE_TYPES = {
     "outline": ("detailed_outline.md", "图文大纲"),
     "report": ("final_report.md", "精简报告"),
     "detailed": ("detailed_report.md", "详细报告"),
+    # 原文对照：编号原文 + 逐句翻译，供主报告 [N] 上标回溯核对（随详细报告一起生成）
+    "transcript": ("transcript.md", "原文对照"),
     # 衍生文体：按需生成（style_articles），生成后自动入库
     "quantum": ("quantum_read.md", "量子速读"),
     "wechat": ("wechat_article.md", "公众号文章"),
@@ -46,8 +48,8 @@ ARTICLE_TYPES = {
 # 可被「按需生成」的维度（文件不存在时由 style_articles 生成）
 GENERATABLE_SCOPES = ("quantum", "wechat", "xiaohongshu")
 
-# 文档库展示顺序：先分析报告，后衍生文体
-ARTICLE_ORDER = ("outline", "report", "detailed", "quantum", "wechat", "xiaohongshu")
+# 文档库展示顺序：先分析报告，再原文对照，后衍生文体
+ARTICLE_ORDER = ("outline", "report", "detailed", "transcript", "quantum", "wechat", "xiaohongshu")
 
 PLATFORM_LABELS = {
     "bilibili": "B站", "youtube": "YouTube", "wechat": "微信视频号", "douyin": "抖音", "x": "X", "upload": "本地上传",

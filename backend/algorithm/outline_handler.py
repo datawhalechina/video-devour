@@ -575,6 +575,59 @@ def _build_mindmap(llm, outline):
     return cleaned
 
 
+# 原文对照栏目文件名（与文档库 scope "transcript" 对应）
+TRANSCRIPT_FILE = "transcript.md"
+
+# 高保真主报告：把某章语音原话写成连贯的知识手册内容，涉及原话事实处以上标 [N] 引用。
+_HIGHFIDELITY_SYSTEM = (
+    "你是资深技术讲师与知识编辑，擅长把口语化的讲座原话整理成高保真的中文知识手册。"
+    "只输出简体中文（专有名词保留英文原文），不要任何解释。"
+)
+
+_HIGHFIDELITY_PROMPT = """下面是某视频章节的语音原话（已逐条编号，带时间戳，口语化）。
+请把它写成一段高保真的中文知识内容，作为该章节的正文。
+
+写作要求：
+1. 按知识逻辑连贯组织，可用 Markdown 小节、列表、表格、Mermaid 图、代码块；
+   **不要**使用「本段主旨 / 内容翻译 / 结构化解读 / 关键要点」这类模板标题。
+2. 完整保留原话中的案例、数字、术语、机制与推理过程；案例按「背景 → 做法/过程 → 结果 → 经验」讲清楚，
+   不要压缩成抽象结论，也不要一刀切掉细节。
+3. 凡是依据原话的具体事实、案例、数字，在对应句子末尾以上标编号引用，如「……约 63mg[3]」；
+   编号必须取自原话前的 [N]，不得编造。
+4. 剔除口语碎语（um / uh / you know 等）与口误，把平铺口语升华为精炼的技术阐释，
+   但保留讲者第一视角的思考与直觉判断。
+5. 专有名词、模型名、API 名保留英文原文。只依据给定原话，不添加原话没有的信息。
+6. 只输出该章节正文，不要输出一级/二级标题。
+__LEVEL__
+
+本章原话（每条前的 [N] 为引用编号）：
+---
+__RAW__
+---
+"""
+
+# 长章节分段生成后合并：拼接为连贯高保真正文，保留全部 [N] 引用与细节。
+_HIGHFIDELITY_MERGE_PROMPT = """下面是同一视频章节分段写出的多段正文，请合并为一段连贯、去重的高保真知识内容。
+要求：
+1. 合并为连贯整体，去除分段间的重复与断裂，按知识逻辑重排。
+2. 完整保留所有 [N] 引用编号与案例、数字、术语，不得删减细节。
+3. 只依据给定内容合并，不新增信息。只输出合并后的正文。
+---
+__PARTS__
+---
+"""
+
+# 原文对照栏目的逐段翻译（英文视频用；按条目分组、保留编号，中文视频不调用）。
+_TRANSLATE_SYSTEM = "你是严谨的翻译，只输出要求的译文行，不要任何解释。"
+_TRANSLATE_PROMPT = """下面是若干条带编号的视频英文原话。请逐条翻译为通顺、准确的中文。
+每条输出一行，格式为 `[编号] 译文`（编号必须与输入一致）；逐条对应，不省略、不合并、不概括，
+完整保留信息、数字与举例。只输出这些行，不要其他内容。
+---
+__RAW__
+---
+"""
+
+
 def generate_detailed_report(detailed_outline_path, output_dir, education_level: str = None,
                              headings_with_level=None, matched_data=None, dialogue=None):
     """
@@ -671,18 +724,132 @@ def generate_detailed_report(detailed_outline_path, output_dir, education_level:
         from backend.algorithm.llm_handler import LLMHandler, get_level_instruction
         llm = LLMHandler(education_level=education_level)
         level_instruction = get_level_instruction(education_level) or ""
+        level_line = f"4. 学习阶段：{level_instruction}\n" if level_instruction else ""
 
-        # 中文原话无需翻译：跳过「内容翻译」，笔记只保留主旨/解读/要点
+        # 中文原话无需翻译（译文即原文）
         all_text = "\n".join(c.get("text", "") for c in dialogue)
         translate = not _is_chinese_dominant(all_text)
-        logging.info(f"详细报告：原话{'非中文，保留「内容翻译」' if translate else '为中文，跳过翻译'}")
+        logging.info(f"详细报告：原话{'非中文，生成原文对照翻译' if translate else '为中文，跳过翻译'}")
 
         title_match = re.search(r'^#\s+(.+)', outline_content, re.MULTILINE)
         doc_title = title_match.group(1).strip() if title_match else "详细报告"
 
+        # ---- 全局编号的原文条目（每章每 chunk 一条）：供原文对照与主报告上标引用 ----
+        entries = []
+        for heading in level2:
+            for chunk in chapter_chunks.get(heading, []):
+                if chunk.get("text"):
+                    entries.append({"idx": 0, "heading": heading, "chunk": chunk})
+        for i, e in enumerate(entries, 1):
+            e["idx"] = i
+        entries_by_heading = {}
+        for e in entries:
+            entries_by_heading.setdefault(e["heading"], []).append(e)
+
+        # 每章按字数分段（翻译与高保真共用同一分段，保证条目粒度一致）
+        def _split_entries(items, limit=NOTES_CHUNK_CHARS):
+            groups, buf, size = [], [], 0
+            for it in items:
+                n = len(it["chunk"]["text"])
+                if buf and size + n > limit:
+                    groups.append(buf); buf, size = [], 0
+                buf.append(it); size += n + 1
+            if buf:
+                groups.append(buf)
+            return groups or [items]
+
+        # ---- 逐段翻译（英文视频；并发，按章内分段，输出 [N] 译文再解析）----
+        translations = {}
+        if translate and entries:
+            def _translate_group(items):
+                raw = "\n".join(f"[{it['idx']}] {it['chunk']['text']}" for it in items)
+                out = llm.get_response(_TRANSLATE_PROMPT.replace("__RAW__", raw),
+                                       system_message=_TRANSLATE_SYSTEM)
+                got = {}
+                for line in out.splitlines():
+                    m = re.match(r"\s*\[(\d+)\]\s*(.+)", line)
+                    if m:
+                        got[int(m.group(1))] = m.group(2).strip()
+                return got
+            from concurrent.futures import ThreadPoolExecutor
+            tasks = [g for h in level2 for g in _split_entries(entries_by_heading.get(h, [])) if g]
+            workers = max(1, min(NOTES_PARALLEL, len(tasks)))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                for got in pool.map(_translate_group, tasks):
+                    translations.update(got)
+
+        # ---- 原文对照栏目（transcript.md）：编号 + 逐句原文 + 译文，供回溯核对 ----
+        def _chunk_raw_lines(chunk):
+            sents = chunk.get("sentences")
+            if sents:
+                return "\n".join(f"- {_mmss(s['start'])} {s['text']}" for s in sents)
+            return f"- {_mmss(chunk['start'])} {chunk['text']}"
+
+        def _build_transcript():
+            tparts = [f"# {doc_title} · 原文对照\n",
+                      "> 主报告（详细报告）中的上标 [N] 对应下方编号条目，含逐句原文与中文翻译，便于回溯核对。\n"]
+            for heading in level2:
+                hes = entries_by_heading.get(heading, [])
+                if not hes:
+                    continue
+                tparts.append(f"\n## {heading}\n")
+                for e in hes:
+                    c = e["chunk"]
+                    block = f"**[{e['idx']}]**（{_mmss(c['start'])}）\n{_chunk_raw_lines(c)}"
+                    tr = translations.get(e["idx"])
+                    if tr and tr != c["text"]:
+                        block += f"\n\n> 译文：{tr}"
+                    tparts.append(block + "\n")
+            return "\n".join(tparts)
+
+        transcript_path = os.path.join(output_dir, TRANSCRIPT_FILE)
+        with open(transcript_path, "w", encoding="utf-8") as f:
+            f.write(_build_transcript())
+        logging.info(f"原文对照已生成: {transcript_path}")
+
+        # ---- 主报告：按章高保真内容，涉及原文处以上标 [N] 引用 ----
+        def _gen_hf(items):
+            raw = "\n".join(f"[{it['idx']}] ({_mmss(it['chunk']['start'])}) {it['chunk']['text']}"
+                            for it in items)
+            return llm.get_response(
+                _HIGHFIDELITY_PROMPT.replace("__RAW__", raw).replace("__LEVEL__", level_line),
+                system_message=_HIGHFIDELITY_SYSTEM).strip()
+
+        def _merge_hf(partials):
+            if len(partials) == 1:
+                return partials[0]
+            if len(partials) > NOTES_MERGE_MAX_SEGMENTS:
+                return "\n\n".join(partials)
+            joined = "\n\n---\n\n".join(partials)
+            return llm.get_response(_HIGHFIDELITY_MERGE_PROMPT.replace("__PARTS__", joined),
+                                    system_message=_HIGHFIDELITY_SYSTEM).strip()
+
+        def _highfidelity(heading):
+            hes = entries_by_heading.get(heading, [])
+            if not hes:
+                return "（本章无对应语音内容）"
+            groups = _split_entries(hes)
+            if len(groups) == 1:
+                try:
+                    return _gen_hf(groups[0]) or "（本章生成结果为空）"
+                except Exception as e:
+                    logging.error(f"详细报告：章节 '{heading}' 高保真生成失败: {e}")
+                    return "（本章内容生成失败）"
+            partials = []
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=max(1, min(NOTES_PARALLEL, len(groups)))) as pool:
+                for out in pool.map(_gen_hf, groups):
+                    if out:
+                        partials.append(out)
+            try:
+                return _merge_hf(partials) or "（本章生成结果为空）"
+            except Exception as e:
+                logging.error(f"详细报告：章节 '{heading}' 合并失败: {e}")
+                return "\n\n".join(partials) if partials else "（本章内容生成失败）"
+
         parts = [f"# {doc_title}\n",
-                 "> 每个章节先给【视频原文】（带时间戳的语音原话，完整不截断），再给【整理笔记】，"
-                 "对照精读；时间戳可回看视频对应片段。\n"]
+                 "> 高保真知识手册：按讲座脉络整合，案例与细节完整保留；涉及原话事实处以上标 [N] 标注，"
+                 "对应「原文对照」栏目可逐句回溯核对。\n"]
 
         # 整体思维导图（Mermaid，随报告一起呈现）
         mindmap = _build_mindmap(llm, outline_content)
@@ -691,7 +858,6 @@ def generate_detailed_report(detailed_outline_path, output_dir, education_level:
             parts.append(mindmap + "\n")
 
         for heading in level2:
-            raw = _raw_of(heading)
             chunks = chapter_chunks.get(heading) or []
             parts.append(f"\n## {heading}\n")
             img = section_images.get(heading)
@@ -700,20 +866,7 @@ def generate_detailed_report(detailed_outline_path, output_dir, education_level:
             if chunks:
                 parts.append(f"*本章对应视频 {_mmss(chunks[0]['start'])} - "
                              f"{_mmss(chunks[-1]['end'])}*\n")
-            parts.append("### 视频原文\n")
-            raw_display = _raw_display(heading)
-            parts.append((raw_display if raw_display else "（本章无对应语音内容）") + "\n")
-
-            parts.append("### 整理笔记\n")
-            if raw:
-                try:
-                    notes = _notes_for_chapter(llm, raw, heading, level_instruction, translate)
-                except Exception as e:
-                    logging.error(f"详细报告：章节 '{heading}' 笔记生成失败: {e}")
-                    notes = "（笔记生成失败）"
-            else:
-                notes = "（本章无对应语音内容）"
-            parts.append(notes + "\n")
+            parts.append(_highfidelity(heading) + "\n")
 
         report_content = "\n".join(parts)
         # 清理 LLM 编造的外链图片

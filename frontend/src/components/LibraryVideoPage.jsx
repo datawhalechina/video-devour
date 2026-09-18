@@ -6,11 +6,12 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { mermaidMarkdownComponents } from './MermaidBlock'
 
-const SCOPE_ORDER = ['outline', 'report', 'detailed', 'quantum', 'wechat', 'xiaohongshu']
+const SCOPE_ORDER = ['outline', 'report', 'detailed', 'transcript', 'quantum', 'wechat', 'xiaohongshu']
 const SCOPE_META = {
   outline: { label: '图文大纲', hint: '沿核心观点快速回顾' },
   report: { label: '精简报告', hint: '提炼重点，快速阅读' },
-  detailed: { label: '详细报告', hint: '原文与笔记对照精读' },
+  detailed: { label: '详细报告', hint: '高保真知识手册，上标引用可回溯' },
+  transcript: { label: '原文对照', hint: '编号原文 + 逐句翻译，核对主报告引用' },
   quantum: { label: '量子速读', hint: '30 秒抓住大意，附可发朋友圈的句子' },
   wechat: { label: '公众号文章', hint: '图文成稿，可直接发布' },
   xiaohongshu: { label: '小红书笔记', hint: '图文笔记，含话题标签' },

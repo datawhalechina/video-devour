@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Clock, FileText, Image, Edit3, LayoutGrid, FileDown, ChevronDown, ArrowUpRight, Check,
-  Timer, Share2, Network, BookOpen, Link2, Zap, Newspaper, Sparkles, ClipboardCheck } from "lucide-react";
+  Timer, Share2, Network, BookOpen, Link2, Zap, Newspaper, Sparkles, ClipboardCheck, Languages } from "lucide-react";
 
 const PLATFORM_LABELS = {
   bilibili: "B站",
@@ -331,7 +331,8 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
   const tabs = [
     { key: "outline", label: "图文大纲", icon: Image, content: report.detailed_outline, description: "沿着核心观点，快速回顾视频内容。" },
     { key: "report", label: "精简报告", icon: FileText, content: report.final_report, description: "提炼重点，留下值得记住的内容。" },
-    { key: "detailed", label: "详细报告", icon: BookOpen, content: report.detailed_report, description: "对照视频原文与整理笔记，深入理解每一个观点。" },
+    { key: "detailed", label: "详细报告", icon: BookOpen, content: report.detailed_report, description: "高保真知识手册，涉及原文事实处以上标 [N] 标注。" },
+    ...(report.transcript ? [{ key: "transcript", label: "原文对照", icon: Languages, content: report.transcript, description: "编号原文与逐句翻译，用于核对主报告中的 [N] 引用。" }] : []),
     ...STYLE_TABS.map(t => ({ ...t, content: styles[t.key] })),
   ];
   const currentTab = tabs.find(tab => tab.key === activeTab);
