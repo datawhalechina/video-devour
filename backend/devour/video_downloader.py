@@ -890,7 +890,16 @@ def _download_wechat_video(url: str, target_dir: str, progress_hook=None) -> Dic
             if not candidates:
                 notes.append("直连解析成功但未在返回中找到视频流")
         except _WeChatError as e:
-            notes.append(str(e))
+            msg = str(e)
+            notes.append(msg)
+            # 明确的「链接已失效」信号：元宝正常应答但 export id 为空（返回占位内容）。
+            # 失效链接换任何兜底也不会成功，直接给出单一、可操作的结论，
+            # 避免再拼「解析服务 404」等噪音让用户误以为 Cookie 或配置有问题。
+            if "export id" in msg:
+                raise ValueError(
+                    "该视频号分享链接已失效（分享链接时效很短，一般几十分钟内有效）。"
+                    "请在微信里重新分享该视频获取新链接，复制后立即粘贴处理。"
+                )
         except Exception as e:
             notes.append(f"直连解析异常: {e}")
     else:
