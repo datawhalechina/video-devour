@@ -5,16 +5,16 @@ export default {
     extend: {
       colors: {
         primary: {
-          50: "#f1f5ef",
-          100: "#e5eddf",
-          200: "#cdddc6",
-          300: "#acc6a3",
-          400: "#7eaa78",
-          500: "#527e5c",
-          600: "#315e4f",
-          700: "#284e41",
-          800: "#234237",
-          900: "#20382f",
+          50: "#f0f5fa",
+          100: "#e3edf5",
+          200: "#d3e0ec",
+          300: "#b8cadb",
+          400: "#859caf",
+          500: "#5e7287",
+          600: "#202833",
+          700: "#161e29",
+          800: "#101721",
+          900: "#0b111a",
         },
         // 主题渐变色系统
         brand: {
@@ -27,7 +27,7 @@ export default {
       },
       backgroundImage: {
         // 主题渐变
-        "gradient-brand": "linear-gradient(120deg, #315e4f 0%, #527e5c 100%)",
+        "gradient-brand": "linear-gradient(120deg, #293342 0%, #141b26 100%)",
         "gradient-brand-reverse":
           "linear-gradient(300deg, #66a6ff 0%, #89f7fe 100%)",
         "gradient-brand-horizontal":

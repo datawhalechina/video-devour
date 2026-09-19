@@ -2529,6 +2529,12 @@ async def run_pipeline_with_progress(video_path: str, task_id: str, education_le
         update_progress(0, f"处理失败: {exc}", "error")
         raise
 
+# 编辑器模块沿用任务目录，接口与存储实现独立维护。
+from backend.editor.routes import create_router as create_editor_router
+app.include_router(create_editor_router(_find_task_output_dir, OUTPUT_DIR))
+from backend.editor.mindmap import create_router as create_mindmap_router
+app.include_router(create_mindmap_router(_find_task_output_dir, OUTPUT_DIR))
+
 # ---------------------------------------------------------------------------
 # SPA fallback（必须最后注册：catch-all 路由会拦截其后定义的路由）
 # ---------------------------------------------------------------------------

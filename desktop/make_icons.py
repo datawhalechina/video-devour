@@ -3,10 +3,13 @@
 """从 desktop/assets/icon-source.png 生成各平台应用图标。
 
 产物（均已入库，正常构建不需要跑本脚本；换图标时才需要）：
-    desktop/assets/icon-1024.png          1024 主图（去白底、裁边、方形留白）
+    desktop/assets/icon-1024.png          1024 主图（保留透明通道、方形留白）
     desktop/assets/VideoDevour.icns       macOS 应用图标（build_mac.sh 使用）
     desktop/assets/VideoDevour.ico        Windows 应用图标（spec / installer.iss 使用）
+    frontend/public/logo.png              网页品牌标识
+    frontend/public/favicon-16.png        小尺寸网页标签页图标
     frontend/public/favicon-32.png        网页标签页图标
+    frontend/public/favicon.svg           自包含兼容图标（内嵌 PNG）
     frontend/public/apple-touch-icon.png  添加到主屏幕图标
     frontend/public/icon-512.png          PWA / 分享大图
 
@@ -14,13 +17,15 @@
     python3 desktop/make_icons.py          # 生成全部
     （.icns 需要 macOS 的 iconutil；其他平台会跳过并提示）
 
-说明：源图是白底插画，脚本用「四角泛洪」只把外部白底转透明，
-鲸鱼腹部的白色与牙齿不会被误删。
+说明：透明源图直接保留 alpha；旧白底源图才使用四角泛洪去背景。
+只做格式和尺寸导出，不修改设计。
 """
+import base64
 import shutil
 import subprocess
 import sys
 from collections import deque
+from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
@@ -74,12 +79,14 @@ def strip_external_white(img: Image.Image, tol: int = 28) -> Image.Image:
 
 
 def build_master() -> Image.Image:
-    src = strip_external_white(Image.open(SOURCE))
+    src = Image.open(SOURCE).convert("RGBA")
+    if src.getchannel("A").getextrema()[0] == 255:
+        src = strip_external_white(src)
     content = src.crop(src.getbbox())
     cw, ch = content.size
     side = int(max(cw, ch) / CONTENT_RATIO)
     canvas = Image.new("RGBA", (side, side), (255, 255, 255, 0))
-    canvas.paste(content, ((side - cw) // 2, (side - ch) // 2), content)
+    canvas.alpha_composite(content, ((side - cw) // 2, (side - ch) // 2))
     master = canvas.resize((1024, 1024), Image.LANCZOS)
     master.save(MASTER)
     print(f"[1/4] 主图 {cw}x{ch} → {MASTER.name} (1024x1024，主体占 {int(CONTENT_RATIO * 100)}%)")
@@ -104,9 +111,17 @@ def build_icns(master: Image.Image):
 
 
 def build_web(master: Image.Image):
-    for size, name in ((32, "favicon-32.png"), (180, "apple-touch-icon.png"), (512, "icon-512.png")):
+    for size, name in ((16, "favicon-16.png"), (32, "favicon-32.png"), (256, "logo.png"), (180, "apple-touch-icon.png"), (512, "icon-512.png")):
         master.resize((size, size), Image.LANCZOS).save(PUBLIC / name)
-    print("[4/4] 网页图标 → favicon-32.png / apple-touch-icon.png / icon-512.png")
+    buffer = BytesIO()
+    master.resize((64, 64), Image.LANCZOS).save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    (PUBLIC / "favicon.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">'
+        f'<image width="64" height="64" href="data:image/png;base64,{encoded}"/></svg>\n',
+        encoding="utf-8",
+    )
+    print("[4/4] 网页图标 → logo.png / favicon-16.png / favicon-32.png / favicon.svg / apple-touch-icon.png / icon-512.png")
 
 
 def main():

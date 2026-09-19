@@ -1,3 +1,6 @@
+import { App as AntApp } from 'antd'
+import { Workspace, Button } from '../shared/ui/Workspace'
+import ImportTabs from './lake/ImportTabs'
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, Play, GraduationCap, Tv, Sparkles } from 'lucide-react'
@@ -7,6 +10,7 @@ import ExtrasPicker, { getSelectedExtras } from './ExtrasPicker'
 import { useConfigGate } from './ConfigGateProvider'
 
 function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProcessing }) {
+  const { message } = AntApp.useApp()
   const { guardConfig } = useConfigGate()
   const [selectedFiles, setSelectedFiles] = useState([])
   const [uploading, setUploading] = useState(false)
@@ -133,7 +137,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
     // 批量上传完成后，提示用户查看历史记录
     if (selectedFiles.length > 1) {
       setTimeout(() => {
-        alert('所有视频已提交处理！请前往"历史记录"查看处理进度')
+        message.success('视频已提交，可在处理记录查看进度')
       }, 500)
     }
   }
@@ -147,8 +151,15 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="page-intro"><div className="eyebrow">IMPORT YOUR VIDEO</div><h1>让视频里的知识，留下来。</h1><p>上传课程、会议或访谈，整理成一份可阅读的图文报告。</p></div>
+    <Workspace
+      className="vd-upload"
+      title="整理一段新视频"
+      description="上传课程、会议或访谈，整理成一份可阅读的图文报告。"
+      actions={<Button variant="quiet" onClick={onViewHistory}>查看历史处理记录 →</Button>}
+      toolbar={<ImportTabs />}
+      footer={<div className="vd-upload-timing"><Clock aria-hidden="true"/><span><strong>预计处理时间</strong>视频长度 × 0.5–1.5 倍（例如：10 分钟视频约需 5–15 分钟处理）</span></div>}
+    >
+    <div className="lake-upload-page mx-auto">
 
       {/* 正在处理任务提示 */}
       {currentTask && (
@@ -192,7 +203,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
         className="upload-panel bg-white rounded-3xl border border-gray-100"
       >
         {/* 在线链接入口 */}
-        <div className="mb-4 flex justify-end">
+        <div className="lake-upload-old-link">
           <Link
             to="/link"
             className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:border-primary-400 hover:text-primary-600 transition"
@@ -369,8 +380,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
           )}
         </div>
 
-        <details className="upload-config">
-          <summary>处理偏好 <span>{educationLevel} · 可选附加内容</span></summary>
+        <section className="upload-config" aria-label="视频处理选项">
         {/* 学习阶段选择 */}
         <div className="upload-options mb-4 bg-white rounded-2xl border border-gray-100 p-5 flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -410,14 +420,14 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
           <ExtrasPicker />
         </div>
 
-        </details>
+        </section>
 
         {/* 错误提示 */}
         {error && (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="mt-6 flex items-start space-x-3 p-5 bg-red-50 border-l-4 border-red-500 rounded-xl text-red-800 shadow-sm"
+            className="upload-error mt-6 flex items-start space-x-3 p-5 bg-red-50 border-l-4 border-red-500 rounded-xl text-red-800 shadow-sm"
           >
             <AlertCircle className="w-6 h-6 flex-shrink-0 mt-0.5" />
             <div>
@@ -434,7 +444,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 10 }}
-              className="mt-8 flex items-center justify-center space-x-4"
+              className="upload-actions mt-8 flex items-center justify-center space-x-4"
             >
               <motion.button
                 onClick={clearAllFiles}
@@ -463,33 +473,9 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
         </AnimatePresence>
       </motion.div>
 
-      {/* 处理时间提示 */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3 }}
-        className="mt-8 flex items-start space-x-3 p-5 bg-primary-50 border border-primary-200 rounded-2xl"
-      >
-        <Clock className="w-6 h-6 text-primary-600 flex-shrink-0 mt-0.5" />
-        <div className="text-sm text-primary-700">
-          <p className="font-bold mb-1">预计处理时间</p>
-          <p className="text-blue-700">视频长度 × 0.5 - 1.5 倍（例如：10分钟视频需要 5-15 分钟处理）</p>
-        </div>
-      </motion.div>
-
-      {/* 历史记录快捷入口 */}
-      <motion.button
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4 }}
-        onClick={onViewHistory}
-        className="mt-8 w-full text-center text-primary-600 hover:text-primary-700 font-medium py-3 transition-all"
-      >
-        查看历史处理记录 →
-      </motion.button>
     </div>
+    </Workspace>
   )
 }
 
 export default VideoUpload
-

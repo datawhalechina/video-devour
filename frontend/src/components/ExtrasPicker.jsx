@@ -1,3 +1,4 @@
+import { Checkbox } from 'antd'
 import { useState } from 'react'
 import { Brain, Network, Smartphone } from 'lucide-react'
 
@@ -30,31 +31,5 @@ export default function ExtrasPicker() {
     })
   }
 
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {EXTRA_OPTIONS.map(({ key, label, icon: Icon }) => {
-        const active = selected.includes(key)
-        return (
-          <button
-            key={key}
-            type="button"
-            aria-pressed={active}
-            onClick={() => toggle(key)}
-            title={active ? '点击取消，完成后不生成' : '点击勾选，报告完成后自动生成'}
-            className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg border-2 text-sm font-medium transition ${
-              active
-                ? 'border-primary-500 bg-primary-50 text-primary-700'
-                : 'border-gray-200 text-gray-500 hover:border-gray-300'
-            }`}
-          >
-            <Icon className="w-4 h-4" />
-            <span>{label}</span>
-            <span className={`text-xs ${active ? 'text-primary-500' : 'text-gray-300'}`}>
-              {active ? '✓' : '+'}
-            </span>
-          </button>
-        )
-      })}
-    </div>
-  )
+  return <div className="workspace-extras">{EXTRA_OPTIONS.map(({key,label,icon:Icon}) => <Checkbox key={key} checked={selected.includes(key)} onChange={() => toggle(key)}><Icon size={18}/><span>{label}</span></Checkbox>)}</div>
 }

@@ -1,0 +1,9 @@
+.vd-upload .lake-upload-page { width: 100%; }
+.vd-upload .lake-import-tabs { margin: 0; }
+.vd-upload-timing { display: flex; align-items: center; gap: .625rem; width: 100%; padding-top: .75rem; border-top: .0625rem solid var(--vd-line); font-size: .8125rem; line-height: 1.7; }
+.vd-upload-timing > svg { width: 1.125rem; height: 1.125rem; flex-shrink: 0; }
+.vd-upload-timing strong { margin-right: .75rem; font-weight: 500; color: var(--vd-ink); }
+@media (max-width: 47.5rem) {
+  .vd-upload-timing { align-items: flex-start; font-size: .75rem; }
+  .vd-upload-timing > svg { margin-top: .1875rem; }
+}

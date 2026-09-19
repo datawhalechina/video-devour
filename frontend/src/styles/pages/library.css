@@ -1,0 +1,168 @@
+.vd-library .vd-page-actions {
+  width: min(25rem, 40%);
+}
+.vd-library-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  color: var(--vd-muted);
+  font-size: 0.8125rem;
+}
+.vd-library-tools > span {
+  white-space: nowrap;
+}
+.vd-library-tools .workspace-select {
+  width: 7.5rem;
+}
+.vd-library-tools .ant-select-selector {
+  background: transparent;
+  border-color: transparent;
+}
+.vd-library-tools .vd-segmented button {
+  padding-inline: 0.75rem;
+}
+.vd-library-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+.vd-knowledge-card {
+  position: relative;
+  min-width: 0;
+  border-radius: 0.875rem;
+  overflow: hidden;
+  background: var(--vd-soft);
+  isolation: isolate;
+  clip-path: inset(0 round 0.875rem);
+}
+.vd-knowledge-open {
+  width: 100%;
+  height: 100%;
+  min-height: 18.5rem;
+  display: block;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+}
+.vd-knowledge-open > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+.vd-knowledge-open:hover > img {
+  transform: scale(1.025);
+}
+.vd-knowledge-caption {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.75rem 3rem 0.875rem 1rem;
+  background: var(--vd-caption);
+  color: white;
+  backdrop-filter: blur(0.875rem);
+  text-shadow: 0 0.0625rem 0.1875rem #0002;
+}
+.vd-knowledge-caption h2 {
+  font-size: 1.125rem;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vd-knowledge-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4375rem;
+  font-size: 0.75rem;
+}
+.vd-knowledge-meta > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vd-knowledge-meta small {
+  border-radius: 1rem;
+  padding: 0.0625rem 0.5rem;
+  background: #ffffff30;
+}
+.vd-bookmark {
+  position: absolute;
+  right: 0.625rem;
+  bottom: 0.75rem;
+  color: white;
+  padding: 0.375rem;
+  border-radius: 0.5rem;
+}
+.vd-bookmark svg {
+  width: 1.3125rem;
+  height: 1.3125rem;
+}
+.vd-knowledge-snippet {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.875rem;
+  margin: 0.5rem 0;
+}
+.vd-library-grid.is-list {
+  grid-template-columns: 1fr;
+}
+.is-list .vd-knowledge-open {
+  min-height: 8.5rem;
+  padding-left: 12rem;
+}
+.is-list .vd-knowledge-open > img {
+  width: 12rem;
+}
+.is-list .vd-knowledge-caption {
+  position: relative;
+  min-height: 8.5rem;
+  padding: 1.25rem 3rem 1.25rem 1.5rem;
+  background: var(--vd-panel);
+  color: var(--vd-ink);
+  text-shadow: none;
+}
+.is-list .vd-bookmark {
+  color: var(--vd-ink);
+}
+@media (min-width: 110rem) {
+  .vd-knowledge-open {
+    min-height: 22rem;
+  }
+}
+@media (max-width: 76rem) {
+  .vd-library-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .vd-library .vd-page-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 47.5rem) {
+  .vd-library-grid {
+    grid-template-columns: 1fr;
+  }
+  .vd-library-tools {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .vd-knowledge-open {
+    min-height: 18rem;
+  }
+  .is-list .vd-knowledge-open {
+    padding-left: 6rem;
+  }
+  .is-list .vd-knowledge-open > img {
+    width: 6rem;
+  }
+  .vd-library .vd-page-actions {
+    width: 100%;
+  }
+}

@@ -1,0 +1,209 @@
+html,
+body,
+#root {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.vd-app {
+  position: fixed;
+  inset: 0;
+  padding: 1.125rem clamp(0.75rem, 2.5vw, 3rem);
+  background: var(--vd-bg) center / cover;
+  color: var(--vd-ink);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+}
+.vd-shell {
+  display: grid;
+  grid-template-columns: 14.6875rem minmax(0, 1fr);
+  height: 100%;
+  overflow: hidden;
+  border: 0;
+  border-radius: 1.875rem;
+  background: var(--vd-shell);
+  backdrop-filter: blur(1.5rem);
+  box-shadow: 0 1rem 3rem #403b3317;
+}
+.vd-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 1.625rem 1rem 1.25rem;
+  background: #fff4;
+  border-right: 0.0625rem solid #ffffff7a;
+}
+.vd-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0.625rem;
+  font-size: 1.3125rem;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  white-space: nowrap;
+}
+.vd-brand img {
+  width: 2.625rem;
+  height: 2.625rem;
+  object-fit: contain;
+}
+.vd-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 3rem;
+}
+.vd-navigation a,
+.vd-settings-link {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-radius: 2rem;
+  font-size: 1.0625rem;
+}
+.vd-navigation a[aria-current="page"],
+.vd-settings-link[aria-current="page"] {
+  background: #ffffffbd;
+  font-weight: 600;
+}
+.vd-navigation a:hover,
+.vd-settings-link:hover {
+  background: #ffffff80;
+}
+.vd-settings-link {
+  margin-top: auto;
+}
+.vd-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+.vd-content > .lake-content {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  --page-gap: var(--vd-page-gap);
+}
+.vd-content:has(.vd-page) > .lake-content {
+  overflow: hidden;
+}
+:root[data-ui-theme="lake"] .vd-shell {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 5.5rem minmax(0, 1fr);
+}
+:root[data-ui-theme="lake"] .vd-sidebar {
+  flex-direction: row;
+  align-items: center;
+  border-right: 0;
+  padding: 0.75rem 2.5rem;
+  background: transparent;
+  gap: 2rem;
+}
+:root[data-ui-theme="lake"] .vd-navigation {
+  flex-direction: row;
+  margin: 0 auto;
+  padding: 0.25rem;
+  background: #a9bdcc22;
+  border-radius: 2rem;
+}
+:root[data-ui-theme="lake"] .vd-navigation a {
+  padding: 0.625rem 1.5rem;
+  font-size: 0.9375rem;
+}
+:root[data-ui-theme="lake"] .vd-navigation svg {
+  display: none;
+}
+:root[data-ui-theme="lake"] .vd-settings-link {
+  margin: 0;
+  padding: 0.625rem;
+}
+:root[data-ui-theme="lake"] .vd-settings-link span {
+  display: none;
+}
+:root[data-ui-theme="lake"] .vd-content {
+  --vd-page-top: 1.5rem;
+}
+@media (max-width: 70rem) {
+  .vd-shell {
+    grid-template-columns: 12rem minmax(0, 1fr);
+  }
+  .vd-sidebar {
+    padding-inline: 0.625rem;
+  }
+  .vd-brand {
+    font-size: 1.125rem;
+  }
+  .vd-navigation a,
+  .vd-settings-link {
+    padding-inline: 1rem;
+  }
+}
+@media (max-width: 47.5rem) {
+  .vd-app {
+    padding: 0.5rem;
+    --vd-page-gap: 1rem;
+    --vd-page-top: 1rem;
+  }
+  .vd-shell,
+  :root[data-ui-theme="lake"] .vd-shell {
+    display: flex;
+    flex-direction: column;
+    border-radius: 1.375rem;
+  }
+  .vd-sidebar,
+  :root[data-ui-theme="lake"] .vd-sidebar {
+    display: contents;
+  }
+  .vd-brand {
+    height: 4rem;
+    flex-shrink: 0;
+    padding: 0.75rem 1rem;
+  }
+  .vd-brand img {
+    width: 2rem;
+    height: 2rem;
+  }
+  .vd-navigation,
+  :root[data-ui-theme="lake"] .vd-navigation {
+    order: 3;
+    flex-direction: row;
+    flex-shrink: 0;
+    justify-content: space-around;
+    margin: 0;
+    gap: 0.125rem;
+    border-top: 0.0625rem solid var(--vd-line);
+    border-radius: 0;
+    padding: 0.375rem;
+    background: #ffffff4d;
+  }
+  .vd-navigation a,
+  :root[data-ui-theme="lake"] .vd-navigation a {
+    padding: 0.625rem;
+    font-size: 0.75rem;
+    gap: 0.375rem;
+  }
+  .vd-navigation svg,
+  :root[data-ui-theme="lake"] .vd-navigation svg {
+    display: block;
+    width: 1rem;
+  }
+  .vd-settings-link,
+  :root[data-ui-theme="lake"] .vd-settings-link {
+    position: absolute;
+    top: 1.4rem;
+    right: 1.5rem;
+    margin: 0;
+    padding: 0.375rem;
+    z-index: 2;
+  }
+  .vd-settings-link span {
+    display: none;
+  }
+  .vd-content {
+    flex: 1;
+  }
+}

@@ -1,0 +1,255 @@
+.vd-import-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.07fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  flex: 1;
+  min-height: 0;
+}
+.vd-import-source,
+.vd-import-preferences {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.vd-import-source {
+  padding-right: 0.25rem;
+}
+.vd-import .lake-import-tabs {
+  display: inline-flex;
+  width: auto;
+  background: #ffffffb0;
+  padding: 0.375rem;
+  border-radius: 2rem;
+  margin: 0 0 1rem;
+  gap: 0.25rem;
+}
+.vd-import .lake-import-tabs a {
+  border-radius: 2rem;
+  padding: 0.75rem 1.75rem;
+  font-size: 1rem;
+}
+.vd-import .lake-import-tabs a[aria-current="page"] {
+  background: var(--vd-accent);
+  color: #fff;
+}
+.vd-import .lake-import-tabs svg {
+  display: none;
+}
+.vd-link-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--vd-panel);
+  padding: 0.375rem 0.5rem 0.375rem 1.25rem;
+  border-radius: 2.5rem;
+}
+.vd-link-input .ant-input-affix-wrapper {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0.5rem 0;
+}
+.vd-link-input .ant-input-affix-wrapper > input.ant-input {
+  width: 100%;
+  flex: 1;
+  height: 2rem;
+}
+.vd-link-input > button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 2rem;
+  padding: 0.75rem 1.75rem;
+  background: var(--vd-accent);
+  border: 0;
+  color: #fff;
+}
+.vd-import-inputs {
+  margin-bottom: 1rem;
+}
+.vd-video-preview {
+  background: transparent;
+}
+.vd-video-frame {
+  aspect-ratio: 16 / 9;
+  border-radius: 1.25rem;
+  overflow: hidden;
+  background: #1d232b;
+}
+.vd-video-frame :is(img, iframe),
+.vd-video-frame > div {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+.vd-video-meta {
+  padding: 0.875rem 0.25rem 0;
+}
+.vd-video-meta h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+.vd-video-meta > p:last-child {
+  overflow-wrap: anywhere;
+}
+.vd-import-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  aspect-ratio: auto;
+  height: clamp(10rem, 29vh, 20rem);
+  background: #ffffff25;
+  border: 0.0625rem dashed #ffffffb3;
+  border-radius: 1.25rem;
+  color: var(--vd-muted);
+  text-align: center;
+  padding: 1.5rem;
+}
+.vd-import-empty > svg {
+  width: 4.5rem;
+  height: 4.5rem;
+  padding: 1.25rem;
+  border: 0.0625rem solid #fff;
+  background: #ffffff66;
+  border-radius: 50%;
+}
+.vd-import-empty span {
+  font-size: 0.8125rem;
+}
+.vd-import-preferences {
+  background: var(--vd-panel);
+  border: 0.0625rem solid #ffffffb8;
+  border-radius: 1.25rem;
+  padding: 1.125rem 1.625rem;
+}
+.vd-import-preferences > h2 {
+  font-size: 1.375rem;
+  font-weight: 600;
+}
+.vd-import-preferences > p {
+  color: var(--vd-muted);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  margin: 0.25rem 0 0.625rem;
+}
+.vd-import-preferences fieldset {
+  border-bottom: 0.0625rem solid var(--vd-line);
+  padding-bottom: 0.75rem;
+  margin: 0.75rem 0;
+}
+.vd-import-preferences fieldset legend {
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.vd-import-preferences > label {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.vd-import-preferences .workspace-extras {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.vd-import-preferences > .lake-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  border-radius: 2rem;
+  background: linear-gradient(135deg, #292c32, #111316);
+  min-height: 2.75rem;
+  color: white;
+}
+.vd-import-legal {
+  margin: 0;
+  flex-shrink: 0;
+  color: var(--vd-muted);
+  text-align: center;
+  font-size: 0.6875rem;
+}
+@media (max-width: 65rem) {
+  .vd-import-layout {
+    display: block;
+    overflow: auto;
+  }
+  .vd-import-source,
+  .vd-import-preferences {
+    overflow: visible;
+  }
+  .vd-import-preferences {
+    margin-top: 1.5rem;
+  }
+}
+@media (max-width: 47.5rem) {
+  .vd-import .lake-import-tabs {
+    width: 100%;
+  }
+  .vd-import .lake-import-tabs a {
+    flex: 1;
+    padding: 0.625rem;
+    font-size: 0.875rem;
+  }
+  .vd-link-input {
+    padding-left: 0.875rem;
+  }
+  .vd-link-input > button {
+    padding: 0.625rem 1rem;
+  }
+  .vd-import-preferences {
+    padding: 1.125rem;
+  }
+  .vd-import-preferences .workspace-extras {
+    grid-template-columns: 1fr;
+  }
+  .vd-import-legal {
+    display: none;
+  }
+}
+
+/* Compact import controls; preserve intrinsic scrolling for expanded results. */
+.vd-import .platform-douyin {
+  filter: drop-shadow(-0.0625rem -0.0625rem 0 #25f4ee) drop-shadow(0.0625rem 0.0625rem 0 #fe2c55);
+}
+.vd-import-preferences .lake-mode-options .ant-radio-wrapper {
+  min-height: 5.75rem;
+  padding: 0.75rem 1rem;
+}
+.vd-import-preferences .lake-mode-options strong { margin-top: 0.375rem; }
+.vd-import-preferences .workspace-extras .ant-checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem;
+  min-height: 2.75rem;
+}
+.vd-import-preferences .workspace-extras .ant-checkbox + span {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.vd-import-preferences > .lake-import-hint { margin-bottom: 0; font-size: 0.75rem; line-height: 1.5; }
+@media (min-width: 65.0625rem) and (max-height: 55rem) {
+  .vd-import { gap: 0.75rem; padding-top: 1.25rem; padding-bottom: 0.75rem; }
+  .vd-import .vd-page-header p { margin-top: 0.25rem; font-size: 1rem; }
+  .vd-import-preferences { padding: 0.75rem 1.25rem; }
+  .vd-import-preferences > h2 { font-size: 1.25rem; }
+  .vd-import-preferences > p { font-size: 0.75rem; line-height: 1.5; margin-bottom: 0.5rem; }
+  .vd-import-preferences fieldset { margin: 0.25rem 0; padding-bottom: 0.5rem; }
+  .vd-import-preferences .lake-field-label { margin-bottom: 0; }
+  .vd-import-preferences fieldset legend { line-height: 1.4; margin-bottom: 0.375rem; }
+  .vd-import-preferences .lake-mode-options .ant-radio-wrapper { min-height: 4.75rem; padding-block: 0.5rem; }
+  .vd-import-preferences .lake-mode-options strong { margin-top: 0.25rem; font-size: 0.875rem; line-height: 1.4; }
+  .vd-import-preferences .lake-mode-options small { margin-top: 0.125rem; line-height: 1.4; }
+  .vd-import-preferences .lake-mode-options svg { width: 1.25rem; height: 1.25rem; }
+  .vd-import-preferences > .lake-import-hint { font-size: 0.6875rem; }
+  .vd-import .lake-import-tabs { margin-bottom: 0.75rem; }
+  .vd-import .lake-import-tabs a { padding-block: 0.625rem; }
+  .vd-import-empty { height: clamp(9rem, 27vh, 16rem); gap: 0.625rem; }
+}
