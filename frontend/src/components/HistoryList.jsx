@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { 
+import {
   ArrowRight,
   Plus,
-  Calendar, 
-  Clock, 
+  Calendar,
+  Clock,
   FileText,
   Loader2,
   Trash2,
-  AlertCircle
+  AlertCircle,
+  RotateCcw
 } from 'lucide-react'
 import { getHistory, deleteReport } from '../api/videoService'
 
@@ -16,6 +18,8 @@ function HistoryList({ onViewReport, onBack, onBackToProcessing, currentTask }) 
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [retryingId, setRetryingId] = useState('')
+  const navigate = useNavigate()
 
   useEffect(() => {
     loadHistory()
@@ -41,6 +45,22 @@ function HistoryList({ onViewReport, onBack, onBackToProcessing, currentTask }) 
       setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 重试失败任务：服务端按原任务的输入创建新任务，成功后跳到处理进度页
+  const handleRetry = async (taskId) => {
+    if (retryingId) return
+    setRetryingId(taskId)
+    try {
+      const res = await fetch(`/api/task/${taskId}/retry`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+      navigate(`/processing/${data.task_id}`)
+    } catch (err) {
+      alert(`重试失败：${err.message}`)
+    } finally {
+      setRetryingId('')
     }
   }
 
@@ -137,6 +157,8 @@ function HistoryList({ onViewReport, onBack, onBackToProcessing, currentTask }) 
               onView={() => onViewReport(item)}
               onDelete={() => handleDelete(item.id)}
               onOpenProcessing={() => { window.location.href = `/processing/${item.id}` }}
+              onRetry={handleRetry}
+              retrying={retryingId === item.id}
               formatDate={formatDate}
             />
           ))}
@@ -146,7 +168,7 @@ function HistoryList({ onViewReport, onBack, onBackToProcessing, currentTask }) 
   )
 }
 
-function HistoryCard({ item, index, onView, onDelete, onOpenProcessing, formatDate }) {
+function HistoryCard({ item, index, onView, onDelete, onOpenProcessing, onRetry, retrying, formatDate }) {
   const isProcessing = item.status === 'processing'
   const isFailed = item.status === 'failed'
   const progress = Math.max(0, Math.min(100, item.progress || 0))
@@ -205,9 +227,22 @@ function HistoryCard({ item, index, onView, onDelete, onOpenProcessing, formatDa
             </div>
           )}
 
-          {/* 失败：错误信息 */}
+          {/* 失败：错误信息 + 重试入口 */}
           {isFailed && item.message && (
-            <p className="history-error">{item.message}</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="history-error">{item.message}</p>
+              {onRetry && (
+                <button
+                  onClick={() => onRetry(item.id)}
+                  disabled={retrying}
+                  className="flex-shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-primary-300 text-primary-700 text-xs font-medium hover:bg-primary-50 disabled:opacity-60"
+                  title="按原任务的输入重新处理（链接重下 / 本地文件重跑）"
+                >
+                  {retrying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  {retrying ? '重试中…' : '重试'}
+                </button>
+              )}
+            </div>
           )}
 
           {/* 描述 */}

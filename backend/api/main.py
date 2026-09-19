@@ -763,6 +763,90 @@ async def process_link_video(request: LinkProcessRequest):
     return UploadResponse(task_id=task_id, message="链接任务已创建，开始下载", filename=url)
 
 
+@app.post("/api/task/{task_id}/retry")
+async def retry_failed_task(task_id: str):
+    """重试失败任务：按原任务的输入（链接重下 / 本地文件重处理）创建新任务。
+
+    旧任务记录保留作历史；新任务继承学习阶段与附加产物设置。
+    - 链接任务（source_url 非空）：直接重新走「下载 → 处理」
+    - 上传任务：原文件仍在 uploads 才能重试，否则提示重新上传
+    """
+    old = processing_tasks.get(task_id)
+    if not old:
+        # 服务重启后内存为空，从 tasks.json 找
+        try:
+            old = json.loads(TASKS_FILE.read_text(encoding="utf-8")).get(task_id)
+        except Exception:
+            old = None
+    if not old:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if old.get("status") not in ("failed", "cancelled"):
+        raise HTTPException(status_code=409, detail="仅失败/已取消的任务可以重试")
+
+    source_url = (old.get("source_url") or "").strip()
+    education_level = old.get("education_level") or "自由学习"
+    extras_list = _parse_extras(old.get("extras"))
+    new_task_id = str(uuid.uuid4())
+
+    if source_url:
+        # 链接任务：重新下载并处理（复用链接任务的完整链路）
+        file_path = _upload_dir() / f"{new_task_id}.mp4"
+        processing_tasks[new_task_id] = {
+            "task_id": new_task_id,
+            "status": "pending",
+            "stage": "downloading",
+            "progress": 0,
+            "message": "重试：等待下载视频...",
+            "filename": old.get("filename") or source_url,
+            "file_path": str(file_path),
+            "source_url": source_url,
+            "education_level": education_level,
+            "extras": extras_list,
+            "created_at": datetime.now().isoformat(),
+        }
+        processing_tasks[new_task_id].update(_assign_video_identity(new_task_id, source_url=source_url))
+        save_tasks()
+        task = asyncio.create_task(_run_with_slot(
+            new_task_id,
+            lambda: _download_and_process(new_task_id, source_url, file_path,
+                                          education_level, extras_list),
+        ))
+        running_tasks[new_task_id] = task
+        return UploadResponse(task_id=new_task_id, message="已重新开始下载并处理", filename=source_url)
+
+    # 上传任务：原文件必须还在
+    old_file = old.get("file_path") or ""
+    if not old_file or not Path(old_file).exists():
+        raise HTTPException(status_code=409,
+                            detail="原始上传文件已不存在，无法直接重试，请重新上传该视频")
+    file_path = _upload_dir() / f"{new_task_id}{Path(old_file).suffix or '.mp4'}"
+    try:
+        shutil.copyfile(old_file, file_path)   # 新任务用新文件名，旧记录不受影响
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"复制原视频失败: {e}")
+
+    processing_tasks[new_task_id] = {
+        "task_id": new_task_id,
+        "status": "pending",
+        "stage": "uploading",
+        "progress": 0,
+        "message": "重试：等待处理",
+        "filename": old.get("filename") or Path(old_file).name,
+        "file_path": str(file_path),
+        "education_level": education_level,
+        "extras": extras_list,
+        "created_at": datetime.now().isoformat(),
+    }
+    processing_tasks[new_task_id].update(_assign_video_identity(new_task_id, file_path=file_path))
+    save_tasks()
+    task = asyncio.create_task(_run_with_slot(
+        new_task_id,
+        lambda: process_video_async(new_task_id, file_path, education_level, extras_list),
+    ))
+    running_tasks[new_task_id] = task
+    return UploadResponse(task_id=new_task_id, message="已重新开始处理", filename=old.get("filename") or "")
+
+
 async def _download_and_process(task_id: str, url: str, file_path: Path, education_level: str,
                                 extras: List[str] = None):
     """下载链接视频后接续标准处理流程"""
