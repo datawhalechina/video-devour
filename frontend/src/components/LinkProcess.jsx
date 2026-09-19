@@ -214,6 +214,9 @@ h1,h2,h3{line-height:1.35}</style>
       <p className="flex items-center gap-3 text-xs">
         {item.uploader && <span>UP: {item.uploader}</span>}
         {item.duration && <span>时长: {formatDuration(item.duration)}</span>}
+        {item.published_at && (
+          <span title="视频发布时间">📅 {item.published_at}</span>
+        )}
         <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700">
           {PLATFORM_LABELS[item.platform] || '网页'}
         </span>

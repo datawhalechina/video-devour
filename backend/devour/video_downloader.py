@@ -13,6 +13,7 @@
 import logging
 import os
 import tempfile
+from datetime import datetime
 from backend.runtime import paths as _rt_paths
 import re
 from pathlib import Path
@@ -164,6 +165,9 @@ def _simplify_info(info: Dict, platform: str) -> Dict:
     """把 yt-dlp 的元数据精简为前端预览所需字段"""
     webpage_url = info.get("webpage_url") or info.get("original_url") or ""
     duration = info.get("duration")
+    # 发布时间：yt-dlp 的 upload_date 是 YYYYMMDD 字符串
+    up = info.get("upload_date")
+    published_at = (f"{up[:4]}-{up[4:6]}-{up[6:8]}" if up and len(up) == 8 else None)
     return {
         "id": info.get("id"),
         "title": info.get("title") or "未知标题",
@@ -174,6 +178,7 @@ def _simplify_info(info: Dict, platform: str) -> Dict:
         "webpage_url": webpage_url,
         "video_id": _extract_video_id(webpage_url, platform) or info.get("id"),
         "description": (info.get("description") or "")[:200],
+        "published_at": published_at,
         "stats": {
             "views": info.get("view_count"),
             "likes": info.get("like_count"),
@@ -1491,6 +1496,9 @@ def _douyin_search(query: str, max_results: int = 8) -> List[Dict]:
             "webpage_url": f"https://www.douyin.com/video/{aweme_id}",
             "video_id": str(aweme_id),
             "description": desc[:100],
+            # 视频发布时间（搜索接口不返回播放量，见下）
+            "published_at": (datetime.fromtimestamp(info["create_time"]).strftime("%Y-%m-%d")
+                             if info.get("create_time") else None),
             # 热度指标：搜索接口不返回播放量（恒 0），赞/藏/评/转发可用
             "stats": {
                 "views": None,
@@ -1542,6 +1550,7 @@ def _bilibili_search(query: str, max_results: int) -> List[Dict]:
         pic = v.get("pic") or ""
         if pic.startswith("//"):
             pic = "https:" + pic
+        pub = v.get("pubdate")
         results.append({
             "id": bvid,
             "title": title,
@@ -1552,6 +1561,8 @@ def _bilibili_search(query: str, max_results: int) -> List[Dict]:
             "webpage_url": f"https://www.bilibili.com/video/{bvid}",
             "video_id": bvid,
             "description": "",
+            # 视频发布时间（上传时间），便于判断内容新旧
+            "published_at": datetime.fromtimestamp(pub).strftime("%Y-%m-%d") if pub else None,
             # 热度指标：官方搜索接口直接提供（便于用户评判内容）
             "stats": {
                 "views": v.get("play"),
