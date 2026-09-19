@@ -94,6 +94,7 @@ export const getHistory = async () => {
     return response.map(item => ({
       id: item.task_id,
       videoName: item.filename,
+      displayName: item.display_name || '',
       status: item.status,
       createdAt: item.created_at,
       progress: item.progress || 0,

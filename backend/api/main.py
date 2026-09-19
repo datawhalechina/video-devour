@@ -328,6 +328,10 @@ async def health_check():
 # 设置控制台 API（离线/在线模式切换、API 配置、连通性测试）
 # ---------------------------------------------------------------------------
 
+class RenameTaskRequest(BaseModel):
+    name: str
+
+
 class SettingsUpdateRequest(BaseModel):
     asr_mode: Optional[str] = None            # offline | online
     dashscope_api_key: Optional[str] = None
@@ -1189,11 +1193,12 @@ async def get_task_report(task_id: str):
         except Exception as e:
             print(f"读取原文对照失败: {e}")
     
-    # 优先从任务数据获取原始文件名
-    if task_id in processing_tasks:
-        original_filename = processing_tasks[task_id].get('filename', '')
-        if original_filename:
-            video_name = Path(original_filename).stem
+    # 标题优先级：用户改过的展示名 > 原始文件名
+    _task_meta = processing_tasks.get(task_id) or {}
+    if _task_meta.get("display_name"):
+        video_name = _task_meta["display_name"]
+    elif _task_meta.get("filename"):
+        video_name = Path(_task_meta["filename"]).stem
     
     # 读取视频时长信息
     asr_files = list(output_dir.glob("*_asr_result.json"))
@@ -1699,18 +1704,27 @@ async def export_task_markdown(task_id: str, type: str = "all", mode: str = "inl
     report_content = _read(report_path)
     detailed_content = _read(detailed_report_path)
 
+    def _content_title(text, fallback):
+        """内容标题命名（与公众号/小红书下载一致）：取首个 # 标题，净化后截断 40 字。"""
+        m = re.search(r"^#\s+(.+)", text or "", re.MULTILINE)
+        raw = m.group(1).strip() if m else ""
+        return re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9_-]+", "_", raw).strip("_")[:40] or fallback
+
     if type == "detailed":
         if not detailed_content:
             raise HTTPException(status_code=400, detail="该任务没有详细报告")
-        parts, base_name = [detailed_content], f"详细报告_{task_id[:8]}"
+        parts = [detailed_content]
+        base_name = f"{_content_title(detailed_content, task_id[:8])}_详细报告"
     elif type == "outline":
         if not outline_content:
             raise HTTPException(status_code=400, detail="该任务没有图文大纲")
-        parts, base_name = [outline_content], f"图文大纲_{task_id[:8]}"
+        parts = [outline_content]
+        base_name = f"{_content_title(outline_content, task_id[:8])}_图文大纲"
     elif type == "report":
         if not report_content:
             raise HTTPException(status_code=400, detail="该任务没有精简报告")
-        parts, base_name = [report_content], f"精简报告_{task_id[:8]}"
+        parts = [report_content]
+        base_name = f"{_content_title(report_content, task_id[:8])}_精简报告"
     else:
         parts = []
         if outline_content:
@@ -1719,7 +1733,9 @@ async def export_task_markdown(task_id: str, type: str = "all", mode: str = "inl
             parts.append(f"# 详细报告\n\n{report_content}")
         if detailed_content:
             parts.append(f"# 原文对照报告\n\n{detailed_content}")
-        base_name = f"videodevour_{task_id[:8]}"
+        # 合并模式的标题取真正的报告标题（# 内容大纲 是拼装时加的通用头，不做候选）
+        first = report_content or outline_content or detailed_content or ""
+        base_name = f"{_content_title(first, task_id[:8])}_合并报告"
 
     from urllib.parse import quote
 
@@ -2228,6 +2244,7 @@ async def get_history():
                     history.append({
                         "task_id": task_id,
                         "filename": filename,
+                        "display_name": task_state.get("display_name") or "",
                         "status": status,
                         "progress": progress,
                         "message": message,
@@ -2245,6 +2262,7 @@ async def get_history():
             history.append({
                 "task_id": task_id,
                 "filename": task.get("filename") or task_id,
+                "display_name": task.get("display_name") or "",
                 "status": "processing",
                 "progress": task.get("progress") or 0,
                 "message": task.get("message") or "",
@@ -2255,6 +2273,34 @@ async def get_history():
     history.sort(key=lambda x: x["created_at"], reverse=True)
     
     return history
+
+@app.post("/api/task/{task_id}/rename")
+async def rename_task(task_id: str, request: RenameTaskRequest):
+    """重命名处理记录的展示名（仅改显示，不改原始文件/链接）。
+
+    展示名存 tasks.json 的 display_name；未设置时前端沿用原 filename。
+    """
+    name = (request.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="新名字不能为空")
+    if len(name) > 120:
+        raise HTTPException(status_code=400, detail="名字过长（最多 120 字）")
+
+    task = processing_tasks.get(task_id)
+    if not task:
+        try:
+            all_tasks = json.loads(TASKS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            all_tasks = {}
+        if task_id not in all_tasks:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        all_tasks[task_id]["display_name"] = name
+        TASKS_FILE.write_text(json.dumps(all_tasks, ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        task["display_name"] = name
+        save_tasks()
+    return {"task_id": task_id, "display_name": name}
+
 
 @app.delete("/api/task/{task_id}")
 async def delete_task(task_id: str):

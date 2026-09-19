@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -10,7 +10,8 @@ import {
   Loader2,
   Trash2,
   AlertCircle,
-  RotateCcw
+  RotateCcw,
+  Pencil
 } from 'lucide-react'
 import { getHistory, deleteReport } from '../api/videoService'
 
@@ -19,6 +20,7 @@ function HistoryList({ onViewReport, onBack, onBackToProcessing, currentTask }) 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [retryingId, setRetryingId] = useState('')
+  const [renamingId, setRenamingId] = useState('')
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -61,6 +63,27 @@ function HistoryList({ onViewReport, onBack, onBackToProcessing, currentTask }) 
       alert(`重试失败：${err.message}`)
     } finally {
       setRetryingId('')
+    }
+  }
+
+  // 重命名：保存展示名后刷新列表，让卡片标题立即同步
+  const handleRename = async (taskId, name) => {
+    if (renamingId) return
+    setRenamingId(taskId)
+    try {
+      const res = await fetch(`/api/task/${taskId}/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+      const fresh = await getHistory()
+      setHistory(fresh)
+    } catch (err) {
+      alert(`重命名失败：${err.message}`)
+    } finally {
+      setRenamingId('')
     }
   }
 
@@ -159,6 +182,8 @@ function HistoryList({ onViewReport, onBack, onBackToProcessing, currentTask }) 
               onOpenProcessing={() => { window.location.href = `/processing/${item.id}` }}
               onRetry={handleRetry}
               retrying={retryingId === item.id}
+              onRename={handleRename}
+              renaming={renamingId === item.id}
               formatDate={formatDate}
             />
           ))}
@@ -168,10 +193,20 @@ function HistoryList({ onViewReport, onBack, onBackToProcessing, currentTask }) 
   )
 }
 
-function HistoryCard({ item, index, onView, onDelete, onOpenProcessing, onRetry, retrying, formatDate }) {
+function HistoryCard({ item, index, onView, onDelete, onOpenProcessing, onRetry, retrying, onRename, renaming, formatDate }) {
   const isProcessing = item.status === 'processing'
   const isFailed = item.status === 'failed'
   const progress = Math.max(0, Math.min(100, item.progress || 0))
+  // 就地改名状态
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const saveRef = useRef('')        // 保存最新的输入值，避免闭包读到旧 draft
+  const save = async () => {
+    const name = (saveRef.current || draft).trim()
+    setEditing(false)
+    if (!name || name === (item.displayName || item.videoName)) return
+    if (onRename) await onRename(item.id, name)
+  }
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -181,10 +216,36 @@ function HistoryCard({ item, index, onView, onDelete, onOpenProcessing, onRetry,
     >
       <div className="history-card-layout">
         <div className="history-card-info">
-          {/* 标题 */}
+          {/* 标题（可改名：点铅笔就地编辑，回车/失焦保存） */}
           <h3 className="history-card-title">
             <FileText className="history-document-icon" />
-            <span>{item.videoName}</span>
+            {editing ? (
+              <input
+                autoFocus
+                className="flex-1 px-2 py-1 text-sm border border-primary-400 rounded outline-none focus:ring-2 focus:ring-primary-300"
+                value={draft}
+                onChange={(e) => { setDraft(e.target.value); saveRef.current = e.target.value }}
+                onClick={(e) => e.stopPropagation()}
+                onBlur={save}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); save() }
+                  if (e.key === 'Escape') { setEditing(false) }
+                }}
+                placeholder={item.videoName}
+              />
+            ) : (
+              <span className="truncate">{item.displayName || item.videoName}</span>
+            )}
+            {onRename && !editing && (
+              <button
+                onClick={(e) => { e.stopPropagation(); saveRef.current = item.displayName || item.videoName; setEditing(true); setDraft(item.displayName || item.videoName) }}
+                className="ml-1 p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50"
+                title="重命名"
+                aria-label="重命名"
+              >
+                {renaming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Pencil className="w-3.5 h-3.5" />}
+              </button>
+            )}
           </h3>
 
           {/* 信息行 */}
