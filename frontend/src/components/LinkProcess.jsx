@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle, Settings, KeyRound, NotebookPen } from 'lucide-react'
+import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle, Settings, KeyRound, NotebookPen, ThumbsUp, Star, MessageSquare } from 'lucide-react'
 import { getLinkInfo, searchLinkVideos, processLink, generateSubtitleNotes } from '../api/videoService'
 import ExtrasPicker, { getSelectedExtras } from './ExtrasPicker'
 import { useConfigGate } from './ConfigGateProvider'
@@ -180,6 +180,34 @@ h1,h2,h3{line-height:1.35}</style>
     win.document.close()
   }
 
+  // 热度数字格式化：万位缩写（1955206 → 195.5万，96030 → 9.6万），其余原样
+  const fmtHeat = (n) => {
+    if (n == null || isNaN(n)) return null
+    if (n >= 100000000) return `${(n / 100000000).toFixed(1)}亿`
+    if (n >= 10000) return `${(n / 10000).toFixed(1)}万`
+    return String(n)
+  }
+
+  const HeatStats = ({ stats }) => {
+    if (!stats) return null
+    const items = [
+      { key: 'views', label: '播放', icon: Play },
+      { key: 'likes', label: '点赞', icon: ThumbsUp },
+      { key: 'favorites', label: '收藏', icon: Star },
+      { key: 'comments', label: '评论', icon: MessageSquare },
+    ].map(s => ({ ...s, text: fmtHeat(stats[s.key]) })).filter(s => s.text)
+    if (!items.length) return null
+    return (
+      <p className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+        {items.map(({ key, label, icon: Icon, text }) => (
+          <span key={key} className="inline-flex items-center gap-1" title={`${label} ${text}`}>
+            <Icon size={12} className="text-gray-400" />{text}
+          </span>
+        ))}
+      </p>
+    )
+  }
+
   const InfoMeta = ({ item }) => (
     <div className="text-sm text-gray-600 space-y-1">
       <p className="font-semibold text-gray-900">{item.title}</p>
@@ -190,6 +218,7 @@ h1,h2,h3{line-height:1.35}</style>
           {PLATFORM_LABELS[item.platform] || '网页'}
         </span>
       </p>
+      <HeatStats stats={item.stats} />
     </div>
   )
 

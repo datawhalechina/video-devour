@@ -174,6 +174,12 @@ def _simplify_info(info: Dict, platform: str) -> Dict:
         "webpage_url": webpage_url,
         "video_id": _extract_video_id(webpage_url, platform) or info.get("id"),
         "description": (info.get("description") or "")[:200],
+        "stats": {
+            "views": info.get("view_count"),
+            "likes": info.get("like_count"),
+            "favorites": None,
+            "comments": info.get("comment_count"),
+        },
     }
 
 
@@ -1474,6 +1480,7 @@ def _douyin_search(query: str, max_results: int = 8) -> List[Dict]:
         duration_ms = video.get("duration") or 0
         author = (info.get("author") or {}).get("nickname") or ""
         desc = (info.get("desc") or "").strip()
+        st = info.get("statistics") or {}
         results.append({
             "id": str(aweme_id),
             "title": desc or f"抖音视频 {aweme_id}",
@@ -1484,6 +1491,13 @@ def _douyin_search(query: str, max_results: int = 8) -> List[Dict]:
             "webpage_url": f"https://www.douyin.com/video/{aweme_id}",
             "video_id": str(aweme_id),
             "description": desc[:100],
+            # 热度指标：搜索接口不返回播放量（恒 0），赞/藏/评/转发可用
+            "stats": {
+                "views": None,
+                "likes": st.get("digg_count") or None,
+                "favorites": st.get("collect_count") or None,
+                "comments": st.get("comment_count") or None,
+            },
         })
         if len(results) >= max_results:
             break
@@ -1538,6 +1552,13 @@ def _bilibili_search(query: str, max_results: int) -> List[Dict]:
             "webpage_url": f"https://www.bilibili.com/video/{bvid}",
             "video_id": bvid,
             "description": "",
+            # 热度指标：官方搜索接口直接提供（便于用户评判内容）
+            "stats": {
+                "views": v.get("play"),
+                "likes": v.get("like"),
+                "favorites": v.get("favorites"),
+                "comments": v.get("video_review"),
+            },
         })
         if len(results) >= max_results:
             break
