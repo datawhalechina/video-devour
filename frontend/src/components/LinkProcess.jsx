@@ -76,19 +76,53 @@ function LinkProcess() {
     }
   }
 
+  // 搜索：初始 1 页 8 条；「搜索更多」翻页累积，按 web_url 去重；空页视为穷尽
+  const [searchPage, setSearchPage] = useState(1)
+  const [exhausted, setExhausted] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+
+  const mergeResults = (existing, incoming) => {
+    const seen = new Set(existing.map(r => r.webpage_url || r.video_id || r.id))
+    const fresh = (incoming || []).filter(r => !seen.has(r.webpage_url || r.video_id || r.id))
+    return [...existing, ...fresh]
+  }
+
   const handleSearch = async (kw) => {
     const keyword = (kw ?? query).trim()
     if (!keyword) return
     setSearchLoading(true)
     setError(null)
     try {
-      const data = await searchLinkVideos(keyword, platform, 8)
+      const data = await searchLinkVideos(keyword, platform, 8, 1)
+      setSearchPage(1)
+      setExhausted((data.results || []).length === 0)
       setResults(data.results || [])
       setPreview(null)
     } catch (err) {
       showError(`搜索失败: ${err.message}`)
     } finally {
       setSearchLoading(false)
+    }
+  }
+
+  const handleSearchMore = async () => {
+    const keyword = query.trim()
+    if (!keyword || loadingMore || exhausted) return
+    setLoadingMore(true)
+    setError(null)
+    try {
+      const next = searchPage + 1
+      const data = await searchLinkVideos(keyword, platform, 8, next)
+      const incoming = data.results || []
+      const merged = mergeResults(results, incoming)
+      setSearchPage(next)
+      setResults(merged)
+      // 空页或没有新增（去重后无增量）→ 穷尽
+      if (incoming.length === 0 || merged.length === results.length) setExhausted(true)
+    } catch (err) {
+      showError(`加载更多失败: ${err.message}`)
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -555,6 +589,21 @@ h1,h2,h3{line-height:1.35}</style>
                   </div>
                 </motion.div>
               ))}
+            </div>
+            {/* 搜索更多：翻页累积，直到该平台穷尽 */}
+            <div className="flex items-center justify-center gap-3 pt-2 pb-1">
+              {exhausted ? (
+                <span className="text-xs text-gray-400">该平台已没有更多结果</span>
+              ) : (
+                <button
+                  onClick={handleSearchMore}
+                  disabled={loadingMore}
+                  className="px-5 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {loadingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                  {loadingMore ? '搜索中…' : '搜索更多'}
+                </button>
+              )}
             </div>
           </section>
         )}

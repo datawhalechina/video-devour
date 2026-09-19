@@ -1082,26 +1082,30 @@ def _bilibili_view_info(bvid: str) -> Dict:
     }
 
 
-def search_videos(query: str, platform: str = "bilibili", max_results: int = 8) -> List[Dict]:
+def search_videos(query: str, platform: str = "bilibili", max_results: int = 8,
+                  page: int = 1) -> List[Dict]:
     """
-    按关键词搜索视频（B站/YouTube），返回预览卡片所需信息列表。
+    按关键词搜索视频，返回预览卡片所需信息列表（支持分页「搜索更多」）。
 
     Args:
         query: 搜索关键词
-        platform: bilibili | youtube
-        max_results: 返回条数
+        platform: bilibili | youtube | douyin
+        max_results: 每页条数
+        page: 页码（1 起）。B站/抖音原生分页；YouTube 无 offset，
+              按总数重取后切页（结果可能少于请求，取完即穷尽）。
     """
     query = (query or "").strip()
     if not query:
         raise ValueError("搜索关键词不能为空")
     if platform not in ("bilibili", "youtube", "douyin"):
         raise ValueError("platform 仅支持 bilibili / youtube / douyin（微信视频号不支持搜索，请直接粘贴分享链接）")
+    page = max(1, int(page))
 
     if platform == "bilibili":
-        return _bilibili_search(query, max_results)
+        return _bilibili_search(query, max_results, page)
     if platform == "douyin":
-        return _douyin_search(query, max_results)
-    return _youtube_search(query, max_results)
+        return _douyin_search(query, max_results, page)
+    return _youtube_search(query, max_results, page)
 
 
 def _douyin_cookiefile() -> Optional[str]:
@@ -1415,7 +1419,7 @@ def _download_douyin_app(aweme_id: str, target_dir: str,
     return {"file_path": str(final_path), "info": info}
 
 
-def _douyin_search(query: str, max_results: int = 8) -> List[Dict]:
+def _douyin_search(query: str, max_results: int = 8, page: int = 1) -> List[Dict]:
     """
     抖音关键词搜索。
 
@@ -1448,7 +1452,7 @@ def _douyin_search(query: str, max_results: int = 8) -> List[Dict]:
         "device_platform": "webapp", "aid": 6383, "channel": "channel_pc_web",
         "search_channel": "aweme_general", "keyword": query,
         "search_source": "normal_search", "query_correct_type": 1,
-        "is_filter_search": 0, "offset": 0, "count": max_results,
+        "is_filter_search": 0, "offset": (page - 1) * max_results, "count": max_results,
         "pc_client_type": 1, "version_code": "170400", "version_name": "17.4.0",
         "cookie_enabled": "true", "platform": "PC",
         "browser_language": "zh-CN", "browser_platform": "MacIntel",
@@ -1524,15 +1528,15 @@ def _douyin_search(query: str, max_results: int = 8) -> List[Dict]:
     return results
 
 
-def _bilibili_search(query: str, max_results: int) -> List[Dict]:
+def _bilibili_search(query: str, max_results: int, page: int = 1) -> List[Dict]:
     """
-    B站搜索：直接调用官方 web 搜索接口（带 buvid3 cookie）。
+    B站搜索：直接调用官方 web 搜索接口（带 buvid3 cookie），支持翻页。
     yt-dlp 的 bilisearch 对无浏览器指纹的请求会收到 412，故单独实现。
     """
     session = _bilibili_session()
     resp = session.get(
         "https://api.bilibili.com/x/web-interface/search/type",
-        params={"search_type": "video", "keyword": query, "page": 1},
+        params={"search_type": "video", "keyword": query, "page": page},
         timeout=10,
     )
     payload = resp.json()
@@ -1576,14 +1580,14 @@ def _bilibili_search(query: str, max_results: int) -> List[Dict]:
     return results
 
 
-def _youtube_search(query: str, max_results: int) -> List[Dict]:
-    """YouTube 搜索：yt-dlp ytsearch（flat 模式，只取列表信息）"""
+def _youtube_search(query: str, max_results: int, page: int = 1) -> List[Dict]:
+    """YouTube 搜索：yt-dlp ytsearch（flat 模式）。无 offset，按总数重取后切页。"""
+    total = max_results * page
     results = []
     with _get_ydl(referer="https://www.youtube.com/", extract_flat=True) as ydl:
-        info = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
-    for entry in info.get("entries") or []:
-        if not entry:
-            continue
+        info = ydl.extract_info(f"ytsearch{total}:{query}", download=False)
+    entries = [e for e in (info.get("entries") or []) if e]
+    for entry in entries[(page - 1) * max_results: page * max_results]:
         url = entry.get("url") or entry.get("webpage_url") or ""
         if url and not url.startswith("http"):
             url = f"https://www.youtube.com/watch?v={entry['id']}"

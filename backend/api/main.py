@@ -437,8 +437,9 @@ class LinkInfoRequest(BaseModel):
 
 class LinkSearchRequest(BaseModel):
     query: str
-    platform: str = "bilibili"   # bilibili | youtube
+    platform: str = "bilibili"   # bilibili | youtube | douyin
     max_results: int = 8
+    page: int = 1                # 页码（1 起），供「搜索更多」分页
 
 
 class LinkProcessRequest(BaseModel):
@@ -553,6 +554,7 @@ async def search_link_videos(request: LinkSearchRequest):
             query=request.query,
             platform=request.platform,
             max_results=max(1, min(request.max_results, 15)),
+            page=max(1, min(request.page, 10)),
         )}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

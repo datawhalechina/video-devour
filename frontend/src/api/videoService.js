@@ -166,10 +166,10 @@ export const getLinkInfo = async (url) => {
  * @param {string} platform - bilibili | youtube
  * @param {number} maxResults - 返回条数
  */
-export const searchLinkVideos = async (query, platform = "bilibili", maxResults = 8) => {
+export const searchLinkVideos = async (query, platform = "bilibili", maxResults = 8, page = 1) => {
   try {
     const response = await api.post("/video/link/search", {
-      query, platform, max_results: maxResults,
+      query, platform, max_results: maxResults, page,
     }, { timeout: 60000 });
     return response;
   } catch (error) {
