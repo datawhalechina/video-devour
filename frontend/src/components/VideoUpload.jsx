@@ -16,22 +16,43 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
   const [educationLevel, setEducationLevel] = useState('自由学习')
   const fileInputRef = useRef(null)
 
-  const handleFileSelect = (files) => {
+  // 读取视频时长（秒；读不到返回 0）。用于上传前的时长硬限制。
+  const readVideoDuration = (file) => new Promise((resolve) => {
+    const v = document.createElement('video')
+    v.preload = 'metadata'
+    v.onloadedmetadata = () => { URL.revokeObjectURL(v.src); resolve(v.duration || 0) }
+    v.onerror = () => { URL.revokeObjectURL(v.src); resolve(0) }
+    v.src = URL.createObjectURL(file)
+  })
+
+  const handleFileSelect = async (files) => {
     const fileList = Array.from(files || [])
     const validFiles = fileList.filter(file => file.type.startsWith('video/'))
-    
+
     if (validFiles.length === 0) {
       setError('请选择有效的视频文件')
       return
     }
-    
+
+    // 时长硬限制：直播回放等超长视频上传动辄数 GB、处理也要数小时
+    const MAX_DURATION_SEC = 4 * 3600   // 4 小时
+    for (const file of validFiles) {
+      const dur = await readVideoDuration(file)
+      if (dur > MAX_DURATION_SEC) {
+        const h = Math.floor(dur / 3600), m = Math.round((dur % 3600) / 60)
+        setError(`「${file.name}」时长 ${h} 小时 ${m} 分钟，超过单视频上限（4 小时）。` +
+          `请先剪辑分段后再上传，或改用更压缩的格式。`)
+        return
+      }
+    }
+
     // 添加新文件到已选列表
     const newFiles = validFiles.map(file => ({
       id: `${file.name}-${Date.now()}-${Math.random()}`,
       file: file,
       status: 'pending' // pending, uploading, success, error
     }))
-    
+
     setSelectedFiles(prev => [...prev, ...newFiles])
     setError(null)
   }
@@ -299,10 +320,14 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
                           </p>
                           <p className="text-xs text-gray-500">
                             {formatFileSize(fileItem.file.size)}
-                            {fileItem.status === 'uploading' && uploadProgress[fileItem.id] && 
-                              ` - ${uploadProgress[fileItem.id]}%`
-                            }
-                            {fileItem.status === 'error' && fileItem.error && 
+                            {fileItem.status === 'uploading' && uploadProgress[fileItem.id] && (
+                              typeof uploadProgress[fileItem.id] === 'object'
+                                ? ` - ${uploadProgress[fileItem.id].percent}%` +
+                                  (uploadProgress[fileItem.id].speedText ? ` · ${uploadProgress[fileItem.id].speedText}` : '') +
+                                  (uploadProgress[fileItem.id].etaText ? ` · 剩余${uploadProgress[fileItem.id].etaText}` : '')
+                                : ` - ${uploadProgress[fileItem.id]}%`
+                            )}
+                            {fileItem.status === 'error' && fileItem.error &&
                               ` - ${fileItem.error}`
                             }
                           </p>

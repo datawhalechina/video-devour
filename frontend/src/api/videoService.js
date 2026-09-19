@@ -50,22 +50,70 @@ export const uploadVideo = async (file, onProgress, educationLevel = "自由学�
   formData.append("education_level", educationLevel);
   if (extras?.length) formData.append("extras", extras.join(","));
 
+  // 大文件（直播回放等可达数 GB）不能受 axios 全局 5 分钟超时限制：
+  // 上传请求不限总时长，改用「速率看门狗」止损——
+  // ① 启动宽限 20s 后平均速率仍 < 100KB/s → 中止（照此速度还要传数小时）
+  // ② 连续 45s 完全无进度 → 中止（连接已停滞）
+  const controller = new AbortController();
+  let abortReason = null;
+  const startedAt = Date.now();
+  let lastLoaded = 0;
+  let lastProgressAt = startedAt;
+  const MIN_AVG_BPS = 100 * 1024;   // 100 KB/s
+  const GRACE_MS = 20 * 1000;
+  const STALL_MS = 45 * 1000;
+
+  const watchdog = setInterval(() => {
+    const elapsed = Date.now() - startedAt;
+    if (lastLoaded <= 0) return                       // 还没开始传数据，不判
+    const avgBps = lastLoaded / Math.max(elapsed, 1) * 1000
+    const stalledFor = Date.now() - lastProgressAt
+    if (elapsed > GRACE_MS && avgBps < MIN_AVG_BPS) {
+      abortReason = new Error(`上传速率过低（平均 ${Math.round(avgBps / 1024)} KB/s），按此速度剩余内容还需约 ` +
+        `${Math.max(1, Math.round((file.size - lastLoaded) / avgBps / 60))} 分钟，已自动中止。` +
+        `请检查网络后重试，或改用更快的网络。`)
+      controller.abort()
+    } else if (stalledFor > STALL_MS) {
+      abortReason = new Error(`上传已停滞 ${Math.round(stalledFor / 1000)} 秒无进度，已自动中止。请检查网络后重试。`)
+      controller.abort()
+    }
+  }, 2000);
+
   try {
     const response = await api.post("/video/upload", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
       },
+      timeout: 0,            // 覆盖全局 5 分钟超时：上传不限总时长，止损交给速率看门狗
+      signal: controller.signal,
       onUploadProgress: (progressEvent) => {
-        const percentCompleted = Math.round(
-          (progressEvent.loaded * 100) / progressEvent.total
-        );
-        onProgress?.(percentCompleted);
+        const now = Date.now()
+        if (progressEvent.loaded > lastLoaded) lastProgressAt = now
+        const elapsed = now - startedAt
+        const avgBps = progressEvent.loaded / Math.max(elapsed, 1) * 1000
+        lastLoaded = progressEvent.loaded
+        const percentCompleted = progressEvent.total
+          ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          : 0;
+        const etaSec = avgBps > 1024 ? Math.round((progressEvent.total - progressEvent.loaded) / avgBps) : null
+        onProgress?.({
+          percent: percentCompleted,
+          speedText: avgBps > 1024
+            ? (avgBps >= 1024 * 1024 ? `${(avgBps / 1024 / 1024).toFixed(1)} MB/s` : `${Math.round(avgBps / 1024)} KB/s`)
+            : null,
+          etaText: etaSec != null ? (etaSec >= 60 ? `约 ${Math.ceil(etaSec / 60)} 分钟` : `${etaSec} 秒`) : null,
+        });
       },
     });
 
     return response;
   } catch (error) {
+    // 看门狗中止：把 axios 的 CanceledError 转成给用户的明确原因
+    if (abortReason) throw abortReason
+    if (error?.code === 'ERR_CANCELED') throw new Error('上传已中止')
     throw error;
+  } finally {
+    clearInterval(watchdog);
   }
 };
 
