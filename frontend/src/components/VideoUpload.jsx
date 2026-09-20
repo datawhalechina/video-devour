@@ -34,14 +34,13 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
       return
     }
 
-    // 时长硬限制：直播回放等超长视频上传动辄数 GB、处理也要数小时
-    const MAX_DURATION_SEC = 4 * 3600   // 4 小时
+    // 时长上限：只拦明显异常的输入（如损坏文件读出超长时长），正常长视频放行
+    const MAX_DURATION_SEC = 24 * 3600   // 24 小时
     for (const file of validFiles) {
       const dur = await readVideoDuration(file)
       if (dur > MAX_DURATION_SEC) {
         const h = Math.floor(dur / 3600), m = Math.round((dur % 3600) / 60)
-        setError(`「${file.name}」时长 ${h} 小时 ${m} 分钟，超过单视频上限（4 小时）。` +
-          `请先剪辑分段后再上传，或改用更压缩的格式。`)
+        setError(`「${file.name}」时长 ${h} 小时 ${m} 分钟，超过单视频上限（24 小时）。`)
         return
       }
     }
