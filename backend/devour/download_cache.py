@@ -92,12 +92,21 @@ def _safe_id(value: str, limit: int = 80) -> str:
 
 
 def cache_key(url: str, platform: str = "") -> str:
-    """缓存键：优先用平台+视频 ID（跨 URL 变体复用），否则用 URL 哈希"""
+    """缓存键：优先用平台+视频 ID（跨 URL 变体复用），否则用 URL 哈希。
+
+    B站多P（?p=N）必须带页码后缀：同一 BV 的各分P是不同视频，
+    不带页码会让第 2 集错误复用第 1 集的缓存文件。
+    """
     try:
         from backend.devour.video_downloader import detect_platform, _extract_video_id
         platform = platform or detect_platform(url)
         vid = _extract_video_id(url, platform)
         if vid:
+            if platform == "bilibili":
+                import re as _re
+                m = _re.search(r"[?&]p=(\d+)", url)
+                if m and int(m.group(1)) > 1:
+                    vid = f"{vid}_p{m.group(1)}"
             return f"{platform}_{_safe_id(vid)}"
     except Exception:
         pass

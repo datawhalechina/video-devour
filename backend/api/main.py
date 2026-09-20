@@ -441,8 +441,13 @@ class LinkInfoRequest(BaseModel):
 
 class LinkSearchRequest(BaseModel):
     query: str
-    platform: str = "bilibili"   # bilibili | youtube | douyin
+    platform: str = "bilibili"   # bilibili | youtube
     max_results: int = 8
+    page: int = 1                # 页码（1 起），供「搜索更多」分页
+
+
+class LinkEpisodesRequest(BaseModel):
+    url: str
     page: int = 1                # 页码（1 起），供「搜索更多」分页
 
 
@@ -565,6 +570,72 @@ async def search_link_videos(request: LinkSearchRequest):
     except Exception as e:
         logging.error(f"搜索失败: {e}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"搜索失败: {e}")
+
+
+@app.post("/api/video/link/episodes")
+async def list_link_episodes(request: LinkEpisodesRequest):
+    """枚举 B站系列的分集（多P 或 合集），供前端批量选择处理。
+
+    返回 {"type": "pages"|"season"|"single", "title", "episodes": [{url, title, duration}]}；
+    单视频时 episodes 为空列表（前端不显示分集面板）。
+    """
+    import re
+    from backend.devour.video_downloader import (
+        detect_platform, extract_share_url, _extract_video_id, _bilibili_session,
+    )
+    url = extract_share_url(request.url or "")
+    if detect_platform(url) != "bilibili":
+        raise HTTPException(status_code=400, detail="多集模式目前仅支持 B站链接")
+    bvid = _extract_video_id(url, "bilibili")
+    if not bvid:
+        raise HTTPException(status_code=400, detail="无法从链接中识别 B站视频 ID")
+
+    def _probe():
+        session = _bilibili_session()
+        resp = session.get("https://api.bilibili.com/x/web-interface/view",
+                           params={"bvid": bvid}, timeout=10)
+        payload = resp.json()
+        if payload.get("code") != 0:
+            raise ValueError(f"B站视频信息获取失败: {payload.get('message')}")
+        return payload.get("data") or {}
+
+    try:
+        data = await _run_link_probe(_probe)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    title = (data.get("title") or "").strip()
+    episodes = []
+
+    # 结构一：多P（同一 BV 多个分页，?p=N 访问）
+    for pg in data.get("pages") or []:
+        episodes.append({
+            "page": pg.get("page"),
+            "title": (pg.get("part") or "").strip() or f"P{pg.get('page')}",
+            "duration": pg.get("duration"),
+            "url": f"https://www.bilibili.com/video/{bvid}?p={pg.get('page')}",
+        })
+
+    # 结构二：合集（ugc_season，每集独立 BV）
+    if not episodes:
+        season = data.get("ugc_season") or {}
+        for sec in season.get("sections") or []:
+            for ep in sec.get("episodes") or []:
+                ebv = ep.get("bvid")
+                if not ebv:
+                    continue
+                episodes.append({
+                    "bvid": ebv,
+                    "title": re.sub(r"<[^>]+>", "", ep.get("title") or "").strip(),
+                    "duration": ep.get("duration"),
+                    "url": f"https://www.bilibili.com/video/{ebv}",
+                })
+        if episodes:
+            return {"type": "season", "title": (season.get("title") or title)[:120], "episodes": episodes}
+
+    if len(episodes) <= 1:
+        return {"type": "single", "title": title[:120], "episodes": []}
+    return {"type": "pages", "title": title[:120], "episodes": episodes}
 
 
 @app.post("/api/video/link/notes")

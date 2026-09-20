@@ -60,6 +60,54 @@ function LinkProcess() {
 
   const showError = (msg) => setError(msg)
 
+  // 多集模式：B站系列链接探测后拉取分集列表，勾选批量排队处理
+  const [episodes, setEpisodes] = useState(null)     // {type, title, episodes} | null
+  const [selectedEps, setSelectedEps] = useState(() => new Set())
+  const [batchQueued, setBatchQueued] = useState(0)  // 已加入队列数
+
+  const loadEpisodes = async (link) => {
+    setEpisodes(null)
+    setSelectedEps(new Set())
+    setBatchQueued(0)
+    try {
+      const res = await fetch('/api/video/link/episodes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: link }),
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.episodes?.length > 1) {
+        setEpisodes(data)
+        setSelectedEps(new Set(data.episodes.map((_, i) => i)))
+      }
+    } catch { /* 分集获取失败不影响单集流程 */ }
+  }
+
+  const toggleEpisode = (idx) => {
+    setSelectedEps(prev => {
+      const next = new Set(prev)
+      next.has(idx) ? next.delete(idx) : next.add(idx)
+      return next
+    })
+  }
+
+  const handleBatchProcess = async () => {
+    if (!episodes || batchQueued > 0 || processing) return
+    const chosen = episodes.episodes.filter((_, i) => selectedEps.has(i))
+    if (!chosen.length) return
+    let firstTaskId = null
+    for (const ep of chosen) {
+      try {
+        const result = await processLink(ep.url, '自由学习', getSelectedExtras())
+        if (!firstTaskId) firstTaskId = result.task_id
+        setBatchQueued(q => q + 1)
+      } catch (err) {
+        showError(`「${ep.title.slice(0, 20)}」加入队列失败: ${err.message}`)
+      }
+    }
+    if (firstTaskId) navigate(`/processing/${firstTaskId}`)
+  }
+
   const handleProbe = async () => {
     const link = url.trim()
     if (!link) return
@@ -69,6 +117,8 @@ function LinkProcess() {
       const info = await getLinkInfo(link)
       setPreview(info)
       setResults([])
+      if (info.platform === 'bilibili') await loadEpisodes(link)
+      else setEpisodes(null)
     } catch (err) {
       showError(`获取视频信息失败: ${err.message}`)
     } finally {
@@ -535,6 +585,56 @@ h1,h2,h3{line-height:1.35}</style>
                 </div>
               </div>
             )}
+          </section>
+        )}
+
+        {/* 多集模式：B站系列/多P 分集选择，批量排队处理 */}
+        {episodes && episodes.episodes.length > 1 && (
+          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="p-5 border-b border-gray-100">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                  <Tv className="w-5 h-5 text-primary-600" />
+                  检测到多集系列（{episodes.episodes.length} 集）
+                </h2>
+                <button
+                  onClick={() => setSelectedEps(selectedEps.size === episodes.episodes.length
+                    ? new Set()
+                    : new Set(episodes.episodes.map((_, i) => i)))}
+                  className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  {selectedEps.size === episodes.episodes.length ? '取消全选' : '全选'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1.5">
+                {episodes.title} · 勾选要处理的分集，逐集排队生成报告（已完成下载的分集会复用缓存）
+              </p>
+            </div>
+            <div className="max-h-72 overflow-y-auto px-5 py-2">
+              {episodes.episodes.map((ep, i) => (
+                <label key={ep.url} className="flex items-center gap-2.5 py-1.5 cursor-pointer hover:bg-gray-50 rounded px-1">
+                  <input type="checkbox" checked={selectedEps.has(i)}
+                         onChange={() => toggleEpisode(i)}
+                         className="accent-primary-600" />
+                  <span className="text-sm text-gray-800 flex-1 truncate">{ep.title}</span>
+                  {ep.duration && <span className="text-xs text-gray-400 flex-shrink-0">{formatDuration(ep.duration)}</span>}
+                </label>
+              ))}
+            </div>
+            <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+              <span className="text-xs text-gray-500">
+                已选 {selectedEps.size} / {episodes.episodes.length} 集
+                {batchQueued > 0 && <span className="text-primary-600 ml-2">已加入队列 {batchQueued} 集</span>}
+              </span>
+              <button
+                onClick={handleBatchProcess}
+                disabled={selectedEps.size === 0 || batchQueued > 0 || processing}
+                className="px-5 py-2 rounded-lg bg-primary-600 text-white text-sm font-bold hover:bg-primary-700 disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Download className="w-4 h-4" />
+                批量处理（{selectedEps.size} 集）
+              </button>
+            </div>
           </section>
         )}
 
