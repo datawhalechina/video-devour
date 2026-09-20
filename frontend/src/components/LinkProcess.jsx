@@ -64,6 +64,7 @@ function LinkProcess() {
   const [episodes, setEpisodes] = useState(null)     // {type, title, episodes} | null
   const [selectedEps, setSelectedEps] = useState(() => new Set())
   const [batchQueued, setBatchQueued] = useState(0)  // 已加入队列数
+  const [downloadingCount, setDownloadingCount] = useState(0)  // 已开始仅下载数
 
   const loadEpisodes = async (link) => {
     setEpisodes(null)
@@ -106,6 +107,24 @@ function LinkProcess() {
       }
     }
     if (firstTaskId) navigate(`/processing/${firstTaskId}`)
+  }
+
+  // 仅下载：勾选的分集只下载到本地缓存（不进处理流水线），之后处理时复用缓存
+  const handleBatchDownload = async () => {
+    if (!episodes || downloadingCount > 0) return
+    const chosen = episodes.episodes.filter((_, i) => selectedEps.has(i))
+    if (!chosen.length) return
+    let ok = 0
+    for (const ep of chosen) {
+      try {
+        const res = await fetch('/api/video/download-only', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: ep.url }),
+        })
+        if (res.ok) ok++
+      } catch { /* 单集失败继续下一集 */ }
+      setDownloadingCount(ok)
+    }
   }
 
   const handleProbe = async () => {
@@ -621,19 +640,31 @@ h1,h2,h3{line-height:1.35}</style>
                 </label>
               ))}
             </div>
-            <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+            <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-3">
               <span className="text-xs text-gray-500">
                 已选 {selectedEps.size} / {episodes.episodes.length} 集
                 {batchQueued > 0 && <span className="text-primary-600 ml-2">已加入队列 {batchQueued} 集</span>}
+                {downloadingCount > 0 && <span className="text-primary-600 ml-2">已开始下载 {downloadingCount} 集</span>}
               </span>
-              <button
-                onClick={handleBatchProcess}
-                disabled={selectedEps.size === 0 || batchQueued > 0 || processing}
-                className="px-5 py-2 rounded-lg bg-primary-600 text-white text-sm font-bold hover:bg-primary-700 disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <Download className="w-4 h-4" />
-                批量处理（{selectedEps.size} 集）
-              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={handleBatchDownload}
+                  disabled={selectedEps.size === 0 || downloadingCount > 0}
+                  className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1.5"
+                  title="只下载到本地缓存，不生成报告；之后处理会直接复用缓存"
+                >
+                  <Download className="w-4 h-4" />
+                  仅下载（{selectedEps.size} 集）
+                </button>
+                <button
+                  onClick={handleBatchProcess}
+                  disabled={selectedEps.size === 0 || batchQueued > 0 || processing}
+                  className="px-5 py-2 rounded-lg bg-primary-600 text-white text-sm font-bold hover:bg-primary-700 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Download className="w-4 h-4" />
+                  批量处理（{selectedEps.size} 集）
+                </button>
+              </div>
             </div>
           </section>
         )}

@@ -638,6 +638,56 @@ async def list_link_episodes(request: LinkEpisodesRequest):
     return {"type": "pages", "title": title[:120], "episodes": episodes}
 
 
+# --- 仅下载（不入处理流水线）：下载到本地缓存，之后处理时直接复用 ---
+
+_DOWNLOAD_JOBS: Dict[str, Dict] = {}   # url -> {status: downloading|done|failed, message, size}
+
+
+class DownloadOnlyRequest(BaseModel):
+    url: str
+
+
+async def _download_only_worker(url: str):
+    target = _rt_paths.media_subdir("downloads")
+    try:
+        from backend.devour.video_downloader import download_video
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: download_video(url, str(target)))
+        from backend.devour import download_cache
+        download_cache.register(url, result["file_path"], info=result.get("info"))
+        _DOWNLOAD_JOBS[url].update(
+            status="done",
+            size=(result.get("info") or {}).get("size") or 0,
+            file_path=result["file_path"],
+        )
+    except Exception as e:
+        _DOWNLOAD_JOBS[url].update(status="failed", message=str(e)[:300])
+
+
+@app.post("/api/video/download-only")
+async def download_only_video(request: DownloadOnlyRequest):
+    """仅下载视频到本地缓存（不进入处理流水线）；已在下载中的请求直接跳过。"""
+    from backend.devour.video_downloader import extract_share_url, detect_platform, normalize_douyin_url
+    url = extract_share_url(request.url or "")
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="请提供有效的视频链接")
+    if detect_platform(url) == "douyin":
+        url = normalize_douyin_url(url)
+
+    job = _DOWNLOAD_JOBS.get(url)
+    if job and job.get("status") == "downloading":
+        return {"started": True, "dedupe": True, "url": url}
+    _DOWNLOAD_JOBS[url] = {"status": "downloading"}
+    asyncio.create_task(_download_only_worker(url))
+    return {"started": True, "url": url}
+
+
+@app.get("/api/video/download-only")
+async def download_only_status():
+    """仅下载任务的状态列表（供前端/排查查看）。"""
+    return {"jobs": [{"url": u, **{k: v for k, v in j.items()}} for u, j in _DOWNLOAD_JOBS.items()]}
+
+
 @app.post("/api/video/link/notes")
 async def generate_subtitle_notes(request: LinkNotesRequest):
     """
