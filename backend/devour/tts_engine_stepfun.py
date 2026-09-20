@@ -13,7 +13,7 @@ import logging
 
 import requests
 
-DEFAULT_BASE_URL = "https://api.stepfun.com/v1"
+DEFAULT_BASE_URL = "https://api.stepfun.com/step_plan/v1"
 DEFAULT_MODEL = "stepaudio-2.5-tts"
 DEFAULT_VOICE = "cixingnansheng"
 DEFAULT_FORMAT = "mp3"

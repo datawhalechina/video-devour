@@ -10,14 +10,14 @@ import DirectoryPicker from './DirectoryPicker'
 const PROVIDER_PRESETS = {
   llm: [
     { key: 'dashscope', label: 'DashScope 阿里云', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-max', 'qwen-plus', 'qwen-turbo'] },
-    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/v1', models: ['water18-0910', 'step-5-preview', 'step-3.7-flash', 'step-3.5-flash'] },
+    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/step_plan/v1', models: ['step-3.7-flash', 'step-5-preview', 'step-3.5-flash'] },
     { key: 'deepseek', label: 'DeepSeek', url: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-reasoner'] },
     { key: 'ark', label: '火山方舟', url: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-seed-1-6-flash-250828'] },
     { key: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini'] },
   ],
   vlm: [
     { key: 'dashscope', label: 'DashScope 阿里云', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-vl-max', 'qwen-vl-plus'] },
-    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/v1', models: ['water18-0910', 'step-5-preview', 'step-3.7-flash'] },
+    { key: 'stepfun', label: '阶跃星辰 StepFun', url: 'https://api.stepfun.com/step_plan/v1', models: ['step-3.7-flash', 'step-5-preview'] },
     { key: 'ark', label: '火山方舟', url: 'https://ark.cn-beijing.volces.com/api/v3', models: ['doubao-seed-1-6-flash-250828'] },
     { key: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', models: ['gpt-4o'] },
   ],
@@ -407,7 +407,7 @@ function SettingsPage() {
                 {form.online_asr_provider === 'stepfun' && (
                   <div className="flex flex-wrap items-center gap-2 mt-2">
                     <span className="text-xs text-gray-400">快捷选择：</span>
-                    {['stepaudio-2.5-asr', 'stepaudio-3-asr-max'].map((m) => (
+                    {['stepaudio-2.5-asr'].map((m) => (
                       <button key={m} type="button" onClick={() => setField('online_asr_model', m)}
                         className={`px-2.5 py-1 rounded-full text-xs transition ${form.online_asr_model === m ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                         {m}
@@ -633,7 +633,7 @@ function SettingsPage() {
           <h2 className="text-base font-bold text-gray-900 mb-2">语音合成 TTS（阶跃星辰 StepFun）</h2>
           <p className="text-xs text-gray-500 leading-relaxed mb-4">
             用于把报告/笔记朗读为语音，调用阶跃星辰 <code>/audio/speech</code> 接口，复用上方「阶跃星辰」的 API Key。
-            audio-3 系列模型需账号已开通（未开通会提示无权限）。
+            audio-3 系列与 water18-0910 需开放平台 /v1 端点（订阅 step_plan 端点仅含 2.5 系列与 step-3.7-flash 等）。
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -641,7 +641,7 @@ function SettingsPage() {
               <input type="text" value={form.tts_model || ''} onChange={(e) => setField('tts_model', e.target.value)}
                 placeholder="stepaudio-2.5-tts" className={inputClass} />
               <div className="flex flex-wrap gap-2 mt-2">
-                {['stepaudio-2.5-tts', 'stepaudio-3-tts', 'stepaudio-3-gen-preview'].map((m) => (
+                {['stepaudio-2.5-tts'].map((m) => (
                   <button key={m} type="button" onClick={() => setField('tts_model', m)}
                     className={`px-2.5 py-1 rounded-full text-xs transition ${form.tts_model === m ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                     {m}

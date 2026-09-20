@@ -91,11 +91,11 @@ PROVIDER_DEFAULT_ASR_MODEL = {
 # stepaudio-3-asr-max 等 audio-3 系列需账号已开通，未开通时接口返回 404 model_invalid。
 PROVIDER_ASR_MODELS = {
     "dashscope": ["fun-asr-realtime"],
-    "stepfun": ["stepaudio-2.5-asr", "stepaudio-3-asr-max"],
+    "stepfun": ["stepaudio-2.5-asr"],   # step_plan 订阅仅含 2.5；audio-3 需开放平台 /v1
 }
 
 # 阶跃星辰 TTS 可选模型与音色（设置页快捷选项；均可自由填写）
-STEPFUN_TTS_MODELS = ["stepaudio-2.5-tts", "stepaudio-3-tts", "stepaudio-3-gen-preview"]
+STEPFUN_TTS_MODELS = ["stepaudio-2.5-tts"]   # step_plan 订阅仅含 2.5；audio-3 需开放平台 /v1
 STEPFUN_TTS_VOICES = ["cixingnansheng", "linshuoboyin", "cixingnvsheng"]
 
 # settings 字段 -> config 模块属性 的映射（仅非空时覆盖 config）
