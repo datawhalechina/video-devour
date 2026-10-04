@@ -38,9 +38,19 @@ def probe_video(path):
     data = json.loads(result.stdout)
     video = next((s for s in data['streams'] if s['codec_type'] == 'video'
                   and not s.get('disposition', {}).get('attached_pic')), None)
-    if not video:
-        raise ValueError('文件不包含可处理的视频轨')
     audio = next((s for s in data['streams'] if s['codec_type'] == 'audio'), None)
+    if not video:
+        # 纯音频（播客/音频上传）：无视频轨但有音轨——返回 audio_only 档案，
+        # 由流水线跳过压缩转码与抽帧/VLM，直接进 ASR
+        if audio is None:
+            raise ValueError('文件不包含可处理的视频轨')
+        duration = float(data['format'].get('duration') or audio.get('duration') or 0)
+        if not math.isfinite(duration) or duration <= 0:
+            raise ValueError('音轨时长无效')
+        return dict(width=0, height=0, fps=0.0, duration=duration,
+                    video_codec=None, has_audio=True,
+                    audio_codec=audio['codec_name'], rotation=0.0, sar=1.0,
+                    format=data['format'].get('format_name', ''), audio_only=True)
     duration = float(video.get('duration') or data['format'].get('duration') or 0)
     if not math.isfinite(duration) or duration <= 0:
         raise ValueError('视频时长无效')
@@ -119,6 +129,13 @@ def prepare_video(source, destination, progress=None):
     source, destination = Path(source), Path(destination)
     info = probe_video(source)
     original_bytes = source.stat().st_size
+    if info.get('audio_only'):
+        # 纯音频：无需转码，原样直通（ASR 引擎接受音频文件，无画面可抽帧）
+        if progress:
+            progress(1.0)
+        return dict(path=str(source), profile='audio-passthrough',
+                    original_bytes=original_bytes, size=original_bytes,
+                    reused=True, **info)
     compliant = (info['width'] <= 1280 and info['height'] <= 720
                  and info['width'] % 2 == 0 and info['height'] % 2 == 0
                  and abs(info['fps'] - 10) < .01 and info['video_codec'] == 'h264'

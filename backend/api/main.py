@@ -1060,12 +1060,13 @@ async def upload_video(file: UploadFile = File(...), education_level: str = Form
         if education_level not in settings_store.EDUCATION_LEVELS:
             raise HTTPException(status_code=400, detail=f"学习阶段仅支持: {'/'.join(settings_store.EDUCATION_LEVELS)}")
         
-        # 检查文件扩展名（更宽松的验证）
+        # 检查文件扩展名（更宽松的验证；音频为纯音频流水线入口，无画面则跳过抽帧）
         file_extension = Path(file.filename).suffix.lower()
-        video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'}
-        
+        video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v',
+                            '.m4a', '.mp3', '.wav'}
+
         if file_extension not in video_extensions:
-            raise HTTPException(status_code=400, detail=f"不支持的文件格式: {file_extension}。支持的格式: {', '.join(video_extensions)}")
+            raise HTTPException(status_code=400, detail=f"不支持的文件格式: {file_extension}。支持的格式: {', '.join(sorted(video_extensions))}")
         
         # 生成唯一任务 ID
         task_id = str(uuid.uuid4())

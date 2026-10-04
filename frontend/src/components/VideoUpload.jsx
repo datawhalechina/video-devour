@@ -27,10 +27,12 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
 
   const handleFileSelect = async (files) => {
     const fileList = Array.from(files || [])
-    const validFiles = fileList.filter(file => file.type.startsWith('video/'))
+    // 音频（播客）走纯音频流水线：无画面则自动跳过抽帧
+    const validFiles = fileList.filter(file =>
+      file.type.startsWith('video/') || file.type.startsWith('audio/'))
 
     if (validFiles.length === 0) {
-      setError('请选择有效的视频文件')
+      setError('请选择有效的视频或音频文件')
       return
     }
 
@@ -223,7 +225,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
           <input
             ref={fileInputRef}
             type="file"
-            accept="video/*"
+            accept="video/*,audio/*"
             multiple
             className="hidden"
             onChange={(e) => handleFileSelect(e.target.files)}

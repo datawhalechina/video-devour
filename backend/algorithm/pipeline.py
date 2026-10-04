@@ -164,7 +164,9 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
                 json.dumps(prepared, ensure_ascii=False, indent=2), encoding='utf-8')
             if media_ready_callback:
                 media_ready_callback(prepared)
-            if managed_source and source != destination:
+            if (managed_source and source != destination
+                    and Path(video_path).resolve() != source.resolve()):
+                # 纯音频直通时 video_path 即源文件本身，不能删除
                 source.unlink()
 
         progress(30, "正在进行语音识别…", "asr")
@@ -187,33 +189,38 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
                 outline, headings, matched_data, output_dir=main_output_path
             )
 
-        progress(60, "正在按章节直接提取画面…", "extracting_frames")
-        with timing.track("步骤6-7_章节直接抽帧"):
-            video_handler.extract_frames_by_headings(
-                headings_with_level, matched_data, video_path, main_output_path,
-                duration=prepared['duration'],
-                progress=lambda done, total: progress(
-                    60 + int(12 * done / total), f"章节抽帧 {done}/{total}", "extracting_frames"),
-            )
-
-        logging.info("--- 步骤 8: 处理并筛选帧 ---")
-        progress(73, "正在筛选重复画面…", "extracting_frames")
-        with timing.track("步骤8_帧去重处理"):
-            image_processor.process_all_frames(output_dir=main_output_path)
-        
-        logging.info("--- 步骤 9: 使用VLM选择关键帧 ---")
-        progress(78, "正在选择关键画面…", "vlm_analysis")
-        with timing.track("步骤9_VLM关键帧选择"):
-            selected_keyframes = image_processor.select_keyframes_with_vlm(
-                headings_with_level, main_output_path
-            )
-
-        if selected_keyframes:
-            logging.info("--- 步骤 10: 更新大纲，添加关键帧 ---")
-            with timing.track("步骤10_大纲插入关键帧"):
-                outline_handler.update_detailed_outline_with_keyframes(
-                    detailed_outline_path, selected_keyframes
+        if prepared.get('audio_only'):
+            # 纯音频（播客）：没有画面，跳过抽帧与 VLM，直接进入报告生成
+            progress(60, "音频内容，跳过画面分析…", "extracting_frames")
+            logging.info("--- 纯音频输入，跳过抽帧与 VLM 画面分析 ---")
+        else:
+            progress(60, "正在按章节直接提取画面…", "extracting_frames")
+            with timing.track("步骤6-7_章节直接抽帧"):
+                video_handler.extract_frames_by_headings(
+                    headings_with_level, matched_data, video_path, main_output_path,
+                    duration=prepared['duration'],
+                    progress=lambda done, total: progress(
+                        60 + int(12 * done / total), f"章节抽帧 {done}/{total}", "extracting_frames"),
                 )
+
+            logging.info("--- 步骤 8: 处理并筛选帧 ---")
+            progress(73, "正在筛选重复画面…", "extracting_frames")
+            with timing.track("步骤8_帧去重处理"):
+                image_processor.process_all_frames(output_dir=main_output_path)
+
+            logging.info("--- 步骤 9: 使用VLM选择关键帧 ---")
+            progress(78, "正在选择关键画面…", "vlm_analysis")
+            with timing.track("步骤9_VLM关键帧选择"):
+                selected_keyframes = image_processor.select_keyframes_with_vlm(
+                    headings_with_level, main_output_path
+                )
+
+            if selected_keyframes:
+                logging.info("--- 步骤 10: 更新大纲，添加关键帧 ---")
+                with timing.track("步骤10_大纲插入关键帧"):
+                    outline_handler.update_detailed_outline_with_keyframes(
+                        detailed_outline_path, selected_keyframes
+                    )
 
         logging.info("--- 步骤 11: 生成最终报告 ---")
         progress(86, "正在生成学习笔记…", "generating_report")

@@ -21,6 +21,7 @@ const PLATFORM_LABELS = {
   wechat: '微信视频号',
   douyin: '抖音',
   x: 'X',
+  xiaoyuzhou: '小宇宙播客',
 }
 
 function formatDuration(seconds) {
