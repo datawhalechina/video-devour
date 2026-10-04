@@ -32,9 +32,29 @@ class StyleArticleTests(unittest.TestCase):
 
     def test_generates_file_for_each_style(self):
         for scope, (fname, label, _) in style_articles.STYLE_TYPES.items():
-            path = self._generate(scope, f"# {label}\n\n正文。\n")
+            if scope == "html":
+                # HTML 速读页的内容稿必须是面板化草稿（## 小节 + frontmatter）
+                draft = "---\ntitle: 演示速读页\n---\n## A 核心结论\n- 要点甲\n"
+            else:
+                draft = f"# {label}\n\n正文。\n"
+            path = self._generate(scope, draft)
             self.assertEqual(path.name, fname)
-            self.assertIn(label, path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
+            if scope == "html":
+                self.assertIn("<!DOCTYPE html>", text)
+                self.assertIn("am-panel", text)
+            else:
+                self.assertIn(label, text)
+
+    def test_speedread_prompt_carries_fact_constraints_and_report(self):
+        # HTML 速读页提示词在 html_speedread.SPEEDREAD_PROMPT，事实约束由生成入口拼接
+        with patch.object(style_articles, "LLMHandler") as handler:
+            handler.return_value.get_response.return_value = (
+                "---\ntitle: t\n---\n## A 结论\n- x\n")
+            style_articles.generate_style(self.root, "html", "自由学习")
+            prompt = handler.return_value.get_response.call_args[0][0]
+            self.assertIn("取材约束", prompt)
+            self.assertIn("演示视频", prompt)          # 报告内容已注入提示词
 
     def test_invented_images_are_stripped(self):
         # 成品里不能出现报告没有的关键帧链接（防止编造图片）

@@ -40,16 +40,17 @@ ARTICLE_TYPES = {
     # 原文对照：编号原文 + 逐句翻译，供主报告 [N] 上标回溯核对（随详细报告一起生成）
     "transcript": ("transcript.md", "原文对照"),
     # 衍生文体：按需生成（style_articles），生成后自动入库
+    "html": ("speedread.html", "HTML 速读页"),
     "quantum": ("quantum_read.md", "量子速读"),
     "wechat": ("wechat_article.md", "公众号文章"),
     "xiaohongshu": ("xiaohongshu_article.md", "小红书笔记"),
 }
 
 # 可被「按需生成」的维度（文件不存在时由 style_articles 生成）
-GENERATABLE_SCOPES = ("quantum", "wechat", "xiaohongshu")
+GENERATABLE_SCOPES = ("html", "quantum", "wechat", "xiaohongshu")
 
 # 文档库展示顺序：先分析报告，再原文对照，后衍生文体
-ARTICLE_ORDER = ("outline", "report", "detailed", "transcript", "quantum", "wechat", "xiaohongshu")
+ARTICLE_ORDER = ("outline", "report", "detailed", "transcript", "html", "quantum", "wechat", "xiaohongshu")
 
 PLATFORM_LABELS = {
     "bilibili": "B站", "youtube": "YouTube", "wechat": "微信视频号", "douyin": "抖音", "x": "X", "upload": "本地上传",
@@ -343,8 +344,8 @@ def _needs_image_repair(dir_path: Path, scope: str, content: str) -> bool:
             return False
     except Exception:
         return False
-    if re.search(r"!\[[^\]]*\]\(", content):
-        return False                        # 已有图，正常
+    if re.search(r"!\[[^\]]*\]\(", content) or "<img" in content:
+        return False                        # 已有图，正常（html scope 嵌 <img>）
     for name in ("final_report.md", "detailed_outline.md"):
         rep = dir_path / name
         if rep.exists() and rep.stat().st_size > 0:
@@ -399,6 +400,24 @@ def _with_content(hit: Dict, scope: str) -> Dict:
     return hit
 
 
+def _article_text(path: Path) -> str:
+    """读文章全文；HTML 速读页去掉标签与样式块，供检索与摘要。"""
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except Exception:
+        return ""
+    if Path(path).suffix.lower() == ".html":
+        text = re.sub(r"<style[\s\S]*?</style>|<script[\s\S]*?</script>", " ", text)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = _html_unescape(text)
+    return text
+
+
+def _html_unescape(text: str) -> str:
+    import html as _h
+    return _h.unescape(text)
+
+
 def _snippet(text: str, query: str, width: int = 140) -> str:
     """取关键词命中的上下文片段"""
     plain = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)          # 去图片
@@ -425,9 +444,8 @@ def build_corpus(docs: List[Dict], scope_set: set) -> Dict[str, str]:
             art = doc["articles"].get(scope)
             if not art:
                 continue
-            try:
-                text = Path(art["file"]).read_text(encoding="utf-8")
-            except Exception:
+            text = _article_text(Path(art["file"]))
+            if not text:
                 continue
             # 标题重复 3 次参与打分，提升标题命中权重
             corpus[f"{doc['doc_id']}:{scope}"] = f"{doc['title']}\n{doc['title']}\n{doc['title']}\n{text}"
@@ -447,7 +465,7 @@ def search_library(query: str, scope: str = "all", top_k: int = 10) -> Dict:
         doc_id, sc = key.split(":", 1)
         doc, _ = by_key[key]
         art = doc["articles"][sc]
-        text = Path(art["file"]).read_text(encoding="utf-8")
+        text = _article_text(Path(art["file"]))
         results.append({
             "doc_id": doc_id,
             "run_id": doc.get("run_id", ""),
@@ -476,10 +494,7 @@ def list_library(scope: str = "all") -> Dict:
     for doc in docs:
         for sc in scope_set & set(doc["articles"]):
             art = doc["articles"][sc]
-            try:
-                preview = Path(art["file"]).read_text(encoding="utf-8")[:120] + "…"
-            except Exception:
-                preview = ""
+            preview = _article_text(Path(art["file"]))[:120] + "…"
             results.append({
                 "doc_id": doc["doc_id"], "run_id": doc.get("run_id", ""), "scope": sc,
                 "label": ARTICLE_TYPES[sc][1],
@@ -558,13 +573,17 @@ def export_article_zip(doc_id: str, scope: str, run_id: str = "") -> Optional[Tu
     buf = BytesIO()
     base = f"videodevour_{doc_id[:8]}_{scope}"
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{base}.md", content)
-        # 把引用到的本地图片一并打包
-        for m in re.finditer(r"!\[[^\]]*\]\(((?!https?://|data:)[^)]+)\)", content):
-            rel = m.group(1).replace("\\", "/").lstrip("./")
-            img = Path(art["file"]).parent / rel
-            if img.exists():
-                zf.write(img, rel)
+        if scope == "html":
+            # HTML 速读页：图片已 base64 内嵌，单文件即完整产物
+            zf.writestr(f"{base}.html", content)
+        else:
+            zf.writestr(f"{base}.md", content)
+            # 把引用到的本地图片一并打包
+            for m in re.finditer(r"!\[[^\]]*\]\(((?!https?://|data:)[^)]+)\)", content):
+                rel = m.group(1).replace("\\", "/").lstrip("./")
+                img = Path(art["file"]).parent / rel
+                if img.exists():
+                    zf.write(img, rel)
     safe = f"videodevour_{doc_id[:8]}_{scope}.zip"
     return buf.getvalue(), safe
 

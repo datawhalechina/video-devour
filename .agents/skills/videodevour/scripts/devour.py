@@ -484,6 +484,36 @@ def cmd_report(args):
     print(report.read_text(encoding="utf-8"))
 
 
+def cmd_speedread(args):
+    """HTML 速读页：基于任务报告生成一页图纸板式速读 HTML（版式规范 answer-me-with-html）。
+
+    --png/--pdf 用无头 Chrome 导出全页长图 / A4 PDF，便于直接传播。
+    """
+    home = project_home(args.home)
+    setup_project(home)
+    out_dir = _resolve_task_dir(home, args)
+
+    from backend.algorithm.style_articles import generate_style
+    html_path = generate_style(out_dir, "html", args.level or None,
+                               force=getattr(args, "force", False))
+    result = {"html": str(html_path)}
+    print(f"HTML 速读页: {html_path}")
+
+    if args.png or args.pdf:
+        from backend.devour import html_export
+        if args.png:
+            result["png"] = html_export.export_png(html_path, out_dir / "speedread.png")
+            print(f"已导出 PNG: {result['png']}")
+        if args.pdf:
+            result["pdf"] = html_export.export_pdf(html_path, out_dir / "speedread.pdf")
+            print(f"已导出 PDF: {result['pdf']}")
+
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if args.open:
+        import webbrowser
+        webbrowser.open(f"file://{html_path}")
+
+
 def cmd_styles(args):
     """生成衍生文体：量子速读 / 公众号文章 / 小红书笔记（基于已有报告改写）。
 
@@ -498,7 +528,7 @@ def cmd_styles(args):
     result = {"output_dir": str(out_dir), "styles": {}}
     for scope in kinds:
         if scope not in STYLE_TYPES:
-            result["styles"][scope] = "不支持的文体（可选 quantum/wechat/xiaohongshu）"
+            result["styles"][scope] = "不支持的文体（可选 html/quantum/wechat/xiaohongshu）"
             continue
         label = STYLE_TYPES[scope][1]
         try:
@@ -634,7 +664,7 @@ def main():
 
     p_lib = sub.add_parser("library", help="检索项目本地文档库（历史任务报告/笔记复用）")
     lib_sub = p_lib.add_subparsers(dest="action", required=True)
-    _scope_choices = ["all", "outline", "report", "detailed", "quantum", "wechat", "xiaohongshu"]
+    _scope_choices = ["all", "outline", "report", "detailed", "html", "quantum", "wechat", "xiaohongshu"]
 
     lib_s = lib_sub.add_parser("search", help="BM25 相关度检索（返回 doc_id/scope/摘要）")
     lib_s.add_argument("query")
@@ -719,16 +749,27 @@ def main():
     p_report.set_defaults(func=cmd_report)
 
     p_styles = sub.add_parser(
-        "styles", help="生成衍生文体：量子速读 / 公众号文章 / 小红书笔记")
+        "styles", help="生成衍生文体：HTML 速读页 / 量子速读 / 公众号文章 / 小红书笔记")
     p_styles.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
     p_styles.add_argument("--dir", default=None, help="指定任务输出目录")
     p_styles.add_argument("--kind", default="",
-                          help="逗号分隔，可选：quantum,wechat,xiaohongshu（默认全部）")
+                          help="逗号分隔，可选：html,quantum,wechat,xiaohongshu（默认全部）")
     p_styles.add_argument("--force", action="store_true",
                           help="忽略已有缓存重新生成（修复处理中途生成导致的缺图产物）")
     p_styles.add_argument("--level", default=None,
                           choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
     p_styles.set_defaults(func=cmd_styles)
+
+    p_sr = sub.add_parser("speedread", help="HTML 速读页：生成一页速读 HTML 并可导出 PNG/PDF")
+    p_sr.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
+    p_sr.add_argument("--dir", default=None, help="指定任务输出目录")
+    p_sr.add_argument("--force", action="store_true", help="忽略缓存重新生成")
+    p_sr.add_argument("--level", default=None,
+                      choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
+    p_sr.add_argument("--png", action="store_true", help="同时导出全页 PNG 长图（需本机 Chrome）")
+    p_sr.add_argument("--pdf", action="store_true", help="同时导出 A4 PDF（需本机 Chrome）")
+    p_sr.add_argument("--open", action="store_true", help="生成后在浏览器打开")
+    p_sr.set_defaults(func=cmd_speedread)
 
     p_pdf = sub.add_parser("pdf", help="把报告导出为 PDF（内置中文字体）")
     p_pdf.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")

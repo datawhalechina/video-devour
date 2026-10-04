@@ -2062,15 +2062,61 @@ def _safe_output_dir(doc):
     return d if d.exists() else None
 
 
+async def _speedread_download(doc, output_dir, label: str, fmt: str):
+    """HTML 速读页下载：html 单文件 / png 全页长图 / pdf A4（无头 Chrome 渲染）。"""
+    import re as _re
+    from urllib.parse import quote
+    html_path = output_dir / "speedread.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=404, detail="速读页尚未生成")
+
+    safe_title = _re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9_-]+", "_", doc["title"])[:40] or "speedread"
+    if fmt == "html":
+        filename = quote(f"{safe_title}_速读页.html")
+        return Response(
+            content=html_path.read_bytes(),
+            media_type="text/html; charset=utf-8",
+            headers={"Content-Disposition":
+                     f'attachment; filename="speedread.html"; filename*=UTF-8\'\'{filename}'},
+        )
+
+    from backend.devour import html_export
+    import functools
+    import tempfile
+    ext, mime = ("png", "image/png") if fmt == "png" else ("pdf", "application/pdf")
+    # 各导出请求写独立临时文件，避免并发互相覆盖
+    fd, tmp_path = tempfile.mkstemp(prefix="speedread_", suffix=f".{ext}")
+    os.close(fd)
+    try:
+        export = html_export.export_png if fmt == "png" else html_export.export_pdf
+        out = await _run_link_probe(functools.partial(export, html_path, tmp_path))
+        data = Path(out).read_bytes()
+    except Exception as e:
+        logging.error(f"速读页导出 {fmt} 失败: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"导出失败: {e}")
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+    filename = quote(f"{safe_title}_速读页.{ext}")
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Content-Disposition":
+                 f'attachment; filename="speedread.{ext}"; filename*=UTF-8\'\'{filename}'},
+    )
+
+
 @app.get("/api/library/article/{doc_id}/{scope}/download")
 async def library_download_article(doc_id: str, scope: str, run_id: str = "", fmt: str = "md"):
-    """单篇文章下载：fmt=md（默认，图片内嵌 base64）/ fmt=pdf。"""
+    """单篇文章下载：fmt=md（默认，图片内嵌 base64）/ fmt=pdf；
+    HTML 速读页（scope=html）额外支持 fmt=html（单文件）/ png（全页长图）/ pdf。"""
     from urllib.parse import quote
     from backend.algorithm.document_library import get_article, ARTICLE_TYPES
     if scope not in ARTICLE_TYPES:
         raise HTTPException(status_code=400, detail="不支持的文档类型")
-    if fmt not in ("md", "pdf"):
-        raise HTTPException(status_code=400, detail="fmt 仅支持 md / pdf")
+    html_ok = (scope == "html")
+    allowed = ("html", "png", "pdf") if html_ok else ("md", "pdf")
+    if fmt not in allowed:
+        raise HTTPException(status_code=400, detail=f"该文体 fmt 仅支持 {' / '.join(allowed)}")
     result = await _run_link_probe(get_article, doc_id=doc_id, scope=scope, run_id=run_id)
     if not result:
         raise HTTPException(status_code=404, detail="文章不存在")
@@ -2079,6 +2125,9 @@ async def library_download_article(doc_id: str, scope: str, run_id: str = "", fm
     doc = result["doc"]
     output_dir = OUTPUT_DIR / doc["dir"]
     label = ARTICLE_TYPES[scope][1]
+
+    if scope == "html":
+        return await _speedread_download(doc, output_dir, label, fmt)
 
     if fmt == "pdf":
         # PDF 由服务端渲染：图片按输出目录就地读取（原图比内嵌 base64 更清晰）

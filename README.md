@@ -67,6 +67,11 @@
 - **关键词搜索**：内置 B站官方搜索、YouTube 搜索与抖音搜索（抖音需登录 Cookie），封面/时长/UP主卡片式展示。
 - **抖音**：支持 `douyin.com/video/{id}` 视频页与 `v.douyin.com` 短链（自动跟随重定向）。**下载需要登录态 Cookie**（设置页「抖音 cookies」或一键读取浏览器 Cookie）；抖音的**下载与关键词搜索都需登录态**（匿名搜索返回「请先登录」），配置抖音 cookies 后即可正常搜索抖音视频。抖音下载改走 **App 接口直连**（web 接口自 2026 起受 Argus 浏览器签名校验拦截，仅带 Cookie 也会返回 403），无需浏览器签名即可下载；自动选 H.264 档，优先不超过 720p 的最高可用画质（该档通常带抖音水印；设 `VIDEO_DEVOUR_DOUYIN_CLEAN=1` 可改为优先无水印源）。
 - **X（Twitter）**：支持 `x.com` / `twitter.com` 推文视频（`/{user}/status/{id}`、`/i/status/{id}` 等自动归一化）。**下载需要登录态 Cookie**（设置页「X cookies」或一键读取浏览器 Cookie，需含 `auth_token`）；X 不支持关键词搜索，只能粘贴推文链接。
+- **衍生文体（按需生成）**：HTML 速读页 / 量子速读 / 公众号文章 / 小红书笔记。其中 **HTML 速读页**
+  是一页图纸板式的单文件速读页（版式规范 [answer-me-with-html](https://github.com/QingYunA/answer-me-with-html)）：
+  面板网格 + 结论 callout + 章节时间线 + 数据条 + 流程链，关键帧 base64 内嵌、亮暗双主题，
+  可直接单文件传播；支持**导出 PNG 全页长图与 A4 PDF**（无头 Chrome 渲染，需本机装有
+  Chrome / Chromium / Edge，可用环境变量 `VIDEO_DEVOUR_BROWSER` 指定路径）。
 - **微信视频号**：支持 `weixin.qq.com/sph/...` 分享链接。在设置页填入腾讯元宝 Cookie 后走**直连解析**（元宝解析 → 视频号 feed 接口 → 本地 ISAAC64 解密，无第三方依赖）；也可选配自建解析服务（`WECHAT_RESOLVER_URL`）或使用本地捕获工具（[ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download)）下载后上传处理。
 - 由 `yt-dlp` 驱动，含 B站风控退避重试与 YouTube cookies 支持（`YTDLP_COOKIES_FILE`）。
 
@@ -97,6 +102,8 @@ python3 .agents/skills/videodevour/scripts/devour.py douyin --check
 python3 .agents/skills/videodevour/scripts/devour.py douyin "https://www.douyin.com/video/..."
 # 一键处理：下载 → ASR → 大纲 → 关键帧 → 中文图文报告（同样支持抖音/视频号链接）
 python3 .agents/skills/videodevour/scripts/devour.py process "https://www.bilibili.com/video/BV..." --level 高中
+# HTML 速读页：生成一页速读 HTML，并可导出 PNG / PDF（需本机 Chrome）
+python3 .agents/skills/videodevour/scripts/devour.py speedread --latest --png --pdf
 # 读取最新报告
 python3 .agents/skills/videodevour/scripts/devour.py report --latest
 # 学习测试：出题（单选/多选/判断）→ 判题评估 → 学习建议

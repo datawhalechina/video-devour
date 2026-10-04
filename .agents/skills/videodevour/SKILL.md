@@ -12,7 +12,7 @@ compatibility: 需要 Python 3.12+ 与项目 .venv（uv sync），ffmpeg；任�
 调用 VideoDevour 项目（本仓库），把视频端到端处理为中文图文报告
 （ASR 转写 → 大纲 → 视频切分 → 关键帧 → 图文报告），不依赖 Web 界面。
 产出三层内容：**图文大纲 / 精简报告（结论先行）/ 详细报告（完整原文+笔记对照）**；
-可按需改写成**量子速读 / 公众号文章 / 小红书笔记**，并导出 **PDF**。
+可按需改写成**HTML 速读页 / 量子速读 / 公众号文章 / 小红书笔记**（HTML 速读页可导出 PNG/PDF 传播）。
 项目同时把每次任务的产物沉淀为**本地文档库**，可跨任务检索复用（见第 11 节）。
 
 ## 必要输入
@@ -180,21 +180,26 @@ python3 <skill目录>/scripts/devour.py graph --latest --open
 输出 JSON `{"html": "<输出目录>/mindmap.html", ...}`，将 html 路径呈现给用户（浏览器打开即用）。
 若在 `process` 时已用 `--extras` 生成过，直接使用输出 JSON 中 extras 里的路径，无需重复生成。
 
-### 8. 衍生文体：量子速读 / 公众号文章 / 小红书笔记（仅用户需要时）
+### 8. 衍生文体：HTML 速读页 / 量子速读 / 公众号文章 / 小红书笔记（仅用户需要时）
 
 把已有报告改写成可直接发布的成品文案（**不是分析报告**，基于精简报告改写，事实不跑偏）。
 **不在处理流程里预生成**，按需生成并落盘缓存，重复调用直接复用。
 
 ```bash
 S=<skill目录>/scripts/devour.py
-# 三种全部生成（默认）
+# 四种全部生成（默认）
 python3 $S styles --latest
 # 只生成某一种
 python3 $S styles --latest --kind xiaohongshu
 # 指定任务目录
 python3 $S styles --dir "<输出目录>" --kind quantum,wechat
+# HTML 速读页专用命令：生成 + 可选导出 PNG/PDF + 浏览器打开
+python3 $S speedread --latest --png --pdf --open
 ```
 
+- `html` HTML 速读页：一页图纸板式速读页（版式规范 answer-me-with-html），单文件
+  可传播（关键帧 base64 内嵌、亮暗双主题）；`--png` 导出全页长图、`--pdf` 导出 A4，
+  需本机有 Chrome/Chromium/Edge（`VIDEO_DEVOUR_BROWSER` 可指定路径）
 - `quantum` 量子速读：30 秒看懂大意 + 一句可直接发朋友圈的话
 - `wechat` 公众号文章：图文成稿（保留关键帧配图），可直接发布
 - `xiaohongshu` 小红书笔记：emoji 分点的图文笔记，含话题标签
@@ -246,7 +251,7 @@ python3 $S library export-all --out ~/Desktop
 ```
 
 - `scope` 取值：`all`（默认）/ `outline` 图文大纲 / `report` 精简报告 / `detailed` 详细报告 /
-  `quantum` 量子速读 / `wechat` 公众号文章 / `xiaohongshu` 小红书笔记
+  `html` HTML 速读页 / `quantum` 量子速读 / `wechat` 公众号文章 / `xiaohongshu` 小红书笔记
 - 检索结果含 `doc_id`、`run_id`、`scope`、`label`、`version_label`（同一视频多版本）、
   `source_url`（原视频链接）、`score`、`snippet`；取全文时把 `doc_id` + `scope`（多版本再加
   `run_id`）传给 `library get` 即可。
@@ -316,6 +321,7 @@ python3 $S library search "用户的关键词" --top 5   # 命中 → library ge
 
 ```bash
 S=<skill目录>/scripts/devour.py
+python3 $S speedread --latest --png                # HTML 速读页 + 全页长图（传播用）
 python3 $S styles --latest --kind quantum          # 量子速读（速览 + 朋友圈文案）
 python3 $S styles --latest --kind wechat           # 公众号图文
 python3 $S pdf --latest --type detailed            # 导出 PDF
