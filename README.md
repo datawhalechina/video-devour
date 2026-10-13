@@ -75,6 +75,7 @@
 - **微信视频号**：支持 `weixin.qq.com/sph/...` 分享链接。在设置页填入腾讯元宝 Cookie 后走**直连解析**（元宝解析 → 视频号 feed 接口 → 本地 ISAAC64 解密，无第三方依赖）；也可选配自建解析服务（`WECHAT_RESOLVER_URL`）或使用本地捕获工具（[ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download)）下载后上传处理。
 - **小宇宙播客**：支持 `xiaoyuzhoufm.com/episode/{eid}` 单集链接。单集页无需登录，音频直链内嵌于页面 `__NEXT_DATA__` JSON——下载原始 m4a 后**直接进 ASR 流水线**（纯音频自动跳过压缩与抽帧/画面分析，报告不含关键帧）；「上传视频」页同样接受 `.m4a` / `.mp3` / `.wav` 音频文件。
 - 由 `yt-dlp` 驱动，含 B站风控退避重试与 YouTube cookies 支持（`YTDLP_COOKIES_FILE`）。
+- **代理环境说明**：为访问 YouTube 常开系统代理的用户，若代理处于**全局模式**（global），B站/抖音等国内平台的 CDN 长连接会被代理出口 IP 限流掐断，长视频反复出现「下载中断、重试 5 次后放弃」或 `Read timed out`。应用对 B站/抖音/视频号已自动**强制直连**（yt-dlp `proxy=""`，不受系统代理模式影响）；YouTube/X 仍遵循环境代理。如仍异常，请将代理切换为**规则模式**（国内直连、境外走代理）。
 
 ### 🎓 学习增强
 - **附加产物可选**：上传/链接处理时可勾选「完成后生成」——思维导图 / 知识图谱 / 学习卡片，勾选才生成（默认不勾，报告完成即结束，最快出结果）；报告页也保留手动生成按钮。

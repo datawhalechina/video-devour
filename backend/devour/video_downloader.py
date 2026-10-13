@@ -44,6 +44,13 @@ DEFAULT_WECHAT_RESOLVER = "https://sph.litao.workers.dev"
 _URL_IN_TEXT_RE = re.compile(r"https?://[^\s\"'<>【】（）()，。；]+", re.IGNORECASE)
 _WECHAT_URL_RE = re.compile(r"https?://weixin\.qq\.com/sph/[A-Za-z0-9_\-]+", re.IGNORECASE)
 
+# 国内平台直连集合。桌面端用户为访问 YouTube 常年开着系统代理；当代理处于
+# 全局模式（如 Clash 系的 global）时，B站/抖音等国内 CDN 的下载流量会被
+# 绕到境外节点，CDN 对代理出口 IP 的长连接限流掐断，表现为长视频反复
+# 「bytes read X, more expected … Giving up after N retries」、Read timed out。
+# 这些平台不走代理才是正确路径；YouTube/X 不在此列，仍遵循环境代理。
+_DIRECT_DOWNLOAD_PLATFORMS = {"bilibili", "douyin", "wechat"}
+
 
 def extract_share_url(text: str) -> str:
     """
@@ -62,7 +69,7 @@ def extract_share_url(text: str) -> str:
     return text
 
 
-def _get_ydl(**extra):
+def _get_ydl(platform: Optional[str] = None, **extra):
     from yt_dlp import YoutubeDL
     from backend.runtime import paths as _rt_paths
 
@@ -86,6 +93,10 @@ def _get_ydl(**extra):
     }
     # 注：不启用 yt-dlp 的 impersonation（TLS 指纹伪装）——与 B站提取器
     # 存在兼容问题（No video formats），412 防护依赖指纹 cookie + 退避重试
+    # 国内平台强制直连：proxy="" 显式禁用代理，优先级高于环境变量与
+    # 系统代理设置，防止全局代理把 CDN 流量绕到境外被掐断。
+    if platform in _DIRECT_DOWNLOAD_PLATFORMS:
+        options["proxy"] = ""
     options.update(extra)
     return YoutubeDL(options)
 
@@ -314,7 +325,7 @@ def probe_video_info(url: str) -> Dict:
                 probe_tmp_cookie = _xk
 
     try:
-        with _get_ydl(referer=_platform_referer(platform), **probe_opts) as ydl:
+        with _get_ydl(platform=platform, referer=_platform_referer(platform), **probe_opts) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as e:
         if platform == "douyin":
@@ -1929,7 +1940,7 @@ def download_video(url: str, target_dir: str, max_height: int = 720,
     last_error = None
     for attempt in range(4):
         try:
-            with _get_ydl(**options) as ydl:
+            with _get_ydl(platform=platform, **options) as ydl:
                 info = ydl.extract_info(url, download=True)
             break
         except Exception as e:
