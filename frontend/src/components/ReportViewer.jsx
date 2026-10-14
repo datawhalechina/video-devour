@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Clock, FileText, Image, Edit3, LayoutGrid, FileDown, ChevronDown, ArrowUpRight, Check,
-  Timer, Share2, Network, BookOpen, Link2, Zap, Newspaper, Sparkles, ClipboardCheck, Languages, PanelsTopLeft, ImageDown } from "lucide-react";
+  Timer, Share2, Network, BookOpen, Link2, Zap, Newspaper, Sparkles, ClipboardCheck, Languages, PanelsTopLeft, ImageDown, Send } from "lucide-react";
 
 const PLATFORM_LABELS = {
   bilibili: "B站",
@@ -20,6 +20,7 @@ const STYLE_TABS = [
 ];
 const STYLE_KEYS = STYLE_TABS.map(t => t.key);
 import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
+import { getWechatMpStatus, publishToWechatMp } from "../api/videoService";
 import { triggerDownload, openExternal } from "../utils/helpers";
 import { useConfigGate } from "./ConfigGateProvider";
 import QuizPanel from "./QuizPanel";
@@ -157,6 +158,32 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
       alert(`学习卡片生成失败: ${err.message}`);
     } finally {
       setCardLoading(false);
+    }
+  };
+
+  // 发到公众号：分析报告 → 公众号图文草稿（不群发，后台确认后手动发布）
+  const [mpPublishing, setMpPublishing] = useState(false);
+  const [mpResult, setMpResult] = useState(null);   // {ok, message}
+  const handlePublishWechatMp = async () => {
+    if (mpPublishing) return;
+    setMpResult(null);
+    const status = await getWechatMpStatus();
+    if (!status.configured) {
+      setMpResult({ ok: false, message: "尚未配置公众号凭据：请到「设置 → 微信公众号发布」填写 AppID / AppSecret 后重试" });
+      return;
+    }
+    if (!status.ok) {
+      setMpResult({ ok: false, message: status.message });
+      return;
+    }
+    setMpPublishing(true);
+    try {
+      const result = await publishToWechatMp(report.task_id, { title: sourceTitle });
+      setMpResult({ ok: true, message: `「${result.title}」草稿已创建（封面：${result.cover}），请到公众号后台预览后手动发布` });
+    } catch (err) {
+      setMpResult({ ok: false, message: err.message });
+    } finally {
+      setMpPublishing(false);
     }
   };
 
@@ -393,6 +420,20 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
           <button onClick={() => setQuizOpen(true)} className="report-tool-button">
             <ClipboardCheck size={16} /> 测试习题
           </button>
+          <button
+            onClick={handlePublishWechatMp}
+            disabled={mpPublishing}
+            title="把分析报告转为公众号图文草稿（自动上传图片并排版；不自动群发，需在公众号后台预览后手动发布）"
+            className="report-tool-button">
+            <Send size={16} /> {mpPublishing ? "发布中…" : "发到公众号"}
+          </button>
+          {mpResult && (
+            <span
+              role="status"
+              className={`text-xs leading-relaxed max-w-md ${mpResult.ok ? "text-emerald-600" : "text-red-500"}`}>
+              {mpResult.ok ? "✓ " : "✗ "}{mpResult.message}
+            </span>
+          )}
         </div>
         <div className="report-tool-group report-file-tools">
           <button onClick={handleShowTiming} disabled={timingLoading} className="report-tool-button report-timing-button">

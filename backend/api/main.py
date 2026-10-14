@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import concurrent.futures
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -33,7 +34,7 @@ from backend.algorithm import settings_store
 settings_store.apply_to_config()
 
 from backend.algorithm import report_viz
-from backend.algorithm.pipeline import run_full_pipeline
+from backend.algorithm.pipeline import run_full_pipeline, run_meeting_pipeline
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -455,6 +456,7 @@ class LinkProcessRequest(BaseModel):
     url: str
     education_level: str = "自由学习"
     extras: List[str] = []       # 可选附加产物：mindmap / graph / card
+    fast_mode: bool = False      # 极速模式：跳过抽帧与 VLM，ASR 后直接出纯文字报告
 
 
 class LinkNotesRequest(BaseModel):
@@ -464,6 +466,13 @@ class LinkNotesRequest(BaseModel):
 
 class BrowserCookieRequest(BaseModel):
     browser: str = ""   # 空 = 自动按序尝试（chrome/edge/firefox/safari/...）
+
+
+class WechatMpPublishRequest(BaseModel):
+    task_id: str
+    title: str = ""             # 图文标题（空则用任务标题/报告名）
+    digest: str = ""            # 摘要（空则公众号取正文开头）
+    report: str = "final"       # final = final_report.md | detailed = detailed_report.md
 
 
 class WebviewCookieRequest(BaseModel):
@@ -691,13 +700,13 @@ async def download_only_status():
 @app.post("/api/video/link/notes")
 async def generate_subtitle_notes(request: LinkNotesRequest):
     """
-    字幕速记：直接用 B站/YouTube 已有字幕生成纯文本笔记（不下载视频、不走 ASR）
+    字幕速记：直接用 B站/YouTube 字幕或腾讯会议转写生成纯文本笔记（不下载视频、不走 ASR）
     """
     from backend.devour.video_downloader import detect_platform, extract_share_url
     url = extract_share_url(request.url or "")
     platform = detect_platform(url)
-    if platform not in ("bilibili", "youtube"):
-        raise HTTPException(status_code=400, detail="字幕笔记仅支持 B站 / YouTube 链接")
+    if platform not in ("bilibili", "youtube", "tencent_meeting"):
+        raise HTTPException(status_code=400, detail="字幕笔记仅支持 B站 / YouTube / 腾讯会议链接")
     if request.education_level not in settings_store.EDUCATION_LEVELS:
         raise HTTPException(status_code=400, detail=f"学习阶段仅支持: {'/'.join(settings_store.EDUCATION_LEVELS)}")
 
@@ -712,6 +721,84 @@ async def generate_subtitle_notes(request: LinkNotesRequest):
     except Exception as e:
         logging.error(f"字幕笔记生成失败: {e}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"字幕笔记生成失败: {e}")
+
+
+@app.get("/api/wechat-mp/status")
+async def wechat_mp_status():
+    """公众号发布连通性：配置状态 + token/草稿接口探测（供前端按钮提示）"""
+    from backend.publisher import wechat_mp
+    try:
+        count = wechat_mp.draft_count()
+        return {"configured": True, "ok": True, "draft_count": count,
+                "message": "公众号接口连通正常"}
+    except wechat_mp.WechatMpError as e:
+        from backend.algorithm import settings_store
+        configured = bool((settings_store.load_settings().get("wechat_mp_appid") or "").strip()
+                          and (settings_store.load_settings().get("wechat_mp_secret") or "").strip())
+        return {"configured": configured, "ok": False, "draft_count": None, "message": str(e)}
+
+
+@app.post("/api/wechat-mp/publish")
+async def wechat_mp_publish(request: WechatMpPublishRequest):
+    """把任务报告转为公众号图文草稿（不群发；后台预览确认后手动发布）"""
+    from backend.publisher import wechat_mp
+
+    task = processing_tasks.get(request.task_id)
+    if not task:
+        try:
+            task = json.loads(TASKS_FILE.read_text(encoding="utf-8")).get(request.task_id)
+        except Exception:
+            task = None
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    output_dir = _find_task_output_dir(request.task_id)
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="未找到该任务的报告输出目录")
+
+    report_name = "detailed_report.md" if request.report == "detailed" else "final_report.md"
+    report_path = Path(output_dir) / report_name
+    if not report_path.exists():
+        raise HTTPException(status_code=404, detail=f"报告尚未生成（{report_name} 不存在）")
+
+    # 封面：VLM 选出的关键帧优先，其次任一章节帧；纯文本报告（会议/极速）自动生成标题封面
+    cover = None
+    for sub in ("keyframes",):
+        d = Path(output_dir) / sub
+        if d.is_dir():
+            imgs = sorted(d.glob("*.jpg")) + sorted(d.glob("*.png"))
+            if imgs:
+                cover = str(imgs[0])
+                break
+    if not cover:
+        for d in sorted(Path(output_dir).glob("frames_*")):
+            if d.is_dir():
+                imgs = sorted(d.glob("*.jpg")) + sorted(d.glob("*.png"))
+                if imgs:
+                    cover = str(imgs[0])
+                    break
+
+    title = (request.title or task.get("filename") or report_path.stem).strip()
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: wechat_mp.publish_report_to_draft(
+                report_path, title=title, digest=request.digest,
+                cover_path=cover, cover_title=title),
+        )
+    except wechat_mp.WechatMpError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logging.error(f"公众号草稿创建失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"草稿创建失败: {e}")
+
+    return {
+        "media_id": result["media_id"],
+        "title": result["title"],
+        "report": report_name,
+        "cover": "关键帧" if cover else "自动生成标题封面",
+        "message": "草稿已创建，请在公众号后台「发表记录/草稿箱」预览确认后手动发布",
+    }
 
 
 @app.post("/api/settings/cookies/from-browser")
@@ -851,7 +938,9 @@ async def process_link_video(request: LinkProcessRequest):
     """
     from backend.devour.video_downloader import extract_share_url, detect_platform, normalize_douyin_url
     url = extract_share_url(request.url or "")
-    if not url.startswith(("http://", "https://")):
+    # 腾讯会议允许直接粘贴 9-19 位会议号/meeting_id（非 URL 形态）
+    is_meeting = detect_platform(url) == "tencent_meeting" or re.fullmatch(r"\d{9,19}", url) is not None
+    if not url.startswith(("http://", "https://")) and not is_meeting:
         raise HTTPException(status_code=400, detail="请提供有效的视频链接")
     # 归一化为可访问的原始视频页（抖音 modal_id 搜索页 → /video/{id} 等），
     # 否则报告页“查看原视频”会跳到搜索页或无效地址
@@ -869,22 +958,32 @@ async def process_link_video(request: LinkProcessRequest):
         "status": "pending",
         "stage": "downloading",
         "progress": 0,
-        "message": "等待下载视频...",
+        "message": "等待获取会议转写..." if is_meeting else "等待下载视频...",
         "filename": url,
         "file_path": str(file_path),
         "source_url": url,
         "education_level": request.education_level,
         "extras": extras_list,
+        "fast_mode": request.fast_mode,
         "created_at": datetime.now().isoformat(),
     }
     processing_tasks[task_id].update(_assign_video_identity(task_id, source_url=url))
     save_tasks()
 
-    task = asyncio.create_task(_run_with_slot(
-        task_id,
-        lambda: _download_and_process(task_id, url, file_path,
-                                      request.education_level, extras_list),
-    ))
+    if is_meeting:
+        # 腾讯会议：无媒体下载，tmeet 拉转写后走会议报告管线
+        task = asyncio.create_task(_run_with_slot(
+            task_id,
+            lambda: _meeting_and_process(task_id, url,
+                                         request.education_level, extras_list),
+        ))
+    else:
+        task = asyncio.create_task(_run_with_slot(
+            task_id,
+            lambda: _download_and_process(task_id, url, file_path,
+                                          request.education_level, extras_list,
+                                          fast_mode=request.fast_mode),
+        ))
     running_tasks[task_id] = task
 
     return UploadResponse(task_id=task_id, message="链接任务已创建，开始下载", filename=url)
@@ -913,31 +1012,42 @@ async def retry_failed_task(task_id: str):
     source_url = (old.get("source_url") or "").strip()
     education_level = old.get("education_level") or "自由学习"
     extras_list = _parse_extras(old.get("extras"))
+    fast_mode = bool(old.get("fast_mode"))
     new_task_id = str(uuid.uuid4())
 
     if source_url:
-        # 链接任务：重新下载并处理（复用链接任务的完整链路）
+        from backend.devour.video_downloader import detect_platform as _detect
+        retry_meeting = _detect(source_url) == "tencent_meeting"
         file_path = _upload_dir() / f"{new_task_id}.mp4"
         processing_tasks[new_task_id] = {
             "task_id": new_task_id,
             "status": "pending",
             "stage": "downloading",
             "progress": 0,
-            "message": "重试：等待下载视频...",
+            "message": ("重试：等待获取会议转写..." if retry_meeting else "重试：等待下载视频..."),
             "filename": old.get("filename") or source_url,
             "file_path": str(file_path),
             "source_url": source_url,
             "education_level": education_level,
             "extras": extras_list,
+            "fast_mode": fast_mode,
             "created_at": datetime.now().isoformat(),
         }
         processing_tasks[new_task_id].update(_assign_video_identity(new_task_id, source_url=source_url))
         save_tasks()
-        task = asyncio.create_task(_run_with_slot(
-            new_task_id,
-            lambda: _download_and_process(new_task_id, source_url, file_path,
-                                          education_level, extras_list),
-        ))
+        if retry_meeting:
+            task = asyncio.create_task(_run_with_slot(
+                new_task_id,
+                lambda: _meeting_and_process(new_task_id, source_url,
+                                             education_level, extras_list),
+            ))
+        else:
+            task = asyncio.create_task(_run_with_slot(
+                new_task_id,
+                lambda: _download_and_process(new_task_id, source_url, file_path,
+                                              education_level, extras_list,
+                                              fast_mode=fast_mode),
+            ))
         running_tasks[new_task_id] = task
         return UploadResponse(task_id=new_task_id, message="已重新开始下载并处理", filename=source_url)
 
@@ -968,15 +1078,16 @@ async def retry_failed_task(task_id: str):
     save_tasks()
     task = asyncio.create_task(_run_with_slot(
         new_task_id,
-        lambda: process_video_async(new_task_id, file_path, education_level, extras_list),
+        lambda: process_video_async(new_task_id, file_path, education_level, extras_list,
+                                    fast_mode=fast_mode),
     ))
     running_tasks[new_task_id] = task
     return UploadResponse(task_id=new_task_id, message="已重新开始处理", filename=old.get("filename") or "")
 
 
 async def _download_and_process(task_id: str, url: str, file_path: Path, education_level: str,
-                                extras: List[str] = None):
-    """下载链接视频后接续标准处理流程"""
+                                extras: List[str] = None, fast_mode: bool = False):
+    """下载链接视频后接续标准处理流程（fast_mode：跳过抽帧/VLM 出纯文字报告）"""
     try:
         def _hook(d):
             if d.get("status") == "downloading":
@@ -1006,7 +1117,8 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
                 "filename": cached.get("title") or url,
             })
             save_tasks()
-            await process_video_async(task_id, file_path, education_level, extras)
+            await process_video_async(task_id, file_path, education_level, extras,
+                                      fast_mode=fast_mode)
             return
 
         # 2) 未命中：正常下载，完成后登记到缓存与映射表
@@ -1028,7 +1140,8 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
         # 压缩校验完成后再登记缓存，缓存与任务共用轻量文件。
 
         # 清理下载占位文件后接续标准流程
-        await process_video_async(task_id, file_path, education_level, extras)
+        await process_video_async(task_id, file_path, education_level, extras,
+                                  fast_mode=fast_mode)
     except asyncio.CancelledError:
         raise
     except Exception as e:
@@ -1042,14 +1155,117 @@ async def _download_and_process(task_id: str, url: str, file_path: Path, educati
         })
         save_tasks()
 
+
+async def _meeting_and_process(task_id: str, url: str, education_level: str,
+                               extras: List[str] = None):
+    """腾讯会议任务：tmeet 拉转写 → 会议报告管线（无媒体下载）"""
+    try:
+        from backend.devour import tencent_meeting as tm
+
+        processing_tasks[task_id].update({
+            "status": "processing",
+            "stage": "downloading",
+            "progress": 8,
+            "message": "正在定位腾讯会议录制...",
+        })
+        save_tasks()
+
+        loop = asyncio.get_event_loop()
+        meeting_data = await loop.run_in_executor(
+            None, lambda: tm.fetch_meeting_transcript(url)
+        )
+
+        speakers = meeting_data.get("speakers") or []
+        processing_tasks[task_id].update({
+            "filename": meeting_data.get("subject") or url,
+            "progress": 15,
+            "message": (f"转写已获取（{len(meeting_data.get('dialogue', []))} 段、"
+                        f"{len(speakers)} 位发言人），开始生成报告..."),
+        })
+        save_tasks()
+
+        result = await _run_meeting_pipeline_with_progress(
+            task_id, meeting_data, education_level)
+
+        # 报告完成后按需生成附加产物（与视频任务一致）
+        extras = extras or []
+        extras_note = ""
+        if extras:
+            extras_results = await _generate_extras(task_id, extras, education_level)
+            ok = [EXTRA_LABELS[k] for k, r in extras_results.items() if r["ok"]]
+            failed = [EXTRA_LABELS[k] for k, r in extras_results.items() if not r["ok"]]
+            if ok:
+                extras_note = f"（含{'、'.join(ok)}）"
+            if failed:
+                extras_note += f"（{'、'.join(failed)}生成失败，可在报告页重试）"
+
+        media_profile = (result or {}).get("media_profile") or {}
+        processing_tasks[task_id].update({
+            "status": "completed",
+            "stage": "completed",
+            "progress": 100,
+            "message": f"处理完成{extras_note}",
+            "media_profile": media_profile,
+        })
+        # 会议任务无媒体文件：file_path 指向不存在的占位路径，清掉避免前端误展示播放器
+        processing_tasks[task_id]["file_path"] = ""
+        save_tasks()
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logging.error(f"腾讯会议任务失败: {e}", exc_info=True)
+        processing_tasks[task_id].update({
+            "status": "failed",
+            "stage": "error",
+            "progress": 0,
+            "message": "会议转写获取或处理失败",
+            "error": str(e),
+        })
+        save_tasks()
+
+
+async def _run_meeting_pipeline_with_progress(task_id: str, meeting_data: dict,
+                                              education_level: str = None):
+    """会议管线的事件循环桥接（与 run_pipeline_with_progress 同款线程安全回写）。"""
+    import threading
+    loop = asyncio.get_running_loop()
+    cancelled = threading.Event()
+
+    def update_progress(progress, message, stage):
+        task = processing_tasks.get(task_id)
+        if task is not None and task.get("status") not in ("cancelled", "failed", "completed"):
+            task.update(progress=progress, message=message, stage=stage)
+            save_tasks()
+
+    def report_progress(progress, message, stage):
+        if cancelled.is_set():
+            raise RuntimeError("任务已取消")
+        loop.call_soon_threadsafe(update_progress, progress, message, stage)
+
+    future = loop.run_in_executor(None, lambda: run_meeting_pipeline(
+        task_id, meeting_data, education_level, progress_callback=report_progress,
+    ))
+    try:
+        result = await asyncio.shield(future)
+        await asyncio.sleep(0)
+        return result
+    except asyncio.CancelledError:
+        cancelled.set()
+        try:
+            await asyncio.shield(future)
+        except Exception:
+            pass
+        raise
+
 @app.post("/api/video/upload", response_model=UploadResponse)
 async def upload_video(file: UploadFile = File(...), education_level: str = Form("自由学习"),
-                       extras: str = Form("")):
+                       extras: str = Form(""), fast_mode: bool = Form(False)):
     """
     上传视频文件并开始处理
 
     education_level: 学习阶段（小学/初中/高中），影响大纲与报告的语言风格
     extras: 逗号分隔的可选附加产物（mindmap/graph/card），完成后自动生成
+    fast_mode: 极速模式——跳过抽帧与 VLM，出纯文字报告
     """
     extras_list = _parse_extras(extras)
     try:
@@ -1126,6 +1342,7 @@ async def upload_video(file: UploadFile = File(...), education_level: str = Form
             "file_path": str(file_path),
             "education_level": education_level,
             "extras": extras_list,
+            "fast_mode": fast_mode,
             "created_at": datetime.now().isoformat()
         }
         # 本地文件用内容指纹归并同一视频的多次上传（V1/V2…）
@@ -1137,7 +1354,8 @@ async def upload_video(file: UploadFile = File(...), education_level: str = Form
         # 启动后台处理任务并存储任务引用
         task = asyncio.create_task(_run_with_slot(
             task_id,
-            lambda: process_video_async(task_id, file_path, education_level, extras_list),
+            lambda: process_video_async(task_id, file_path, education_level, extras_list,
+                                        fast_mode=fast_mode),
         ))
         running_tasks[task_id] = task
         
@@ -2575,9 +2793,9 @@ async def delete_task(task_id: str):
         raise HTTPException(status_code=500, detail=f"删除任务时发生错误: {str(e)}")
 
 async def process_video_async(task_id: str, file_path: Path, education_level: str = None,
-                              extras: List[str] = None):
+                              extras: List[str] = None, fast_mode: bool = False):
     """
-    异步处理视频文件（extras: 报告完成后可选生成的附加产物）
+    异步处理视频文件（extras: 报告完成后可选生成的附加产物；fast_mode: 极速模式跳过抽帧）
     """
     try:
         # 更新状态为处理中
@@ -2585,13 +2803,14 @@ async def process_video_async(task_id: str, file_path: Path, education_level: st
             "status": "processing",
             "stage": "extracting_audio",
             "progress": 10,
-            "message": "开始处理视频..."
+            "message": "开始处理视频..." + ("（极速模式）" if fast_mode else "")
         })
         save_tasks()
 
         # 不创建额外的task_id目录，让pipeline自己创建frames_开头的目录
 
-        result = await run_pipeline_with_progress(str(file_path), task_id, education_level)
+        result = await run_pipeline_with_progress(str(file_path), task_id, education_level,
+                                                  fast_mode=fast_mode)
 
         # 报告完成后按需生成附加产物（导图/图谱/卡片），未勾选则直接完成
         extras = extras or []
@@ -2636,7 +2855,8 @@ async def process_video_async(task_id: str, file_path: Path, education_level: st
         save_tasks()
         raise
 
-async def run_pipeline_with_progress(video_path: str, task_id: str, education_level: str = None):
+async def run_pipeline_with_progress(video_path: str, task_id: str, education_level: str = None,
+                                      fast_mode: bool = False):
     """将工作线程的真实阶段事件交回事件循环，不再按时间模拟进度。"""
     import threading
     loop = asyncio.get_running_loop()
@@ -2676,7 +2896,7 @@ async def run_pipeline_with_progress(video_path: str, task_id: str, education_le
 
     future = loop.run_in_executor(None, lambda: run_full_pipeline(
         video_path, asr_engine, education_level, progress_callback=report_progress,
-        media_ready_callback=media_ready, managed_source=True,
+        media_ready_callback=media_ready, managed_source=True, fast_mode=fast_mode,
     ))
     try:
         result = await asyncio.shield(future)

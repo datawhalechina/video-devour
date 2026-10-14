@@ -103,6 +103,10 @@ hiddenimports += collect_submodules("yt_dlp")
 hiddenimports += collect_submodules("reportlab")
 datas += collect_data_files("reportlab")
 
+# markdown：公众号图文草稿（backend/publisher/wechat_mp.py）函数内导入，
+# 同属静态分析盲区，不收集则冻结包内发布草稿报 ModuleNotFoundError。
+hiddenimports += collect_submodules("markdown")
+
 # 项目自身的后端模块：用文件系统枚举，不要依赖 collect_submodules。
 # 原因：backend/、backend/algorithm/、backend/devour/ 都没有 __init__.py（隐式命名空间包），
 # collect_submodules("backend") 只会返回 backend.api / backend.runtime 两个包下的模块

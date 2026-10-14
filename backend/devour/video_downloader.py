@@ -102,7 +102,7 @@ def _get_ydl(platform: Optional[str] = None, **extra):
 
 
 def detect_platform(url: str) -> str:
-    """根据链接判断来源平台：youtube | bilibili | wechat | douyin | x | other"""
+    """根据链接判断来源平台：youtube | bilibili | wechat | douyin | x | tencent_meeting | other"""
     url = (url or "").lower()
     if re.search(r"(youtube\.com|youtu\.be)", url):
         return "youtube"
@@ -110,6 +110,9 @@ def detect_platform(url: str) -> str:
         return "bilibili"
     if re.search(r"weixin\.qq\.com/sph/", url):
         return "wechat"
+    # 腾讯会议录制分享链接（/crm/ /cw/ 回放、/ctm/ /ct/ 转写、/dm/ 入会）
+    if re.search(r"meeting\.tencent\.com/(crm|cw|ctm|ct|dm)/", url):
+        return "tencent_meeting"
     if re.search(r"(douyin\.com|iesdouyin\.com)", url):
         return "douyin"
     # 小宇宙播客：www.xiaoyuzhoufm.com/episode/{eid}（单集）
@@ -158,6 +161,10 @@ def _extract_video_id(url: str, platform: str) -> Optional[str]:
         if m:
             return m.group(1)
         return None
+    if platform == "tencent_meeting":
+        # 分享短链的 short_id（/crm/xxx）；会议号/meeting_id 输入不带 http 前缀不至此
+        m = re.search(r"meeting\.tencent\.com/(?:crm|cw|ctm|ct|dm)/([A-Za-z0-9_-]+)", url, re.IGNORECASE)
+        return m.group(1) if m else None
     return None
 
 
@@ -290,6 +297,13 @@ def probe_video_info(url: str) -> Dict:
             raise
         except Exception as e:
             raise ValueError(f"小宇宙单集解析失败: {e}") from e
+    if platform == "tencent_meeting":
+        # 腾讯会议不走 yt-dlp：本地 tmeet CLI 定位会议并回元信息（不发转写拉取）
+        from backend.devour import tencent_meeting as _tm
+        try:
+            return _tm.build_probe_info(url)
+        except _tm.TencentMeetingError as e:
+            raise ValueError(str(e)) from e
     if platform == "bilibili":
         # B站视频页接口对无指纹请求返回 412，优先走官方 view API
         bvid = _extract_video_id(url, "bilibili")

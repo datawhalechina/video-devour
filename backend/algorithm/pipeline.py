@@ -121,8 +121,12 @@ def _generate_and_match_outline(processed_dialogue: list, main_output_path: str,
     return matched_data, headings_with_level, headings, outline
 
 def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = None,
-                      progress_callback=None, media_ready_callback=None, managed_source=False):
-    """处理前统一轻量视频；回调仅在真实阶段发生时触发。"""
+                      progress_callback=None, media_ready_callback=None, managed_source=False,
+                      fast_mode: bool = False):
+    """处理前统一轻量视频；回调仅在真实阶段发生时触发。
+
+    fast_mode（极速模式）：跳过抽帧与 VLM 画面分析，ASR 后直接出纯文字报告（更快、不加图）。
+    """
     tracker = None
     main_output_path = None
 
@@ -136,7 +140,7 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
         if education_level is None:
             education_level = settings_store.load_settings().get("default_education_level", "高中")
         logging.info(f"本次处理参数: asr_mode={settings_store.load_settings().get('asr_mode')}, "
-                     f"education_level={education_level}")
+                     f"education_level={education_level}, fast_mode={fast_mode}")
 
         main_output_path, video_name, timestamp = _setup_environment(video_path)
 
@@ -175,71 +179,13 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
         if not processed_dialogue:
             raise ValueError("ASR处理后对话为空，流程中止。")
 
-        progress(45, "正在生成大纲并定位章节…", "generating_outline")
-        with timing.track("步骤3-4_大纲生成与匹配"):
-            matched_data, headings_with_level, headings, outline = _generate_and_match_outline(
-                processed_dialogue, main_output_path, education_level
-            )
-        if not matched_data:
-            raise ValueError("文本块与大纲匹配失败，流程中止。")
-            
-        logging.info("--- 步骤 5: 生成详细大纲 ---")
-        with timing.track("步骤5_生成详细大纲"):
-            detailed_outline_path = outline_handler.generate_detailed_outline(
-                outline, headings, matched_data, output_dir=main_output_path
-            )
+        skip_frames = bool(prepared.get('audio_only') or fast_mode)
+        skip_label = "音频内容" if prepared.get('audio_only') else "极速模式"
 
-        if prepared.get('audio_only'):
-            # 纯音频（播客）：没有画面，跳过抽帧与 VLM，直接进入报告生成
-            progress(60, "音频内容，跳过画面分析…", "extracting_frames")
-            logging.info("--- 纯音频输入，跳过抽帧与 VLM 画面分析 ---")
-        else:
-            progress(60, "正在按章节直接提取画面…", "extracting_frames")
-            with timing.track("步骤6-7_章节直接抽帧"):
-                video_handler.extract_frames_by_headings(
-                    headings_with_level, matched_data, video_path, main_output_path,
-                    duration=prepared['duration'],
-                    progress=lambda done, total: progress(
-                        60 + int(12 * done / total), f"章节抽帧 {done}/{total}", "extracting_frames"),
-                )
+        _run_report_stages(processed_dialogue, main_output_path, education_level, progress,
+                           skip_frames=skip_frames, skip_label=skip_label,
+                           video_path=video_path, prepared=prepared)
 
-            logging.info("--- 步骤 8: 处理并筛选帧 ---")
-            progress(73, "正在筛选重复画面…", "extracting_frames")
-            with timing.track("步骤8_帧去重处理"):
-                image_processor.process_all_frames(output_dir=main_output_path)
-
-            logging.info("--- 步骤 9: 使用VLM选择关键帧 ---")
-            progress(78, "正在选择关键画面…", "vlm_analysis")
-            with timing.track("步骤9_VLM关键帧选择"):
-                selected_keyframes = image_processor.select_keyframes_with_vlm(
-                    headings_with_level, main_output_path
-                )
-
-            if selected_keyframes:
-                logging.info("--- 步骤 10: 更新大纲，添加关键帧 ---")
-                with timing.track("步骤10_大纲插入关键帧"):
-                    outline_handler.update_detailed_outline_with_keyframes(
-                        detailed_outline_path, selected_keyframes
-                    )
-
-        logging.info("--- 步骤 11: 生成最终报告 ---")
-        progress(86, "正在生成学习笔记…", "generating_report")
-        with timing.track("步骤11_生成最终报告"):
-            outline_handler.generate_final_report(detailed_outline_path, main_output_path,
-                                                  education_level=education_level)
-
-        logging.info("--- 步骤 12: 生成详细报告（视频原文+笔记对照）---")
-        progress(92, "正在生成原文对照报告…", "generating_report")
-        with timing.track("步骤12_生成详细报告"):
-            outline_handler.generate_detailed_report(
-                detailed_outline_path, main_output_path,
-                education_level=education_level,
-                headings_with_level=headings_with_level,
-                matched_data=matched_data,
-                dialogue=processed_dialogue,
-            )
-
-        
         logging.info(f"\n" + "="*60)
         logging.info(f"处理流程成功完成 - 时间戳: {timestamp}")
         logging.info(f"="*60)
@@ -251,6 +197,162 @@ def run_full_pipeline(video_path: str, asr_engine=None, education_level: str = N
         print(f"处理失败，发生未知错误: {e}")
         # 重新抛出：调用方（API/skill）依赖异常区分成败，
         # 吞掉异常会让失败任务被误标为"处理完成"
+        raise
+
+    finally:
+        if tracker is not None and main_output_path:
+            tracker.write_reports(main_output_path)
+
+
+def _run_report_stages(processed_dialogue: list, main_output_path: str, education_level,
+                       progress, skip_frames: bool = False, skip_label: str = "音频内容",
+                       video_path: str = None, prepared: dict = None):
+    """
+    共享后半程：大纲生成与匹配 → 详细大纲 →（帧阶段）→ 最终/详细报告。
+
+    skip_frames=True 时跳过抽帧、去重与 VLM（纯音频输入 / 极速模式 / 会议转写），
+    video_path 与 prepared 仅在抽帧分支使用。
+    """
+    progress(45, "正在生成大纲并定位章节…", "generating_outline")
+    with timing.track("步骤3-4_大纲生成与匹配"):
+        matched_data, headings_with_level, headings, outline = _generate_and_match_outline(
+            processed_dialogue, main_output_path, education_level
+        )
+    if not matched_data:
+        raise ValueError("文本块与大纲匹配失败，流程中止。")
+
+    logging.info("--- 步骤 5: 生成详细大纲 ---")
+    with timing.track("步骤5_生成详细大纲"):
+        detailed_outline_path = outline_handler.generate_detailed_outline(
+            outline, headings, matched_data, output_dir=main_output_path
+        )
+
+    if skip_frames:
+        # 纯音频（播客）/ 极速模式 / 会议转写：没有画面需求，跳过抽帧与 VLM，直接进入报告生成
+        progress(60, f"{skip_label}，跳过画面分析…", "extracting_frames")
+        logging.info(f"--- {skip_label}，跳过抽帧与 VLM 画面分析 ---")
+    else:
+        progress(60, "正在按章节直接提取画面…", "extracting_frames")
+        with timing.track("步骤6-7_章节直接抽帧"):
+            video_handler.extract_frames_by_headings(
+                headings_with_level, matched_data, video_path, main_output_path,
+                duration=prepared['duration'],
+                progress=lambda done, total: progress(
+                    60 + int(12 * done / total), f"章节抽帧 {done}/{total}", "extracting_frames"),
+            )
+
+        logging.info("--- 步骤 8: 处理并筛选帧 ---")
+        progress(73, "正在筛选重复画面…", "extracting_frames")
+        with timing.track("步骤8_帧去重处理"):
+            image_processor.process_all_frames(output_dir=main_output_path)
+
+        logging.info("--- 步骤 9: 使用VLM选择关键帧 ---")
+        progress(78, "正在选择关键画面…", "vlm_analysis")
+        with timing.track("步骤9_VLM关键帧选择"):
+            selected_keyframes = image_processor.select_keyframes_with_vlm(
+                headings_with_level, main_output_path
+            )
+
+        if selected_keyframes:
+            logging.info("--- 步骤 10: 更新大纲，添加关键帧 ---")
+            with timing.track("步骤10_大纲插入关键帧"):
+                outline_handler.update_detailed_outline_with_keyframes(
+                    detailed_outline_path, selected_keyframes
+                )
+
+    logging.info("--- 步骤 11: 生成最终报告 ---")
+    progress(86, "正在生成学习笔记…", "generating_report")
+    with timing.track("步骤11_生成最终报告"):
+        outline_handler.generate_final_report(detailed_outline_path, main_output_path,
+                                              education_level=education_level)
+
+    logging.info("--- 步骤 12: 生成详细报告（视频原文+笔记对照）---")
+    progress(92, "正在生成原文对照报告…", "generating_report")
+    with timing.track("步骤12_生成详细报告"):
+        outline_handler.generate_detailed_report(
+            detailed_outline_path, main_output_path,
+            education_level=education_level,
+            headings_with_level=headings_with_level,
+            matched_data=matched_data,
+            dialogue=processed_dialogue,
+        )
+
+
+def run_meeting_pipeline(task_id: str, meeting_data: dict, education_level: str = None,
+                         progress_callback=None):
+    """
+    腾讯会议转写 → 报告管线（无媒体文件）。
+
+    tmeet 转写已在调用方（worker）转为 processed_dialogue，这里对齐 ASR 产物契约
+    落盘后复用共享报告阶段（天然 skip_frames，无画面可抽）。
+
+    Args:
+        task_id: 任务 ID；输出目录为 frames_{task_id}_{ts}（对齐 _task_has_report 判定契约）
+        meeting_data: fetch_meeting_transcript 的返回（dialogue / duration_seconds / subject 等）
+    """
+    tracker = None
+    main_output_path = None
+
+    def progress(percent, message, stage):
+        if progress_callback:
+            progress_callback(percent, message, stage)
+
+    try:
+        settings_store.apply_to_config()
+        if education_level is None:
+            education_level = settings_store.load_settings().get("default_education_level", "高中")
+
+        # 虚拟路径仅供命名：video_name=task_id，使输出目录与任务报告判定对齐
+        main_output_path, video_name, timestamp = _setup_environment(f"{task_id}.mp4")
+        tracker = timing.start_tracking(video_name)
+
+        dialogue = meeting_data.get("dialogue") or []
+        if not dialogue:
+            raise ValueError("会议转写为空，流程中止。")
+
+        # 对齐 ASR 产物契约（ASRProcessor 兼容 v2 transcript 结构）
+        progress(30, "转写已就绪，开始生成大纲…", "asr")
+        spk_index = {}   # 会议实名 → spk 序号（产物文件更可读）
+        for d in dialogue:
+            if d.get("speaker") and d["speaker"] not in spk_index:
+                spk_index[d["speaker"]] = f"spk{len(spk_index)}"
+        asr_result = {
+            "transcript": [
+                {"index": i, "spk_id": spk_index.get(d.get("speaker", ""), "spk0"),
+                 "sentence": d["text"],
+                 "start_time": d["start"], "end_time": d["end"]}
+                for i, d in enumerate(dialogue)
+            ],
+            "video_path": "",
+            "source_platform": "tencent_meeting",
+            "meeting_subject": meeting_data.get("subject", ""),
+            "processed_at": datetime.now().isoformat(),
+        }
+        asr_result_path = os.path.join(main_output_path, f"{video_name}_asr_result.json")
+        with open(asr_result_path, 'w', encoding='utf-8') as f:
+            json.dump([asr_result], f, ensure_ascii=False, indent=2)
+        logging.info(f"会议转写已保存到: {asr_result_path}")
+
+        media_profile = {
+            "path": "",
+            "profile": "meeting-transcript",
+            "audio_only": True,
+            "reused": True,
+            "duration": meeting_data.get("duration_seconds", 0),
+            "source_platform": "tencent_meeting",
+            "meeting_subject": meeting_data.get("subject", ""),
+        }
+        Path(main_output_path, 'media_profile.json').write_text(
+            json.dumps(media_profile, ensure_ascii=False, indent=2), encoding='utf-8')
+
+        _run_report_stages(dialogue, main_output_path, education_level, progress,
+                           skip_frames=True, skip_label="会议转写（无画面）")
+
+        logging.info(f"会议转写报告流程成功完成 - 时间戳: {timestamp}")
+        return {"video_path": "", "output_dir": main_output_path, "media_profile": media_profile}
+
+    except Exception as e:
+        logging.error(f"会议转写处理流程中发生错误: {e}", exc_info=True)
         raise
 
     finally:

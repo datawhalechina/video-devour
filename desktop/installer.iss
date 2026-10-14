@@ -12,7 +12,7 @@
 ; 版本号单一来源：pyproject.toml。build_win.ps1 会以 /DAppVersion=... 传入；
 ; 单独调用 iscc 时用下面的兜底值（改版本请改 pyproject.toml，勿只改这里）。
 #ifndef AppVersion
-  #define AppVersion "0.1.8"
+  #define AppVersion "0.1.9"
 #endif
 #define AppPublisher "VideoDevour"
 #define AppExeName "VideoDevour.exe"

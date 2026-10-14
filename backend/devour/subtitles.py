@@ -4,7 +4,7 @@ B站 / YouTube 字幕速记：直接读取平台已有字幕生成纯文本笔�
 
 不下载视频、不做 ASR——B站读取 AI 字幕轨，YouTube 读取手动/自动字幕
 （需要 YouTube cookies 时自动使用设置控制台中的配置），
-字幕转写经 LLM 整理为纯文本学习笔记，秒级完成。
+腾讯会议读取录制转写（本地 tmeet CLI），字幕转写经 LLM 整理为纯文本学习笔记，秒级完成。
 """
 import logging
 import os
@@ -28,6 +28,35 @@ def _load_settings_text(key: str) -> str:
         return (load_settings().get(key) or "").strip()
     except Exception:
         return ""
+
+
+# ---------------------------------------------------------------------------
+# 腾讯会议：录制转写（tmeet CLI）
+# ---------------------------------------------------------------------------
+
+def fetch_meeting_transcript_text(url: str) -> Dict:
+    """
+    腾讯会议转写 → 字幕速记输入形态 {"title", "transcript", "lang"}。
+
+    行格式与 B站/YouTube 一致：[mm:ss] 文本；会议转写自带说话人前缀。
+    TencentMeetingError 转为 ValueError（端点按 400 透出文案）。
+    """
+    from backend.devour import tencent_meeting as tm
+
+    try:
+        data = tm.fetch_meeting_transcript(url)
+    except tm.TencentMeetingError as e:
+        raise ValueError(str(e)) from e
+
+    lines = []
+    for d in data["dialogue"]:
+        # speaker 与 text 为独立字段（对齐 ASR 管线形状），行内拼回「说话人: 内容」
+        lines.append(f"[{_mmss(d['start'])}] {d['speaker']}: {d['text']}")
+    speakers = data.get("speakers") or []
+    title = data.get("subject") or "腾讯会议"
+    if speakers:
+        title += f"（{len(speakers)} 位发言人）"
+    return {"title": title, "transcript": "\n".join(lines), "lang": "zh"}
 
 
 # ---------------------------------------------------------------------------
@@ -234,8 +263,10 @@ def generate_subtitle_notes(url: str, platform: str, education_level: str = "自
         meta = fetch_bilibili_transcript(url)
     elif platform == "youtube":
         meta = fetch_youtube_transcript(url)
+    elif platform == "tencent_meeting":
+        meta = fetch_meeting_transcript_text(url)
     else:
-        raise ValueError("字幕笔记仅支持 B站 / YouTube 链接")
+        raise ValueError("字幕笔记仅支持 B站 / YouTube / 腾讯会议链接")
 
     transcript = meta["transcript"]
     if len(transcript) > MAX_TRANSCRIPT_CHARS:
@@ -263,7 +294,8 @@ def generate_subtitle_notes(url: str, platform: str, education_level: str = "自
     md_path = output_root / f"{stem}.md"
 
     # 提示词已要求 LLM 输出以 `# 标题` 开头，这里只补一行来源元信息，避免标题重复
-    meta_line = (f"> 来源：{platform} 字幕（{meta['lang']}） · 学习阶段：{education_level}\n\n")
+    _platform_label = {"bilibili": "B站", "youtube": "YouTube", "tencent_meeting": "腾讯会议"}.get(platform, platform)
+    meta_line = (f"> 来源：{_platform_label} 字幕（{meta['lang']}） · 学习阶段：{education_level}\n\n")
     # 纯文本版：去掉 Markdown 标记（供纯文本场景）
     txt_body = re.sub(r"^#{1,6}\s*", "", notes, flags=re.MULTILINE)
     txt_body = re.sub(r"```mermaid[\s\S]*?```", "", txt_body)   # 纯文本版去掉 mermaid 代码块

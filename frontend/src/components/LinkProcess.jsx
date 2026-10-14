@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { ArrowLeft, Link2, Search, Download, Loader2, Play, Tv, Globe, AlertCircle, MessageCircle, Settings, KeyRound, NotebookPen, ThumbsUp, Star, MessageSquare } from 'lucide-react'
 import { getLinkInfo, searchLinkVideos, processLink, generateSubtitleNotes } from '../api/videoService'
 import ExtrasPicker, { getSelectedExtras } from './ExtrasPicker'
+import FastModeToggle, { getFastMode } from './FastModeToggle'
 import { useConfigGate } from './ConfigGateProvider'
 
 const PLATFORM_TABS = [
@@ -22,6 +23,7 @@ const PLATFORM_LABELS = {
   douyin: '抖音',
   x: 'X',
   xiaoyuzhou: '小宇宙播客',
+  tencent_meeting: '腾讯会议',
 }
 
 function formatDuration(seconds) {
@@ -203,7 +205,7 @@ function LinkProcess() {
     setProcessing(true)
     setError(null)
     try {
-      const result = await processLink(link, '自由学习', getSelectedExtras())
+      const result = await processLink(link, '自由学习', getSelectedExtras(), getFastMode())
       navigate(`/processing/${result.task_id}`)
     } catch (err) {
       showError(`创建任务失败: ${err.message}`)
@@ -368,7 +370,7 @@ h1,h2,h3{line-height:1.35}</style>
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleProbe()}
               aria-label="视频链接或分享文案"
-              placeholder="支持 B站 / YouTube / 抖音 / X / 微信视频号链接，可直接粘贴分享文案（如 v.douyin.com/...）"
+              placeholder="支持 B站 / YouTube / 抖音 / X / 微信视频号 / 小宇宙 / 腾讯会议链接，可直接粘贴分享文案（如 v.douyin.com/...），腾讯会议也可直接粘贴会议号"
               className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
             />
             <button
@@ -382,7 +384,7 @@ h1,h2,h3{line-height:1.35}</style>
             <button
               onClick={handleNotes}
               disabled={notesLoading || !url.trim()}
-              title="不下载视频，直接用平台字幕生成纯文本笔记（仅 B站 / YouTube）"
+              title="不下载视频，直接用平台字幕 / 腾讯会议转写生成纯文本笔记（B站 / YouTube / 腾讯会议）"
               className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-gray-100 border border-gray-300 text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
             >
               {notesLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <NotebookPen className="w-4 h-4" />}
@@ -402,6 +404,13 @@ h1,h2,h3{line-height:1.35}</style>
           <div className="flex items-center space-x-3">
             <span className="text-xs text-gray-500 flex-shrink-0">完成后生成（可选，默认不生成）：</span>
             <ExtrasPicker />
+          </div>
+
+          {/* 极速模式（可选）：跳过抽帧与 VLM，纯文字报告更快出 */}
+          <div className="flex items-center space-x-3">
+            <span className="text-xs text-gray-500 flex-shrink-0">处理方式：</span>
+            <FastModeToggle />
+            <span className="text-xs text-gray-400">极速模式不抽帧、不加图，仅做转写并出纯文字报告，速度快数倍</span>
           </div>
 
           <div className="border-t border-gray-100 pt-4">
@@ -528,7 +537,7 @@ h1,h2,h3{line-height:1.35}</style>
             </div>
             <div className="p-5">
               <p className="text-xs text-gray-400 mb-3">
-                来源：{notesResult.platform === 'bilibili' ? 'B站' : 'YouTube'} 字幕（{notesResult.lang}）· Markdown 笔记（含概念关系图）
+                来源：{({ bilibili: 'B站', youtube: 'YouTube', tencent_meeting: '腾讯会议' })[notesResult.platform] || notesResult.platform} 字幕（{notesResult.lang}）· Markdown 笔记（含概念关系图）
               </p>
               <div className="markdown-body text-sm text-gray-800 leading-relaxed"
                    ref={notesRef} />
@@ -572,12 +581,13 @@ h1,h2,h3{line-height:1.35}</style>
                       allow="encrypted-media; fullscreen"
                       title={preview.title}
                     />
-                  ) : preview.platform === 'wechat' || preview.platform === 'douyin' || preview.platform === 'x' ? (
+                  ) : preview.platform === 'wechat' || preview.platform === 'douyin' || preview.platform === 'x' || preview.platform === 'tencent_meeting' ? (
                     <div className="w-full h-[420px] flex flex-col items-center justify-center gap-3 text-gray-400 px-8 text-center">
                       <MessageCircle className="w-12 h-12" />
                       <p className="text-sm font-medium text-gray-300">
                         {preview.platform === 'douyin' ? '抖音内容不支持网页内嵌预览'
                           : preview.platform === 'x' ? 'X 内容不支持网页内嵌预览'
+                          : preview.platform === 'tencent_meeting' ? '腾讯会议录制（无内嵌预览）'
                           : '微信视频号内容不支持网页内嵌预览'}
                       </p>
                       <p className="text-xs text-gray-500 leading-relaxed">
@@ -585,6 +595,8 @@ h1,h2,h3{line-height:1.35}</style>
                           ? '点击右上角「生成图文报告」将直接下载并处理；抖音下载需要登录态 Cookie，可在设置页「抖音 cookies」配置（桌面客户端可用「应用内登录读取」，或从浏览器读取/手动粘贴）'
                           : preview.platform === 'x'
                           ? '点击右上角「生成图文报告」将直接下载并处理；X 下载需要登录态 Cookie（需含 auth_token），可在设置页「X cookies」配置（桌面客户端可用「应用内登录读取」，或从浏览器读取/手动粘贴）'
+                          : preview.platform === 'tencent_meeting'
+                          ? '点击右上角「生成图文报告」将拉取会议录制转写（含发言人信息）并生成报告，无需下载视频画面；也可点「字幕笔记」快速出纯文本纪要'
                           : '点击右上角「生成图文报告」将调用解析服务下载；若解析失败（链接过期/服务限流），请用本地工具下载后到「上传视频」页上传处理'}
                       </p>
                     </div>
