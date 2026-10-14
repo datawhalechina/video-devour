@@ -44,6 +44,13 @@ DEFAULT_WECHAT_RESOLVER = "https://sph.litao.workers.dev"
 _URL_IN_TEXT_RE = re.compile(r"https?://[^\s\"'<>【】（）()，。；]+", re.IGNORECASE)
 _WECHAT_URL_RE = re.compile(r"https?://weixin\.qq\.com/sph/[A-Za-z0-9_\-]+", re.IGNORECASE)
 
+# 国内平台直连集合。桌面端用户为访问 YouTube 常年开着系统代理；当代理处于
+# 全局模式（如 Clash 系的 global）时，B站/抖音等国内 CDN 的下载流量会被
+# 绕到境外节点，CDN 对代理出口 IP 的长连接限流掐断，表现为长视频反复
+# 「bytes read X, more expected … Giving up after N retries」、Read timed out。
+# 这些平台不走代理才是正确路径；YouTube/X 不在此列，仍遵循环境代理。
+_DIRECT_DOWNLOAD_PLATFORMS = {"bilibili", "douyin", "wechat"}
+
 
 def extract_share_url(text: str) -> str:
     """
@@ -62,7 +69,7 @@ def extract_share_url(text: str) -> str:
     return text
 
 
-def _get_ydl(**extra):
+def _get_ydl(platform: Optional[str] = None, **extra):
     from yt_dlp import YoutubeDL
     from backend.runtime import paths as _rt_paths
 
@@ -86,12 +93,16 @@ def _get_ydl(**extra):
     }
     # 注：不启用 yt-dlp 的 impersonation（TLS 指纹伪装）——与 B站提取器
     # 存在兼容问题（No video formats），412 防护依赖指纹 cookie + 退避重试
+    # 国内平台强制直连：proxy="" 显式禁用代理，优先级高于环境变量与
+    # 系统代理设置，防止全局代理把 CDN 流量绕到境外被掐断。
+    if platform in _DIRECT_DOWNLOAD_PLATFORMS:
+        options["proxy"] = ""
     options.update(extra)
     return YoutubeDL(options)
 
 
 def detect_platform(url: str) -> str:
-    """根据链接判断来源平台：youtube | bilibili | wechat | douyin | x | other"""
+    """根据链接判断来源平台：youtube | bilibili | wechat | douyin | x | tencent_meeting | other"""
     url = (url or "").lower()
     if re.search(r"(youtube\.com|youtu\.be)", url):
         return "youtube"
@@ -99,8 +110,14 @@ def detect_platform(url: str) -> str:
         return "bilibili"
     if re.search(r"weixin\.qq\.com/sph/", url):
         return "wechat"
+    # 腾讯会议录制分享链接（/crm/ /cw/ 回放、/ctm/ /ct/ 转写、/dm/ 入会）
+    if re.search(r"meeting\.tencent\.com/(crm|cw|ctm|ct|dm)/", url):
+        return "tencent_meeting"
     if re.search(r"(douyin\.com|iesdouyin\.com)", url):
         return "douyin"
+    # 小宇宙播客：www.xiaoyuzhoufm.com/episode/{eid}（单集）
+    if re.search(r"xiaoyuzhoufm\.com", url):
+        return "xiaoyuzhou"
     # X（原 Twitter）：x.com / twitter.com 的推文链接。
     # 否定后视避免把 max.com 之类的域名误判；域名后紧跟 / 以定位真实站点。
     if re.search(r"(?<![a-z0-9])(?:x|twitter)\.com/", url):
@@ -134,12 +151,20 @@ def _extract_video_id(url: str, platform: str) -> Optional[str]:
             return m.group(1)
         m = re.search(r"v\.douyin\.com/([A-Za-z0-9]+)", url)
         return m.group(1) if m else None
+    if platform == "xiaoyuzhou":
+        # 单集：/episode/{eid}；频道 /podcast/{pid} 暂不展开（后续可接多集面板）
+        m = re.search(r"/episode/([0-9a-fA-F]+)", url)
+        return m.group(1) if m else None
     if platform == "x":
         # 推文：/{user}/status/{id}、/i/status/{id}、/i/web/status/{id}
         m = re.search(r"/status(?:es)?/(\d+)", url)
         if m:
             return m.group(1)
         return None
+    if platform == "tencent_meeting":
+        # 分享短链的 short_id（/crm/xxx）；会议号/meeting_id 输入不带 http 前缀不至此
+        m = re.search(r"meeting\.tencent\.com/(?:crm|cw|ctm|ct|dm)/([A-Za-z0-9_-]+)", url, re.IGNORECASE)
+        return m.group(1) if m else None
     return None
 
 
@@ -264,6 +289,21 @@ def probe_video_info(url: str) -> Dict:
             except Exception as e:
                 logging.warning(f"视频号元数据直连解析失败（不影响下载重试）: {e}")
         return info
+    if platform == "xiaoyuzhou":
+        # 小宇宙不走 yt-dlp：单集页内嵌音频直链与元数据（解析失败即链路问题）
+        try:
+            return _xyz_info_dict(_xyz_episode_info(url), url)
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"小宇宙单集解析失败: {e}") from e
+    if platform == "tencent_meeting":
+        # 腾讯会议不走 yt-dlp：本地 tmeet CLI 定位会议并回元信息（不发转写拉取）
+        from backend.devour import tencent_meeting as _tm
+        try:
+            return _tm.build_probe_info(url)
+        except _tm.TencentMeetingError as e:
+            raise ValueError(str(e)) from e
     if platform == "bilibili":
         # B站视频页接口对无指纹请求返回 412，优先走官方 view API
         bvid = _extract_video_id(url, "bilibili")
@@ -299,7 +339,7 @@ def probe_video_info(url: str) -> Dict:
                 probe_tmp_cookie = _xk
 
     try:
-        with _get_ydl(referer=_platform_referer(platform), **probe_opts) as ydl:
+        with _get_ydl(platform=platform, referer=_platform_referer(platform), **probe_opts) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as e:
         if platform == "douyin":
@@ -984,6 +1024,117 @@ def _download_wechat_video(url: str, target_dir: str, progress_hook=None) -> Dic
                 final_path.unlink(missing_ok=True)
     detail = f"（{'；'.join(errors[-2:])}）" if errors else ""
     raise ValueError(_WECHAT_FAIL_HINT + detail)
+
+
+# ---------------------------------------------------------------------------
+# 小宇宙播客（xiaoyuzhoufm.com）
+#
+# 不走 yt-dlp：单集页无需登录，音频直链与元数据内嵌于 Next.js SSR 的
+# __NEXT_DATA__ JSON（episode.enclosure.url 指向 media.xyzcdn.net）。
+# 下载原始 m4a 直接交流水线——纯音频由 media_profile 标记 audio_only，
+# 跳过压缩转码与抽帧/VLM，ASR 直连（播客没有画面，无需封面合成）。
+
+_XYZ_NEXT_DATA_RE = re.compile(
+    r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', re.S
+)
+
+
+def _xyz_episode_info(url: str) -> Dict:
+    """解析小宇宙单集页，返回元数据 + 音频直链。"""
+    import json
+    import requests
+
+    resp = requests.get(url, timeout=20, headers={"User-Agent": _BROWSER_UA})
+    resp.raise_for_status()
+    m = _XYZ_NEXT_DATA_RE.search(resp.text)
+    if not m:
+        raise ValueError("小宇宙页面结构变化：未找到 __NEXT_DATA__")
+    data = json.loads(m.group(1))
+    ep = (data.get("props", {}).get("pageProps", {}) or {}).get("episode") or {}
+    if not ep:
+        raise ValueError("小宇宙页面结构变化：未找到 episode 数据")
+    audio = (((ep.get("media") or {}).get("source") or {}).get("url")
+             or (ep.get("enclosure") or {}).get("url") or "")
+    if not audio:
+        raise ValueError("小宇宙单集未提供音频直链（可能为付费或私密节目）")
+    pod = ep.get("podcast") or {}
+    image = pod.get("image") or {}
+    shownotes = re.sub(r"<[^>]+>", " ", ep.get("shownotes") or "")
+    shownotes = re.sub(r"\s+", " ", shownotes).strip()
+    return {
+        "eid": ep.get("eid") or (_extract_video_id(url, "xiaoyuzhou") or ""),
+        "title": _plain_text(ep.get("title")) or "未知标题",
+        "uploader": pod.get("title") or "",
+        "duration": int(ep["duration"]) if ep.get("duration") else None,
+        "thumbnail": image.get("middlePicUrl") or image.get("picUrl") or "",
+        "audio": audio,
+        "description": shownotes[:200],
+        "published_at": (ep.get("pubDate") or "")[:10] or None,
+    }
+
+
+def _xyz_info_dict(raw: Dict, url: str) -> Dict:
+    """构造与 _simplify_info 同形的前端预览信息。"""
+    return {
+        "id": raw["eid"],
+        "title": raw["title"],
+        "uploader": raw["uploader"],
+        "duration": raw["duration"],
+        "thumbnail": raw["thumbnail"],
+        "platform": "xiaoyuzhou",
+        "webpage_url": url,
+        "video_id": raw["eid"],
+        "description": raw["description"],
+        "published_at": raw["published_at"],
+        "stats": {"views": None, "likes": None, "favorites": None, "comments": None},
+    }
+
+
+def _download_xiaoyuzhou(url: str, target_dir: str, progress_hook=None) -> Dict:
+    """下载小宇宙单集音频（m4a），纯音频交由流水线 ASR 直连处理。"""
+    import time
+    import requests
+
+    raw = _xyz_episode_info(url)
+    eid = raw["eid"] or "xiaoyuzhou"
+    target = Path(target_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    out_path = target / f"{eid}.m4a"
+
+    # 音频为单文件直链（可 Range 续传），网络抖动时整体重试 3 次
+    last_error = None
+    for attempt in range(3):
+        try:
+            with requests.get(raw["audio"], stream=True, timeout=(15, 60),
+                              headers={"User-Agent": _BROWSER_UA}) as r:
+                r.raise_for_status()
+                total = int(r.headers.get("Content-Length") or 0)
+                done = 0
+                with open(out_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=1 << 20):
+                        if not chunk:
+                            continue
+                        f.write(chunk)
+                        done += len(chunk)
+                        if progress_hook and total:
+                            progress_hook({
+                                "status": "downloading",
+                                "downloaded_bytes": done,
+                                "total_bytes": total,
+                            })
+            break
+        except Exception as e:
+            last_error = e
+            logging.warning(f"小宇宙音频下载第 {attempt + 1} 次尝试失败: {e}")
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+    else:
+        raise ValueError(f"小宇宙音频下载失败（已重试 3 次）: {last_error}")
+
+    if out_path.stat().st_size < 10240:
+        raise ValueError("小宇宙音频下载异常：文件过小")
+
+    return {"file_path": str(out_path), "info": _xyz_info_dict(raw, url)}
 
 
 def _youtube_thumbnail_fallback(video_id: str) -> str:
@@ -1697,6 +1848,8 @@ def download_video(url: str, target_dir: str, max_height: int = 720,
         url = normalize_x_url(url)
     if platform == "wechat":
         return _download_wechat_video(url, target_dir, progress_hook=progress_hook)
+    if platform == "xiaoyuzhou":
+        return _download_xiaoyuzhou(url, target_dir, progress_hook=progress_hook)
     if platform == "douyin":
         # 优先走 App 接口：web 接口已被 Argus 浏览器签名校验拦截（403），
         # yt-dlp 会把它误报成 Cookie 缺失。App 接口失败才回退 yt-dlp。
@@ -1801,7 +1954,7 @@ def download_video(url: str, target_dir: str, max_height: int = 720,
     last_error = None
     for attempt in range(4):
         try:
-            with _get_ydl(**options) as ydl:
+            with _get_ydl(platform=platform, **options) as ydl:
                 info = ydl.extract_info(url, download=True)
             break
         except Exception as e:

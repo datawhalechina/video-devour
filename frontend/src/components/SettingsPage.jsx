@@ -96,6 +96,8 @@ function SettingsPage() {
         wechat_yuanbao_cookie: data.wechat_yuanbao_cookie || '',
         wechat_resolver_url: data.wechat_resolver_url || '',
         wechat_resolver_token: data.wechat_resolver_token || '',
+        wechat_mp_appid: data.wechat_mp_appid || '',
+        wechat_mp_secret: data.wechat_mp_secret || '',
         youtube_cookies: data.youtube_cookies || '',
         douyin_cookies: data.douyin_cookies || '',
         x_cookies: data.x_cookies || '',
@@ -803,6 +805,43 @@ function SettingsPage() {
                   className={inputClass}
                 />
               </div>
+            </div>
+          </div>
+        </motion.section>
+
+        {/* 微信公众号发布 */}
+        <motion.section
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
+        >
+          <h2 className="text-base font-bold text-gray-900 mb-2">微信公众号发布（报告转图文草稿）</h2>
+          <p className="text-xs text-gray-500 leading-relaxed mb-4">
+            配置后，报告页可一键把「分析报告」转为公众号图文<span className="text-primary-600">草稿</span>（图片自动上传、
+            正文自动套公众号排版；不自动群发，需在公众号后台预览确认后手动发布）。
+            凭据来自公众号后台「设置与开发 → 基本配置」；调用接口要求把本机 IP 加入
+            公众号 <span className="text-primary-600">IP 白名单</span>（家庭宽带 IP 变动后需更新）。
+            仅保存在本机 settings.json。
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>公众号 AppID</label>
+              <input
+                type="text"
+                value={form.wechat_mp_appid || ''}
+                onChange={(e) => setField('wechat_mp_appid', e.target.value)}
+                placeholder="wx 开头的 AppID"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>公众号 AppSecret</label>
+              <input
+                type="password"
+                value={form.wechat_mp_secret || ''}
+                onChange={(e) => setField('wechat_mp_secret', e.target.value)}
+                placeholder="基本配置页的 AppSecret（可重置）"
+                className={inputClass}
+              />
             </div>
           </div>
         </motion.section>

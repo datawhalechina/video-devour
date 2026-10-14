@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Clock, FileText, Image, Edit3, LayoutGrid, FileDown, ChevronDown, ArrowUpRight, Check,
-  Timer, Share2, Network, BookOpen, Link2, Zap, Newspaper, Sparkles, ClipboardCheck, Languages } from "lucide-react";
+  Timer, Share2, Network, BookOpen, Link2, Zap, Newspaper, Sparkles, ClipboardCheck, Languages, PanelsTopLeft, ImageDown, Send } from "lucide-react";
 
 const PLATFORM_LABELS = {
   bilibili: "B站",
@@ -13,12 +13,14 @@ const PLATFORM_LABELS = {
 
 // 衍生文体：不在处理流程里预生成，点开时按需生成（结果落盘复用）
 const STYLE_TABS = [
+  { key: "html", label: "HTML 速读", icon: PanelsTopLeft, description: "一页图纸板式速读页，可导出 PNG / PDF 传播。" },
   { key: "quantum", label: "量子速读", icon: Zap, description: "30 秒抓住大意，附一句可直接发朋友圈的话。" },
   { key: "wechat", label: "公众号文章", icon: Newspaper, description: "图文成稿，可直接发布。" },
   { key: "xiaohongshu", label: "小红书笔记", icon: Sparkles, description: "图文笔记，含话题标签。" },
 ];
 const STYLE_KEYS = STYLE_TABS.map(t => t.key);
 import { generateCard, generateMindmap, generateKnowledgeGraph } from "../api/settingsService";
+import { getWechatMpStatus, publishToWechatMp } from "../api/videoService";
 import { triggerDownload, openExternal } from "../utils/helpers";
 import { useConfigGate } from "./ConfigGateProvider";
 import QuizPanel from "./QuizPanel";
@@ -156,6 +158,32 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
       alert(`学习卡片生成失败: ${err.message}`);
     } finally {
       setCardLoading(false);
+    }
+  };
+
+  // 发到公众号：分析报告 → 公众号图文草稿（不群发，后台确认后手动发布）
+  const [mpPublishing, setMpPublishing] = useState(false);
+  const [mpResult, setMpResult] = useState(null);   // {ok, message}
+  const handlePublishWechatMp = async () => {
+    if (mpPublishing) return;
+    setMpResult(null);
+    const status = await getWechatMpStatus();
+    if (!status.configured) {
+      setMpResult({ ok: false, message: "尚未配置公众号凭据：请到「设置 → 微信公众号发布」填写 AppID / AppSecret 后重试" });
+      return;
+    }
+    if (!status.ok) {
+      setMpResult({ ok: false, message: status.message });
+      return;
+    }
+    setMpPublishing(true);
+    try {
+      const result = await publishToWechatMp(report.task_id, { title: sourceTitle });
+      setMpResult({ ok: true, message: `「${result.title}」草稿已创建（封面：${result.cover}），请到公众号后台预览后手动发布` });
+    } catch (err) {
+      setMpResult({ ok: false, message: err.message });
+    } finally {
+      setMpPublishing(false);
     }
   };
 
@@ -392,6 +420,20 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
           <button onClick={() => setQuizOpen(true)} className="report-tool-button">
             <ClipboardCheck size={16} /> 测试习题
           </button>
+          <button
+            onClick={handlePublishWechatMp}
+            disabled={mpPublishing}
+            title="把分析报告转为公众号图文草稿（自动上传图片并排版；不自动群发，需在公众号后台预览后手动发布）"
+            className="report-tool-button">
+            <Send size={16} /> {mpPublishing ? "发布中…" : "发到公众号"}
+          </button>
+          {mpResult && (
+            <span
+              role="status"
+              className={`text-xs leading-relaxed max-w-md ${mpResult.ok ? "text-emerald-600" : "text-red-500"}`}>
+              {mpResult.ok ? "✓ " : "✗ "}{mpResult.message}
+            </span>
+          )}
         </div>
         <div className="report-tool-group report-file-tools">
           <button onClick={handleShowTiming} disabled={timingLoading} className="report-tool-button report-timing-button">
@@ -538,12 +580,28 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
           </div>
           {isStyleTab ? (
             <div className="report-style-tools">
-              <a href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=md`}
-                 download=""
-                 className="report-tool-button"><FileText size={15} /> 下载 .md</a>
-              <a href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=pdf`}
-                 download=""
-                 className="report-tool-button"><FileDown size={15} /> 下载 PDF</a>
+              {activeTab === "html" ? (
+                <>
+                  <a href={`/api/library/article/${report.task_id}/html/download?fmt=png`}
+                     download=""
+                     className="report-tool-button"><ImageDown size={15} /> 导出 PNG</a>
+                  <a href={`/api/library/article/${report.task_id}/html/download?fmt=pdf`}
+                     download=""
+                     className="report-tool-button"><FileDown size={15} /> 导出 PDF</a>
+                  <a href={`/api/library/article/${report.task_id}/html/download?fmt=html`}
+                     download=""
+                     className="report-tool-button"><FileText size={15} /> 下载 HTML</a>
+                </>
+              ) : (
+                <>
+                  <a href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=md`}
+                     download=""
+                     className="report-tool-button"><FileText size={15} /> 下载 .md</a>
+                  <a href={`/api/library/article/${report.task_id}/${activeTab}/download?fmt=pdf`}
+                     download=""
+                     className="report-tool-button"><FileDown size={15} /> 下载 PDF</a>
+                </>
+              )}
             </div>
           ) : (
             <button onClick={() => handleEdit(activeTab)} className="report-edit-button"><Edit3 size={15} /> 编辑报告</button>
@@ -554,6 +612,14 @@ const ReportViewer = ({ report, onBack, error, onRetry }) => {
           <article className="report-prose">
             {styleLoading[activeTab] ? (
               <div className="report-empty"><Timer size={28} /><h2>正在生成{currentTab.label}…</h2><p>基于已有报告改写，通常几秒到半分钟。</p></div>
+            ) : activeTab === "html" && currentTab.content ? (
+              // HTML 速读页是自包含单文件页面（含亮暗切换与内嵌关键帧），iframe 原样呈现
+              <iframe
+                title="HTML 速读页"
+                srcDoc={currentTab.content}
+                className="w-full rounded-lg border border-gray-200 bg-[#f6f6f3]"
+                style={{ height: "78vh" }}
+              />
             ) : currentTab.content ? renderMarkdown(currentTab.content) : (
               <div className="report-empty"><FileText size={28} /><h2>暂时没有{currentTab.label}</h2><p>该任务尚未生成这份内容，可以先查看其他报告。</p></div>
             )}

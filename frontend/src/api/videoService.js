@@ -44,11 +44,12 @@ api.interceptors.response.use(
  * @param {string} educationLevel - 学习阶段，默认"自由学习"
  * @returns {Promise} 返回任务ID
  */
-export const uploadVideo = async (file, onProgress, educationLevel = "自由学习", extras = []) => {
+export const uploadVideo = async (file, onProgress, educationLevel = "自由学习", extras = [], fastMode = false) => {
   const formData = new FormData();
   formData.append("file", file);  // 修改字段名从 "video" 到 "file"
   formData.append("education_level", educationLevel);
   if (extras?.length) formData.append("extras", extras.join(","));
+  if (fastMode) formData.append("fast_mode", "true");
 
   // 大文件（直播回放等可达数 GB）不能受 axios 全局 5 分钟超时限制：
   // 上传请求不限总时长，改用「速率看门狗」止损——
@@ -230,11 +231,13 @@ export const searchLinkVideos = async (query, platform = "bilibili", maxResults 
  * 通过链接一键下载并处理视频
  * @param {string} url - 视频链接
  * @param {string} educationLevel - 学习阶段
+ * @param {string[]} extras - 附加产物
+ * @param {boolean} fastMode - 极速模式：跳过抽帧/VLM，出纯文字报告
  */
-export const processLink = async (url, educationLevel = "自由学习", extras = []) => {
+export const processLink = async (url, educationLevel = "自由学习", extras = [], fastMode = false) => {
   try {
     const response = await api.post("/video/link", {
-      url, education_level: educationLevel, extras,
+      url, education_level: educationLevel, extras, fast_mode: fastMode,
     }, { timeout: 60000 });
     return response;
   } catch (error) {
@@ -248,6 +251,36 @@ export const generateSubtitleNotes = async (url, educationLevel = '自由学习'
   } catch (error) {
     const message =
       error.response?.data?.detail || error.message || '字幕笔记生成失败';
+    return Promise.reject(new Error(message));
+  }
+};
+
+/**
+ * 公众号发布连通性探测（配置状态 + token/草稿接口）
+ */
+export const getWechatMpStatus = async () => {
+  try {
+    return await api.get('/wechat-mp/status', { timeout: 30000 });
+  } catch (error) {
+    return { configured: false, ok: false, message: error.message };
+  }
+};
+
+/**
+ * 把任务报告转为公众号图文草稿（不群发，后台确认后手动发布）
+ * @param {string} taskId
+ * @param {object} opts - { title, digest, report: 'final' | 'detailed' }
+ */
+export const publishToWechatMp = async (taskId, opts = {}) => {
+  try {
+    return await api.post('/wechat-mp/publish', {
+      task_id: taskId,
+      title: opts.title || '',
+      digest: opts.digest || '',
+      report: opts.report || 'final',
+    }, { timeout: 120000 });
+  } catch (error) {
+    const message = error.response?.data?.detail || error.message || '公众号草稿创建失败';
     return Promise.reject(new Error(message));
   }
 };

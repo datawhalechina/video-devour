@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Download, FileDown, Loader2, FileText, RefreshCw, Volume2, Square } from 'lucide-react'
+import { ArrowLeft, Download, FileDown, Loader2, FileText, RefreshCw, Volume2, Square, ImageDown } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -118,16 +118,18 @@ function LibraryArticlePage() {
           <div className="flex items-center gap-2">
             {article && (
               <>
-                <button
-                  onClick={speak}
-                  disabled={ttsLoading}
-                  title="调用阶跃星辰 TTS 朗读本文（需在设置页配置阶跃星辰 API Key）"
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
-                >
-                  {ttsLoading ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : speaking ? <Square className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                  {speaking ? '停止朗读' : '朗读'}
-                </button>
+                {scope !== 'html' && (
+                  <button
+                    onClick={speak}
+                    disabled={ttsLoading}
+                    title="调用阶跃星辰 TTS 朗读本文（需在设置页配置阶跃星辰 API Key）"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
+                  >
+                    {ttsLoading ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : speaking ? <Square className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                    {speaking ? '停止朗读' : '朗读'}
+                  </button>
+                )}
                 {article.needs_image_repair && (
                   <button
                     onClick={repair}
@@ -139,22 +141,54 @@ function LibraryArticlePage() {
                     {repairing ? '重新生成中…' : '重新生成（补图）'}
                   </button>
                 )}
-                <a
-                  href={`/api/library/article/${docId}/${scope}/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=md`}
-                  download=""
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
-                >
-                  <Download className="w-4 h-4" />
-                  下载 .md
-                </a>
-                <a
-                  href={`/api/library/article/${docId}/${scope}/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=pdf`}
-                  download=""
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50"
-                >
-                  <FileDown className="w-4 h-4" />
-                  下载 PDF
-                </a>
+                {scope === 'html' ? (
+                  <>
+                    <a
+                      href={`/api/library/article/${docId}/html/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=png`}
+                      download=""
+                      title="无头 Chrome 渲染全页长图（需本机装有 Chrome/Edge）"
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
+                    >
+                      <ImageDown className="w-4 h-4" />
+                      导出 PNG
+                    </a>
+                    <a
+                      href={`/api/library/article/${docId}/html/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=pdf`}
+                      download=""
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50"
+                    >
+                      <FileDown className="w-4 h-4" />
+                      导出 PDF
+                    </a>
+                    <a
+                      href={`/api/library/article/${docId}/html/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=html`}
+                      download=""
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50"
+                    >
+                      <Download className="w-4 h-4" />
+                      下载 HTML
+                    </a>
+                  </>
+                ) : (
+                  <>
+                    <a
+                      href={`/api/library/article/${docId}/${scope}/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=md`}
+                      download=""
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700"
+                    >
+                      <Download className="w-4 h-4" />
+                      下载 .md
+                    </a>
+                    <a
+                      href={`/api/library/article/${docId}/${scope}/download${runId ? `?run_id=${encodeURIComponent(runId)}&` : '?'}fmt=pdf`}
+                      download=""
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50"
+                    >
+                      <FileDown className="w-4 h-4" />
+                      下载 PDF
+                    </a>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -193,10 +227,20 @@ function LibraryArticlePage() {
                 {article.source_url}
               </a>
             </div>
-            <div className="prose prose-lg max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: imgOverride(article.output_dir) }}>
-                {article.content}
-              </ReactMarkdown>
+            <div className={scope === 'html' ? '' : 'prose prose-lg max-w-none'}>
+              {scope === 'html' ? (
+                // HTML 速读页：自包含单文件（内嵌关键帧 + 亮暗切换），iframe 原样呈现
+                <iframe
+                  title="HTML 速读页"
+                  srcDoc={article.content}
+                  className="w-full rounded-lg border border-gray-200 bg-[#f6f6f3]"
+                  style={{ height: '80vh' }}
+                />
+              ) : (
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: imgOverride(article.output_dir) }}>
+                  {article.content}
+                </ReactMarkdown>
+              )}
             </div>
           </motion.article>
         )}

@@ -12,6 +12,7 @@ opencv-contrib-python>=4.8.0
 opencv-python>=4.8.0
 opencv-python-headless>=4.8.0
 Pillow>=10.0.0
+markdown>=3.5        # 公众号图文草稿：Markdown -> 内联样式 HTML
 PyYAML>=6.0.0
 scikit-image>=0.20.0
 soundfile>=0.12.0

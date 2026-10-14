@@ -4,6 +4,7 @@ import { Upload, Film, AlertCircle, Loader2, Clock, X, CheckCircle, Trash2, Play
 import { Link } from 'react-router-dom'
 import { uploadVideo } from '../api/videoService'
 import ExtrasPicker, { getSelectedExtras } from './ExtrasPicker'
+import FastModeToggle, { getFastMode } from './FastModeToggle'
 import { useConfigGate } from './ConfigGateProvider'
 
 function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProcessing }) {
@@ -27,10 +28,12 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
 
   const handleFileSelect = async (files) => {
     const fileList = Array.from(files || [])
-    const validFiles = fileList.filter(file => file.type.startsWith('video/'))
+    // 音频（播客）走纯音频流水线：无画面则自动跳过抽帧
+    const validFiles = fileList.filter(file =>
+      file.type.startsWith('video/') || file.type.startsWith('audio/'))
 
     if (validFiles.length === 0) {
-      setError('请选择有效的视频文件')
+      setError('请选择有效的视频或音频文件')
       return
     }
 
@@ -106,7 +109,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
         
         const result = await uploadVideo(fileItem.file, (progress) => {
           setUploadProgress(prev => ({ ...prev, [fileItem.id]: progress }))
-        }, educationLevel, getSelectedExtras())
+        }, educationLevel, getSelectedExtras(), getFastMode())
 
         // 更新状态为成功
         setSelectedFiles(prev => 
@@ -223,7 +226,7 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
           <input
             ref={fileInputRef}
             type="file"
-            accept="video/*"
+            accept="video/*,audio/*"
             multiple
             className="hidden"
             onChange={(e) => handleFileSelect(e.target.files)}
@@ -407,6 +410,17 @@ function VideoUpload({ onUploadSuccess, onViewHistory, currentTask, onBackToProc
             </div>
           </div>
           <ExtrasPicker />
+        </div>
+
+        {/* 极速模式（可选）：跳过抽帧与 VLM，纯文字报告更快出 */}
+        <div className="upload-extras mb-6 bg-white rounded-2xl border border-gray-100 p-5 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">处理方式</p>
+              <p className="text-xs text-gray-500">极速模式不抽帧、不加图，仅做转写并出纯文字报告，速度快数倍</p>
+            </div>
+          </div>
+          <FastModeToggle />
         </div>
 
         </details>

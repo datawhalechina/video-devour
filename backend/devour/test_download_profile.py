@@ -157,7 +157,11 @@ class CacheProfileTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        self.patch = patch.object(download_cache, "_data_root", return_value=self.root)
+        # 缓存目录自 d5044c6 起由 _download_root() 决定（settings.download_cache_dir
+        # 可独立配置）；patch 它才是有效接缝。旧代码 patch 的 _data_root 已不再
+        # 影响 cache_dir，跨盘（外置工作盘）时硬链接会退化成复制导致断言失败。
+        self.cache = self.root / "downloads"
+        self.patch = patch.object(download_cache, "_download_root", return_value=self.cache)
         self.patch.start()
         self.addCleanup(self.patch.stop)
         self.addCleanup(self.tmp.cleanup)

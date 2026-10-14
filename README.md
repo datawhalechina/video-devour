@@ -62,13 +62,29 @@
 - **中文输出保障**：无论视频原语言是什么，大纲与报告一律输出简体中文（专有名词保留原文）。
 - **LLM 限流重试**：限流/超时自动指数退避重试，保证长任务稳定性。
 
-### 🔗 在线视频链接处理（B站 / YouTube / 抖音 / X / 微信视频号）
+### 🔗 在线视频链接处理（B站 / YouTube / 抖音 / X / 微信视频号 / 小宇宙播客 / 腾讯会议）
 - **粘贴链接直接处理**：自动识别平台（可直接粘贴 App 分享文案），预览窗口内嵌官方播放器在线播放，一键下载并进入完整处理流水线。
+- **极速模式（可选）**：链接页与上传页均可开启「⚡极速模式」——跳过抽帧与 VLM 画面分析，ASR/转写后直接生成纯文字报告，速度快数倍。纯音频（小宇宙/音频上传）与腾讯会议天然走此路径。
 - **关键词搜索**：内置 B站官方搜索、YouTube 搜索与抖音搜索（抖音需登录 Cookie），封面/时长/UP主卡片式展示。
 - **抖音**：支持 `douyin.com/video/{id}` 视频页与 `v.douyin.com` 短链（自动跟随重定向）。**下载需要登录态 Cookie**（设置页「抖音 cookies」或一键读取浏览器 Cookie）；抖音的**下载与关键词搜索都需登录态**（匿名搜索返回「请先登录」），配置抖音 cookies 后即可正常搜索抖音视频。抖音下载改走 **App 接口直连**（web 接口自 2026 起受 Argus 浏览器签名校验拦截，仅带 Cookie 也会返回 403），无需浏览器签名即可下载；自动选 H.264 档，优先不超过 720p 的最高可用画质（该档通常带抖音水印；设 `VIDEO_DEVOUR_DOUYIN_CLEAN=1` 可改为优先无水印源）。
 - **X（Twitter）**：支持 `x.com` / `twitter.com` 推文视频（`/{user}/status/{id}`、`/i/status/{id}` 等自动归一化）。**下载需要登录态 Cookie**（设置页「X cookies」或一键读取浏览器 Cookie，需含 `auth_token`）；X 不支持关键词搜索，只能粘贴推文链接。
+- **衍生文体（按需生成）**：HTML 速读页 / 量子速读 / 公众号文章 / 小红书笔记。其中 **HTML 速读页**
+  是一页式的单文件速读页（版式规范 [answer-me-with-html](https://github.com/QingYunA/answer-me-with-html)）：
+  面板网格 + 结论 callout + 章节时间线 + 数据条 + 流程链，关键帧 base64 内嵌、亮暗双主题，
+  可直接单文件传播；支持**导出 PNG 全页长图与 A4 PDF**（无头 Chrome 渲染，需本机装有
+  Chrome / Chromium / Edge，可用环境变量 `VIDEO_DEVOUR_BROWSER` 指定路径）。
 - **微信视频号**：支持 `weixin.qq.com/sph/...` 分享链接。在设置页填入腾讯元宝 Cookie 后走**直连解析**（元宝解析 → 视频号 feed 接口 → 本地 ISAAC64 解密，无第三方依赖）；也可选配自建解析服务（`WECHAT_RESOLVER_URL`）或使用本地捕获工具（[ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download)）下载后上传处理。
+- **小宇宙播客**：支持 `xiaoyuzhoufm.com/episode/{eid}` 单集链接。单集页无需登录，音频直链内嵌于页面 `__NEXT_DATA__` JSON——下载原始 m4a 后**直接进 ASR 流水线**（纯音频自动跳过压缩与抽帧/画面分析，报告不含关键帧）；「上传视频」页同样接受 `.m4a` / `.mp3` / `.wav` 音频文件。
+- **腾讯会议**：支持会议录制分享链接（`meeting.tencent.com/crm|cw|ctm/...`）或直接粘贴 9-12 位会议号。不下载视频画面——通过官方 CLI 拉取录制转写（**逐字稿带发言人实名与时间戳**）后直接生成报告；「字幕笔记」按钮同样支持（快速出按发言人分节的纯文本纪要）。
+  - **前置条件（需提前安装授权，一次性操作）**：
+    ```bash
+    npm install -g @tencentcloud/tmeet   # 安装腾讯会议官方 CLI（需 Node.js ≥ 14）
+    tmeet auth login                     # 复制输出的授权链接到浏览器，登录腾讯会议账号完成授权
+    ```
+    授权长期有效（RefreshToken 30 天自动续期）。未安装/未授权时提交会议链接会收到引导提示；CLI 路径可用环境变量 `TMEET_CLI_PATH` 覆盖（桌面端打包场景）。
+  - 录制需对当前账号可见（`can_view`）；分享链接解析失败时可改粘会议号。转写由腾讯会议云端生成，会议结束后需等待转码完成（仍在生成中会提示稍后重试）。
 - 由 `yt-dlp` 驱动，含 B站风控退避重试与 YouTube cookies 支持（`YTDLP_COOKIES_FILE`）。
+- **代理环境说明**：为访问 YouTube 常开系统代理的用户，若代理处于**全局模式**（global），B站/抖音等国内平台的 CDN 长连接会被代理出口 IP 限流掐断，长视频反复出现「下载中断、重试 5 次后放弃」或 `Read timed out`。应用对 B站/抖音/视频号已自动**强制直连**（yt-dlp `proxy=""`，不受系统代理模式影响）；YouTube/X 仍遵循环境代理。如仍异常，请将代理切换为**规则模式**（国内直连、境外走代理）。
 
 ### 🎓 学习增强
 - **附加产物可选**：上传/链接处理时可勾选「完成后生成」——思维导图 / 知识图谱 / 学习卡片，勾选才生成（默认不勾，报告完成即结束，最快出结果）；报告页也保留手动生成按钮。
@@ -78,6 +94,7 @@
 - **思维导图**：报告自动整理为三层分支结构的交互式导图（缩放/折叠），快速建立整体框架。
 - **知识图谱**：自动抽取课程概念与关系，渲染力导向网络图（节点按类别着色、关系标注、悬停查看说明）。
 - **导出 Markdown**：大纲+报告合并导出，图片内嵌 base64，单文件即可本地查阅。
+- **发到公众号**：报告页一键把「分析报告」转为公众号**图文草稿**——图片自动上传素材库、正文自动套公众号内联排版（不自动群发，后台预览确认后手动发布）。纯文字报告自动生成标题封面；需在设置页配置公众号 AppID/Secret，并把本机 IP 加入公众号后台「IP 白名单」（家宽 IP 变动后需更新）。
 
 ### 🤖 Agent Skill（任意 AI 编码助手可调用）
 
@@ -95,10 +112,24 @@ python3 .agents/skills/videodevour/scripts/devour.py wechat "https://weixin.qq.c
 # 抖音：检查登录 Cookie / 下载链接视频（下载需登录态）
 python3 .agents/skills/videodevour/scripts/devour.py douyin --check
 python3 .agents/skills/videodevour/scripts/devour.py douyin "https://www.douyin.com/video/..."
-# 一键处理：下载 → ASR → 大纲 → 关键帧 → 中文图文报告（同样支持抖音/视频号链接）
+# 一键处理：下载 → ASR → 大纲 → 关键帧 → 中文图文报告
+# （同样支持抖音/视频号/X/小宇宙播客/腾讯会议链接与本地文件；list 列出本地待处理视频）
 python3 .agents/skills/videodevour/scripts/devour.py process "https://www.bilibili.com/video/BV..." --level 高中
-# 读取最新报告
+# 学习增强：思维导图 / 知识图谱 / 学习卡片（Bento Grid HTML）
+python3 .agents/skills/videodevour/scripts/devour.py mindmap --latest --open
+python3 .agents/skills/videodevour/scripts/devour.py card --latest
+# HTML 速读页：生成一页速读 HTML，并可导出 PNG / PDF（需本机 Chrome）
+python3 .agents/skills/videodevour/scripts/devour.py speedread --latest --png --pdf
+# 读取最新报告 / 导出 PDF / 导出 Markdown（单文件内嵌图片或 zip 打包原图）
 python3 .agents/skills/videodevour/scripts/devour.py report --latest
+python3 .agents/skills/videodevour/scripts/devour.py pdf --latest --type all
+python3 .agents/skills/videodevour/scripts/devour.py md --latest --type all
+# 腾讯会议：检查 tmeet 授权 / 会议转写概况（process 直接支持会议号与短链）
+python3 .agents/skills/videodevour/scripts/devour.py meeting --check
+python3 .agents/skills/videodevour/scripts/devour.py process 931123456 --level 大学
+# 发布微信公众号图文草稿（不自动群发，后台确认后手动发布）
+python3 .agents/skills/videodevour/scripts/devour.py mp --check
+python3 .agents/skills/videodevour/scripts/devour.py mp --latest
 # 学习测试：出题（单选/多选/判断）→ 判题评估 → 学习建议
 python3 .agents/skills/videodevour/scripts/devour.py quiz generate --latest
 python3 .agents/skills/videodevour/scripts/devour.py quiz grade --answers '{"q1":[0],"q2":[0,2]}' --latest
@@ -216,13 +247,15 @@ pip install -r requirements.txt
 
 配置保存在项目根目录的 `settings.json`（已被 gitignore，含密钥请勿提交），并在每次任务执行时注入运行时配置。
 
-### 在线视频链接处理（B站 / YouTube / 抖音 / X / 微信视频号）
+### 在线视频链接处理（B站 / YouTube / 抖音 / X / 微信视频号 / 小宇宙播客 / 腾讯会议）
 
 前端「链接处理」页面支持不上传文件、直接通过视频链接生成报告：
 
 - **粘贴链接**：自动识别平台并展示预览窗口（B站用官方播放器嵌入，YouTube/抖音用 embed 播放器），可在线播放预览；直接粘贴 App 分享文案也可以（自动提取其中的纯链接）
 - **关键词搜索**：内置 B站（官方搜索接口）、YouTube（ytsearch）与抖音（需登录 Cookie）搜索，结果卡片含封面/时长/UP主，点击即预览
 - **一键下载处理**：下载（自动合并 mp4；抖音走 App 接口直连，其余平台由 yt-dlp 驱动）→ 接入标准处理流水线（ASR → 大纲 → 关键帧 → 报告）；同一视频重复处理直接复用本地下载缓存，不重复下载
+- **极速模式**：输入区「⚡极速模式」开关（默认关闭，选择会记住）——跳过抽帧与 VLM，仅做转写并出纯文字报告；对视频链接与本地上传均生效
+- **腾讯会议**：粘贴录制分享链接（`meeting.tencent.com/crm|cw|ctm/...`）或 9-12 位会议号，预览显示会议信息后一键生成报告。无需下载视频：调用官方 tmeet CLI 拉取录制转写（**含发言人实名与时间戳**）直接进报告管线（前置安装见上文「腾讯会议」条目）；「字幕笔记」按钮对会议链接同样可用
 
 说明：
 - B站未登录最高可取 720p 左右画质，高清晰度需自行配置登录态；短时间高频请求可能触发平台风控，服务端已带 cookie 指纹与自动重试
@@ -358,13 +391,16 @@ video-devour/
 │   ├── 📁 api/
 │   │   └── main.py              # FastAPI 主应用（全部 API 端点）
 │   └── 📁 devour/               # 视频获取与 ASR 引擎
-│       ├── video_downloader.py  # 链接下载（B站/YouTube/抖音/X/微信视频号，含搜索）
+│       ├── video_downloader.py  # 链接下载（B站/YouTube/抖音/X/微信视频号/小宇宙，含搜索）
+│       ├── tencent_meeting.py   # 腾讯会议录制（tmeet CLI 拉转写：短链解析/转写转换/权限容错）
 │       ├── download_cache.py    # 下载缓存与存储映射表（同视频复用，不重复下载）
 │       ├── asr_factory.py       # ASR 引擎工厂（离线/在线切换）
 │       ├── asr_engine_paraformer_v2.py  # 本地 FunASR 引擎
 │       ├── asr_engine_dashscope.py      # DashScope 在线引擎
 │       ├── asr_engine_stepfun.py        # StepFun 在线引擎
 │       └── ...                  # 其他引擎实现
+├── 📁 publisher/                # 发布渠道
+│   └── wechat_mp.py             # 公众号图文草稿（token缓存/图片上传/Markdown转内联HTML/封面生成）
 ├── 📁 mcp_server/               # 文档库 MCP 服务（stdio，供其他 LLM 客户端检索）
 │   ├── videodevour_library_mcp.py  # 5 个工具：search/get/list/export/export-all
 │   └── test_mcp_client.py       # MCP 端到端自测客户端

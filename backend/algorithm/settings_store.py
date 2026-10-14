@@ -66,6 +66,10 @@ DEFAULT_SETTINGS = {
     "wechat_yuanbao_cookie": "",
     "wechat_resolver_url": "",
     "wechat_resolver_token": "",
+    # 微信公众号发布：报告一键创建公众号图文草稿（API 调用要求本机 IP 在
+    # 公众号后台「IP 白名单」内；凭据存 settings.json，已 gitignore）
+    "wechat_mp_appid": "",
+    "wechat_mp_secret": "",
     # YouTube cookies.txt 内容（Netscape 格式，绕过下载 bot 检查）
     "youtube_cookies": "",
     # 抖音 cookies.txt 内容（Netscape 格式，抖音下载需要登录态）

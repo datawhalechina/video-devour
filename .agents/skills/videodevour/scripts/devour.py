@@ -3,9 +3,11 @@
 """
 VideoDevour skill 入口脚本（跨 agent 通用，遵循 .agents/skills 约定）
 
-把视频（B站/YouTube/抖音 链接、微信视频号分享链接或本地文件）端到端处理为中文图文报告。
+把视频（B站/YouTube/抖音/X/小宇宙 链接、微信视频号分享链接、腾讯会议短链/会议号或本地文件）
+端到端处理为中文图文报告。
 自动切换到 VideoDevour 项目的 .venv 运行，无需手动激活环境。
-另可检索项目本地积累的「文档库」（历史任务的全部报告/笔记），供 agent 复用已有成果。
+另可检索项目本地积累的「文档库」（历史任务的全部报告/笔记），供 agent 复用已有成果；
+报告可一键发布为微信公众号图文草稿。
 
 项目根目录解析顺序:
   1. --home 参数 / VIDEO_DEVOUR_HOME 环境变量
@@ -14,15 +16,21 @@ VideoDevour skill 入口脚本（跨 agent 通用，遵循 .agents/skills 约定
 
 用法:
   devour.py search "关键词" [--platform bilibili|youtube|douyin] [--max N]
-  devour.py info <url>
-  devour.py notes <url> [--level 学习阶段]
+  devour.py info <url>                          # 支持 B站/YouTube/抖音/X/小宇宙/视频号/腾讯会议
+  devour.py notes <url|会议号> [--level 学习阶段]  # B站/YouTube/腾讯会议，秒级纯文本笔记
   devour.py wechat <视频号分享链接> [--check]
   devour.py douyin <抖音链接> [--check]
-  devour.py process <url|本地视频路径> [--level 高中|初中|小学] [--home 项目目录]
+  devour.py meeting <会议短链|会议号|meeting_id> [--check]
+  devour.py process <url|会议号|本地视频路径> [--level 高中|初中|小学] [--home 项目目录]
   devour.py mindmap [--latest | --dir 输出目录] [--open] [--level 学习阶段]
   devour.py graph   [--latest | --dir 输出目录] [--open] [--level 学习阶段]
-  devour.py styles  [--latest | --dir 输出目录] [--kind quantum,wechat,xiaohongshu]
+  devour.py card    [--latest | --dir 输出目录] [--open] [--level 学习阶段]
+  devour.py styles  [--latest | --dir 输出目录] [--kind html,quantum,wechat,xiaohongshu]
   devour.py pdf     [--latest | --dir 输出目录] [--type report|detailed|outline|all] [--out 文件]
+  devour.py md      [--latest | --dir 输出目录] [--type report|detailed|outline|all]
+                   [--mode inline|zip] [--out 文件]
+  devour.py mp      [--check] [--latest | --dir 输出目录] [--type report|detailed]
+                   [--title 标题] [--digest 摘要]        # 公众号图文草稿
   devour.py report  [--latest | --dir 输出目录] [--type report|detailed|outline]
   devour.py library search "关键词" [--scope all|outline|report|detailed] [--top 5]
   devour.py library list [--scope ...]
@@ -36,6 +44,7 @@ VideoDevour skill 入口脚本（跨 agent 通用，遵循 .agents/skills 约定
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -160,16 +169,81 @@ def _collect_artifacts(out_dir: Path) -> dict:
     return arts
 
 
+def _run_extras(out_dir: Path, extras_spec: str, level=None) -> dict:
+    """按需生成附加产物（mindmap/graph/card），与 WebUI 的 --extras 一致。"""
+    extras_result = {}
+    extras = [x.strip() for x in (extras_spec or "").split(",") if x.strip()]
+    labels = {"mindmap": "思维导图", "graph": "知识图谱", "card": "学习卡片"}
+    for kind in extras:
+        if kind not in labels:
+            continue
+        print(f"生成{labels[kind]}（LLM 生成约 10-30 秒）...")
+        try:
+            from backend.algorithm import report_viz
+            if kind == "card":
+                path = report_viz.generate_learning_card(out_dir, level)
+            else:
+                fn = report_viz.generate_mindmap if kind == "mindmap" else report_viz.generate_knowledge_graph
+                path = fn(out_dir, level)
+            extras_result[kind] = str(path)
+        except Exception as e:
+            extras_result[kind] = f"生成失败: {e}"
+    return extras_result
+
+
+def _finish_outcome(home: Path, out_dir: Path, args) -> None:
+    """收尾：可选 extras + 汇总产物 JSON（视频/会议两条管线共用）。"""
+    outcome = {"output_dir": str(out_dir), **_collect_artifacts(out_dir)}
+    extras_result = _run_extras(out_dir, getattr(args, "extras", "") or "", args.level)
+    if extras_result:
+        outcome["extras"] = extras_result
+    if not outcome.get("report"):
+        outcome["error"] = "处理未完成：final_report.md 未生成，请检查 processing.log"
+        print(json.dumps(outcome, ensure_ascii=False, indent=2))
+        sys.exit(2)
+    print(json.dumps(outcome, ensure_ascii=False, indent=2))
+
+
+def _process_meeting(home: Path, args, ref: str):
+    """腾讯会议任务：tmeet 拉转写 → 会议报告管线（无媒体下载，纯文字报告）。"""
+    import uuid
+    from backend.devour import tencent_meeting as tm
+    from backend.algorithm.pipeline import run_meeting_pipeline
+
+    print(f"[1/2] 获取腾讯会议转写: {ref}")
+    meeting_data = tm.fetch_meeting_transcript(ref)
+    speakers = meeting_data.get("speakers") or []
+    print(f"转写已获取: {meeting_data.get('subject') or ref}"
+          f"（{len(meeting_data.get('dialogue', []))} 段、{len(speakers)} 位发言人）")
+
+    task_id = str(uuid.uuid4())
+    print(f"[2/2] 启动会议报告管线 (学习阶段: {args.level}) ...")
+    run_meeting_pipeline(task_id, meeting_data, education_level=args.level)
+
+    candidates = sorted((home / "output").glob(f"frames_{task_id}_*"),
+                        key=lambda p: p.stat().st_mtime)
+    if not candidates:
+        print(json.dumps({"error": "会议管线未产生输出目录，请检查日志"}, ensure_ascii=False))
+        sys.exit(2)
+    _finish_outcome(home, candidates[-1], args)
+
+
 def cmd_process(args):
     home = project_home(args.home)
     setup_project(home)
 
-    from backend.algorithm.pipeline import run_full_pipeline
-
     source = args.source
     # 支持直接粘贴含链接的分享文案（微信/B站 App 分享格式）
-    from backend.devour.video_downloader import extract_share_url
+    from backend.devour.video_downloader import detect_platform, extract_share_url
     url = extract_share_url(source)
+
+    # 腾讯会议：短链 / 9-12 位会议号 / 19 位 meeting_id 直接进会议管线（与 WebUI 一致）
+    if detect_platform(url) == "tencent_meeting" or re.fullmatch(r"\d{9,19}", source.strip()):
+        _process_meeting(home, args, source)
+        return
+
+    from backend.algorithm.pipeline import run_full_pipeline
+
     if url.startswith(("http://", "https://")):
         print(f"[1/2] 下载视频: {url}")
         from backend.devour.video_downloader import download_video
@@ -196,35 +270,7 @@ def cmd_process(args):
     if not candidates:
         print(json.dumps({"error": "流水线未产生输出目录，请检查日志"}, ensure_ascii=False))
         sys.exit(2)
-    out_dir = candidates[-1]
-
-    # 可选附加产物：--extras mindmap,graph,card（默认不生成，节省时间）
-    extras_result = {}
-    extras = [x.strip() for x in (getattr(args, "extras", "") or "").split(",") if x.strip()]
-    labels = {"mindmap": "思维导图", "graph": "知识图谱", "card": "学习卡片"}
-    for kind in extras:
-        if kind not in labels:
-            continue
-        print(f"生成{labels[kind]}（LLM 生成约 10-30 秒）...")
-        try:
-            from backend.algorithm import report_viz
-            if kind == "card":
-                path = report_viz.generate_learning_card(out_dir, args.level)
-            else:
-                fn = report_viz.generate_mindmap if kind == "mindmap" else report_viz.generate_knowledge_graph
-                path = fn(out_dir, args.level)
-            extras_result[kind] = str(path)
-        except Exception as e:
-            extras_result[kind] = f"生成失败: {e}"
-
-    outcome = {"output_dir": str(out_dir), **_collect_artifacts(out_dir)}
-    if extras_result:
-        outcome["extras"] = extras_result
-    if not outcome.get("report"):
-        outcome["error"] = "处理未完成：final_report.md 未生成，请检查 processing.log"
-        print(json.dumps(outcome, ensure_ascii=False, indent=2))
-        sys.exit(2)
-    print(json.dumps(outcome, ensure_ascii=False, indent=2))
+    _finish_outcome(home, candidates[-1], args)
 
 
 def cmd_wechat(args):
@@ -385,8 +431,97 @@ def cmd_library(args):
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
+def cmd_meeting(args):
+    """腾讯会议：检查 tmeet CLI 授权（--check），或查看单场转写概况（仅取数，不走 LLM）。"""
+    home = project_home(args.home)
+    setup_project(home)
+
+    from backend.devour import tencent_meeting as tm
+
+    if args.check:
+        print(json.dumps(tm.check_auth(), ensure_ascii=False, indent=2))
+        return
+    if not args.ref:
+        print("用法: devour.py meeting <会议短链|会议号|meeting_id>（或 meeting --check 检查授权）",
+              file=sys.stderr)
+        sys.exit(1)
+    data = tm.fetch_meeting_transcript(args.ref)
+    dialogue = data.get("dialogue") or []
+    print(json.dumps({
+        "subject": data.get("subject"),
+        "meeting_code": data.get("meeting_code"),
+        "speakers": data.get("speakers"),
+        "duration_minutes": round((data.get("duration_seconds") or 0) / 60),
+        "dialogue_segments": len(dialogue),
+        "total_chars": sum(len(d.get("text") or "") for d in dialogue),
+        "hint": "用 process 生成图文报告，或 notes 生成文字速记（都直接支持会议链接）",
+    }, ensure_ascii=False, indent=2))
+
+
+def cmd_mp(args):
+    """微信公众号：--check 连通性；否则把任务报告发布为图文草稿（不自动群发）。"""
+    home = project_home(args.home)
+    setup_project(home)
+
+    from backend.publisher import wechat_mp
+
+    if args.check:
+        from backend.algorithm import settings_store
+        s = settings_store.load_settings()
+        if not ((s.get("wechat_mp_appid") or "").strip()
+                and (s.get("wechat_mp_secret") or "").strip()):
+            print(json.dumps({
+                "configured": False,
+                "message": "未配置公众号凭据。在 WebUI 设置页「微信公众号发布」填写 AppID/AppSecret，"
+                           "或写入 settings.json 的 wechat_mp_appid / wechat_mp_secret",
+            }, ensure_ascii=False, indent=2))
+            sys.exit(1)
+        try:
+            count = wechat_mp.draft_count()
+            print(json.dumps({"configured": True, "ok": True, "draft_count": count,
+                              "message": "公众号接口连通正常"}, ensure_ascii=False, indent=2))
+        except wechat_mp.WechatMpError as e:
+            # 常见 40164：出口 IP 不在公众号后台白名单，报错文案会带当前 IP
+            print(json.dumps({"configured": True, "ok": False, "message": str(e)},
+                             ensure_ascii=False, indent=2))
+            sys.exit(1)
+        return
+
+    out_dir = _resolve_task_dir(home, args)
+    is_detailed = args.type == "detailed"
+    report_name = "detailed_report.md" if is_detailed else "final_report.md"
+    report_path = out_dir / report_name
+    if not report_path.exists() or report_path.stat().st_size == 0:
+        print(f"该任务没有{'详细报告' if is_detailed else '精简报告'}（{report_name}）",
+              file=sys.stderr)
+        sys.exit(1)
+
+    # 封面与 WebUI 一致：关键帧优先；纯文字报告（会议/音频）自动生成标题封面
+    cover = None
+    kf = out_dir / "keyframes"
+    if kf.is_dir():
+        imgs = sorted(kf.glob("*.jpg")) + sorted(kf.glob("*.png"))
+        if imgs:
+            cover = str(imgs[0])
+
+    from backend.algorithm.document_library import _title_from_report
+    title = (args.title or _title_from_report(out_dir, out_dir.name)).strip()[:64]
+    print(f"正在创建公众号图文草稿: {title}（{'详细报告' if is_detailed else '精简报告'}）")
+    try:
+        result = wechat_mp.publish_report_to_draft(
+            report_path, title=title, digest=args.digest or "",
+            cover_path=cover, cover_title=title)
+    except wechat_mp.WechatMpError as e:
+        print(json.dumps({"error": str(e)}, ensure_ascii=False, indent=2))
+        sys.exit(1)
+    print(json.dumps({**result, "report": report_name,
+                      "cover": "关键帧" if cover else "自动生成标题封面",
+                      "message": "草稿已创建，请在公众号后台「草稿箱」预览确认后手动发布（不会自动群发）"},
+                     ensure_ascii=False, indent=2))
+
+
 def cmd_notes(args):
-    """字幕速记：直接用 B站/YouTube 已有字幕生成纯文本笔记（秒级，不下载视频）"""
+    """字幕速记：用平台已有字幕/会议转写生成纯文本笔记（秒级，不下载视频）"""
     home = project_home(args.home)
     setup_project(home)
 
@@ -395,8 +530,12 @@ def cmd_notes(args):
 
     url = extract_share_url(args.url or "")
     platform = detect_platform(url)
-    if platform not in ("bilibili", "youtube"):
-        print("错误: 字幕笔记仅支持 B站 / YouTube 链接（可直接粘贴分享文案）", file=sys.stderr)
+    # 会议号/meeting_id 不是 URL 形态，按 API 同款规则识别后原样传递
+    if platform == "tencent_meeting" or re.fullmatch(r"\d{9,19}", (args.url or "").strip() or "x"):
+        platform, url = "tencent_meeting", args.url
+    if platform not in ("bilibili", "youtube", "tencent_meeting"):
+        print("错误: 字幕笔记支持 B站 / YouTube / 腾讯会议链接（可直接粘贴分享文案或会议号）",
+              file=sys.stderr)
         sys.exit(1)
 
     result = generate_subtitle_notes(url, platform, args.level)
@@ -420,18 +559,19 @@ def _resolve_task_dir(home: Path, args) -> Path:
 
 
 def cmd_viz(args, kind: str):
-    """生成思维导图 / 知识图谱（复用 API 同款逻辑，结果缓存到任务目录）"""
+    """生成思维导图 / 知识图谱 / 学习卡片（复用 API 同款逻辑，结果缓存到任务目录）"""
     home = project_home(args.home)
     setup_project(home)
     out_dir = _resolve_task_dir(home, args)
-    label = "思维导图" if kind == "mindmap" else "知识图谱"
+    labels = {"mindmap": "思维导图", "graph": "知识图谱", "card": "学习卡片"}
+    label = labels[kind]
     print(f"正在为 {out_dir.name} 生成{label}（LLM 生成约 10-30 秒）...")
 
     from backend.algorithm import report_viz
-    if kind == "mindmap":
-        path = report_viz.generate_mindmap(out_dir, education_level=args.level or None)
-    else:
-        path = report_viz.generate_knowledge_graph(out_dir, education_level=args.level or None)
+    fn = {"mindmap": report_viz.generate_mindmap,
+          "graph": report_viz.generate_knowledge_graph,
+          "card": report_viz.generate_learning_card}[kind]
+    path = fn(out_dir, education_level=args.level or None)
 
     result = {"html": str(path), "output_dir": str(out_dir)}
     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -484,6 +624,36 @@ def cmd_report(args):
     print(report.read_text(encoding="utf-8"))
 
 
+def cmd_speedread(args):
+    """HTML 速读页：基于任务报告生成一页式速读 HTML（版式规范 answer-me-with-html）。
+
+    --png/--pdf 用无头 Chrome 导出全页长图 / A4 PDF，便于直接传播。
+    """
+    home = project_home(args.home)
+    setup_project(home)
+    out_dir = _resolve_task_dir(home, args)
+
+    from backend.algorithm.style_articles import generate_style
+    html_path = generate_style(out_dir, "html", args.level or None,
+                               force=getattr(args, "force", False))
+    result = {"html": str(html_path)}
+    print(f"HTML 速读页: {html_path}")
+
+    if args.png or args.pdf:
+        from backend.devour import html_export
+        if args.png:
+            result["png"] = html_export.export_png(html_path, out_dir / "speedread.png")
+            print(f"已导出 PNG: {result['png']}")
+        if args.pdf:
+            result["pdf"] = html_export.export_pdf(html_path, out_dir / "speedread.pdf")
+            print(f"已导出 PDF: {result['pdf']}")
+
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if args.open:
+        import webbrowser
+        webbrowser.open(f"file://{html_path}")
+
+
 def cmd_styles(args):
     """生成衍生文体：量子速读 / 公众号文章 / 小红书笔记（基于已有报告改写）。
 
@@ -498,7 +668,7 @@ def cmd_styles(args):
     result = {"output_dir": str(out_dir), "styles": {}}
     for scope in kinds:
         if scope not in STYLE_TYPES:
-            result["styles"][scope] = "不支持的文体（可选 quantum/wechat/xiaohongshu）"
+            result["styles"][scope] = "不支持的文体（可选 html/quantum/wechat/xiaohongshu）"
             continue
         label = STYLE_TYPES[scope][1]
         try:
@@ -547,6 +717,111 @@ def cmd_pdf(args):
     out_path.write_bytes(pdf_bytes)
     print(json.dumps({"pdf": str(out_path), "type": args.type, "label": label,
                       "bytes": len(pdf_bytes), "output_dir": str(out_dir)},
+                     ensure_ascii=False, indent=2))
+
+
+def _safe_stem(text: str, fallback: str = "videodevour") -> str:
+    stem = re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9_-]+", "_", (text or "").strip())[:60].strip("_")
+    return stem or fallback
+
+
+def _compress_image_bytes(img_path: Path, target_bytes: int = 6 * 1024) -> tuple:
+    """把图片压到目标体积内（与 WebUI 导出同档策略），返回 (mime, data)。
+
+    base64 单行超长会被部分 Markdown 查看器截断导致图片不显示，内嵌时需要控制体积。
+    """
+    import io
+    import mimetypes
+    try:
+        from PIL import Image
+        img = Image.open(img_path)
+        img = img.convert("RGB") if img.mode not in ("RGB", "L") else img
+        for max_side in (640, 480, 360, 280):
+            work = img.copy()
+            if max(work.size) > max_side:
+                work.thumbnail((max_side, max_side), Image.LANCZOS)
+            for quality in (70, 60, 50, 40):
+                buf = io.BytesIO()
+                work.save(buf, format="JPEG", quality=quality, optimize=True)
+                data = buf.getvalue()
+                if len(data) <= target_bytes:
+                    return "image/jpeg", data
+        return "image/jpeg", data
+    except Exception:
+        mime = mimetypes.guess_type(str(img_path))[0] or "image/jpeg"
+        return mime, img_path.read_bytes()
+
+
+def cmd_md(args):
+    """把任务报告导出为 Markdown。
+
+    --type：report 精简报告(默认) / detailed 详细报告 / outline 图文大纲 / all 合并
+    --mode：inline 图片压缩后 base64 内嵌（单文件可移植） / zip md+原图打包（原图质量）
+    """
+    home = project_home(args.home)
+    setup_project(home)
+    out_dir = _resolve_task_dir(home, args)
+
+    sources = {"report": ("final_report.md", "精简报告"),
+               "detailed": ("detailed_report.md", "详细报告"),
+               "outline": ("detailed_outline.md", "图文大纲")}
+    sections = []
+    if args.type == "all":
+        headers = {"outline": "内容大纲", "report": "精简报告",
+                   "detailed": "详细报告（原文对照）"}
+        for key in ("outline", "report", "detailed"):
+            f = out_dir / sources[key][0]
+            if f.exists() and f.stat().st_size > 0:
+                sections.append(f"# {headers[key]}\n\n{f.read_text(encoding='utf-8')}")
+        if not sections:
+            print("该任务暂无可导出的报告", file=sys.stderr)
+            sys.exit(1)
+        label = "合并导出"
+    else:
+        fname, label = sources[args.type]
+        f = out_dir / fname
+        if not f.exists() or f.stat().st_size == 0:
+            print(f"该任务没有{label}（{fname}）", file=sys.stderr)
+            sys.exit(1)
+        sections.append(f.read_text(encoding="utf-8"))
+
+    # 导出文件名 = 内容标题_类型（与 WebUI 报告页导出命名一致）
+    from backend.algorithm.document_library import _title_from_report
+    stem = _safe_stem(_title_from_report(out_dir, out_dir.name))
+
+    if args.mode == "zip":
+        import zipfile
+        out_path = Path(args.out).expanduser() if args.out else out_dir / f"{stem}_{label}.zip"
+        with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"{stem}_{label}.md", "\n\n---\n\n".join(sections))
+            kf_dir = out_dir / "keyframes"
+            if kf_dir.exists():
+                for img in sorted(kf_dir.iterdir()):
+                    if img.is_file():
+                        zf.write(img, f"keyframes/{img.name}")
+        print(json.dumps({"zip": str(out_path), "md_in_zip": f"{stem}_{label}.md",
+                          "type": args.type, "mode": "zip", "output_dir": str(out_dir)},
+                         ensure_ascii=False, indent=2))
+        return
+
+    import base64
+
+    def _embed(md_text):
+        def _replace(m):
+            rel = m.group(2).replace("\\", "/").lstrip("./")
+            p = out_dir / rel
+            if not p.exists():
+                return m.group(0)
+            mime, data = _compress_image_bytes(p)
+            b64 = base64.b64encode(data).decode("ascii")
+            return f"![{m.group(1)}](data:{mime};base64,{b64})"
+        return re.sub(r"!\[([^\]]*)\]\((?!https?://|data:)([^)]+)\)", _replace, md_text)
+
+    content = "\n\n---\n\n".join(_embed(s) for s in sections)
+    out_path = Path(args.out).expanduser() if args.out else out_dir / f"{stem}_{label}.md"
+    out_path.write_text(content, encoding="utf-8")
+    print(json.dumps({"md": str(out_path), "type": args.type, "mode": "inline", "label": label,
+                      "bytes": len(content.encode("utf-8")), "output_dir": str(out_dir)},
                      ensure_ascii=False, indent=2))
 
 
@@ -634,7 +909,7 @@ def main():
 
     p_lib = sub.add_parser("library", help="检索项目本地文档库（历史任务报告/笔记复用）")
     lib_sub = p_lib.add_subparsers(dest="action", required=True)
-    _scope_choices = ["all", "outline", "report", "detailed", "quantum", "wechat", "xiaohongshu"]
+    _scope_choices = ["all", "outline", "report", "detailed", "html", "quantum", "wechat", "xiaohongshu"]
 
     lib_s = lib_sub.add_parser("search", help="BM25 相关度检索（返回 doc_id/scope/摘要）")
     lib_s.add_argument("query")
@@ -688,11 +963,30 @@ def main():
     quiz_a.add_argument("--dir", default=None)
     quiz_a.set_defaults(func=cmd_quiz)
 
-    p_notes = sub.add_parser("notes", help="字幕速记：用平台字幕生成纯文本笔记（B站/YouTube，秒级）")
-    p_notes.add_argument("url", help="B站/YouTube 视频链接或分享文案")
+    p_notes = sub.add_parser(
+        "notes", help="字幕速记：用平台字幕/会议转写生成纯文本笔记（B站/YouTube/腾讯会议，秒级）")
+    p_notes.add_argument("url", help="B站/YouTube 链接、腾讯会议短链/会议号，或分享文案")
     p_notes.add_argument("--level", default="自由学习",
                          choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
     p_notes.set_defaults(func=cmd_notes)
+
+    p_meet = sub.add_parser(
+        "meeting", help="腾讯会议：检查 tmeet 授权 / 查看会议转写概况（仅取数不走 LLM）")
+    p_meet.add_argument("ref", nargs="?", default=None,
+                        help="会议短链（meeting.tencent.com/crm|cw/...）/ 会议号 / meeting_id")
+    p_meet.add_argument("--check", action="store_true", help="检查 tmeet CLI 是否安装并已授权")
+    p_meet.set_defaults(func=cmd_meeting)
+
+    p_mp = sub.add_parser(
+        "mp", help="把任务报告发布为微信公众号图文草稿（不自动群发，后台确认后手动发）")
+    p_mp.add_argument("--check", action="store_true", help="检查公众号凭据与接口连通性")
+    p_mp.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
+    p_mp.add_argument("--dir", default=None, help="指定任务输出目录")
+    p_mp.add_argument("--type", default="report", choices=["report", "detailed"],
+                      help="report=精简报告(默认) / detailed=详细报告（注意公众号正文约 2 万字符上限）")
+    p_mp.add_argument("--title", default=None, help="图文标题（默认取报告标题，≤64 字）")
+    p_mp.add_argument("--digest", default="", help="摘要（默认正文前 54 字）")
+    p_mp.set_defaults(func=cmd_mp)
 
     p_mm = sub.add_parser("mindmap", help="为任务报告生成思维导图（markmap HTML）")
     p_mm.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
@@ -710,6 +1004,14 @@ def main():
     p_kg.add_argument("--open", action="store_true", help="生成后在浏览器打开")
     p_kg.set_defaults(func=lambda a: cmd_viz(a, "graph"))
 
+    p_card = sub.add_parser("card", help="为任务报告生成学习卡片（Bento Grid HTML，手机尺寸）")
+    p_card.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
+    p_card.add_argument("--dir", default=None, help="指定任务输出目录")
+    p_card.add_argument("--level", default=None,
+                        choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
+    p_card.add_argument("--open", action="store_true", help="生成后在浏览器打开")
+    p_card.set_defaults(func=lambda a: cmd_viz(a, "card"))
+
     p_report = sub.add_parser("report", help="查看任务报告（默认精简报告，--type 可选详细报告/大纲）")
     p_report.add_argument("--latest", action="store_true")
     p_report.add_argument("--dir", default=None)
@@ -719,16 +1021,27 @@ def main():
     p_report.set_defaults(func=cmd_report)
 
     p_styles = sub.add_parser(
-        "styles", help="生成衍生文体：量子速读 / 公众号文章 / 小红书笔记")
+        "styles", help="生成衍生文体：HTML 速读页 / 量子速读 / 公众号文章 / 小红书笔记")
     p_styles.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
     p_styles.add_argument("--dir", default=None, help="指定任务输出目录")
     p_styles.add_argument("--kind", default="",
-                          help="逗号分隔，可选：quantum,wechat,xiaohongshu（默认全部）")
+                          help="逗号分隔，可选：html,quantum,wechat,xiaohongshu（默认全部）")
     p_styles.add_argument("--force", action="store_true",
                           help="忽略已有缓存重新生成（修复处理中途生成导致的缺图产物）")
     p_styles.add_argument("--level", default=None,
                           choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
     p_styles.set_defaults(func=cmd_styles)
+
+    p_sr = sub.add_parser("speedread", help="HTML 速读页：生成一页速读 HTML 并可导出 PNG/PDF")
+    p_sr.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
+    p_sr.add_argument("--dir", default=None, help="指定任务输出目录")
+    p_sr.add_argument("--force", action="store_true", help="忽略缓存重新生成")
+    p_sr.add_argument("--level", default=None,
+                      choices=["自由学习", "小学", "初中", "高中", "大学", "硕士", "博士", "深入研究", "垂直领域研究"])
+    p_sr.add_argument("--png", action="store_true", help="同时导出全页 PNG 长图（需本机 Chrome）")
+    p_sr.add_argument("--pdf", action="store_true", help="同时导出 A4 PDF（需本机 Chrome）")
+    p_sr.add_argument("--open", action="store_true", help="生成后在浏览器打开")
+    p_sr.set_defaults(func=cmd_speedread)
 
     p_pdf = sub.add_parser("pdf", help="把报告导出为 PDF（内置中文字体）")
     p_pdf.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
@@ -738,6 +1051,17 @@ def main():
                        help="report=精简报告(默认) / detailed=详细报告 / outline=图文大纲 / all=合并")
     p_pdf.add_argument("--out", default=None, help="输出文件路径（默认写入任务目录）")
     p_pdf.set_defaults(func=cmd_pdf)
+
+    p_md = sub.add_parser("md", help="把报告导出为 Markdown（inline 单文件内嵌图片 / zip 打包原图）")
+    p_md.add_argument("--latest", action="store_true", help="使用最新完成的任务输出")
+    p_md.add_argument("--dir", default=None, help="指定任务输出目录")
+    p_md.add_argument("--type", default="report",
+                      choices=["report", "detailed", "outline", "all"],
+                      help="report=精简报告(默认) / detailed=详细报告 / outline=图文大纲 / all=合并")
+    p_md.add_argument("--mode", default="inline", choices=["inline", "zip"],
+                      help="inline=图片压缩内嵌为单文件(默认，可移植) / zip=md+原图打包(保原图质量)")
+    p_md.add_argument("--out", default=None, help="输出文件路径（默认写入任务目录）")
+    p_md.set_defaults(func=cmd_md)
 
     args = parser.parse_args()
     home = project_home(args.home)

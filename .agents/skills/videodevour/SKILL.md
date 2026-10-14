@@ -1,6 +1,6 @@
 ---
 name: videodevour
-description: 使用 VideoDevour 把视频（B站/YouTube/抖音/X 链接、微信视频号分享链接或本地文件）处理成中文图文报告。当用户要求"处理这个视频"、"视频转笔记/报告/图文大纲"、"下载并总结B站/YouTube/抖音/X/视频号视频"时使用。支持搜索视频、查询链接信息、一键生成带关键帧的图文报告（精简/详细），改写成量子速读/公众号文章/小红书笔记、导出 PDF，生成学习测试题（单选/多选/判断，判题与学习评估），并可检索项目本地已积累的文档库（历史任务报告/笔记，支持 BM25 搜索与导出，也可通过 MCP 服务供其他 LLM 调用）。
+description: 使用 VideoDevour 把视频（B站/YouTube/抖音/X/小宇宙/腾讯会议 链接、微信视频号分享链接或本地文件）处理成中文图文报告。当用户要求"处理这个视频/会议"、"视频转笔记/报告/图文大纲"、"下载并总结B站/YouTube/抖音/X/视频号/播客/腾讯会议录制"时使用。支持搜索视频、查询链接信息、一键生成带关键帧的图文报告（精简/详细），改写成HTML速读页/量子速读/公众号文章/小红书笔记，导出 PDF/Markdown，一键发布微信公众号图文草稿，生成思维导图/知识图谱/学习卡片与学习测试题，并可检索项目本地已积累的文档库（历史任务报告/笔记，支持 BM25 搜索与导出，也可通过 MCP 服务供其他 LLM 调用）。
 license: Apache-2.0
 compatibility: 需要 Python 3.12+ 与项目 .venv（uv sync），ffmpeg；任何支持 .agents/skills 约定的 agent 均可调用
 ---
@@ -9,15 +9,18 @@ compatibility: 需要 Python 3.12+ 与项目 .venv（uv sync），ffmpeg；任�
 
 ## Goal
 
-调用 VideoDevour 项目（本仓库），把视频端到端处理为中文图文报告
+调用 VideoDevour 项目（本仓库），把视频/播客单集/腾讯会议录制端到端处理为中文图文报告
 （ASR 转写 → 大纲 → 视频切分 → 关键帧 → 图文报告），不依赖 Web 界面。
 产出三层内容：**图文大纲 / 精简报告（结论先行）/ 详细报告（完整原文+笔记对照）**；
-可按需改写成**量子速读 / 公众号文章 / 小红书笔记**，并导出 **PDF**。
+可按需改写成**HTML 速读页 / 量子速读 / 公众号文章 / 小红书笔记**（HTML 速读页可导出 PNG/PDF 传播），
+或一键**发布为微信公众号图文草稿**。
 项目同时把每次任务的产物沉淀为**本地文档库**，可跨任务检索复用（见第 11 节）。
 
 ## 必要输入
 
-- **视频来源**：B站/YouTube/抖音/X 链接、微信视频号分享链接（weixin.qq.com/sph/...，可直接粘贴含链接的分享文案）、或本地视频文件路径（MP4 等）
+- **视频来源**：B站/YouTube/抖音/X 链接、小宇宙播客单集链接（xiaoyuzhoufm.com/episode/...）、
+  腾讯会议（短链 meeting.tencent.com/crm|cw/...、9-12 位会议号或 19 位 meeting_id）、
+  微信视频号分享链接（weixin.qq.com/sph/...，可直接粘贴含链接的分享文案）、或本地视频/音频文件路径
 - 可选：学习阶段（自由学习[默认]/小学/初中/高中/大学/硕士/博士/深入研究/垂直领域研究）
 
 ## 使用前检查（首次使用时执行一次）
@@ -121,27 +124,72 @@ python3 <skill目录>/scripts/devour.py process "https://x.com/{user}/status/{id
 - **X 不支持关键词搜索**（需要登录 GraphQL），只能粘贴推文链接。
 - `process` 命令同样直接支持 X 链接（自动先下载再处理）。
 
-### 5. 字幕速记（B站/YouTube，秒级纯文本笔记）
+### 4c. 小宇宙播客（xiaoyuzhoufm.com/episode/{eid} 单集）
 
-不下载视频、不走 ASR：直接读取平台已有字幕（B站 AI 字幕轨 / YouTube 手动或自动字幕），
-LLM 整理为纯文本要点笔记。适合"只要文字内容、要快"的场景。
+```bash
+# 查看单集信息（标题/主播/时长/封面）
+python3 <skill目录>/scripts/devour.py info "https://www.xiaoyuzhoufm.com/episode/..."
+# 一键处理：音频直进 ASR 流水线
+python3 <skill目录>/scripts/devour.py process "https://www.xiaoyuzhoufm.com/episode/..." --level 大学
+```
+
+- **无需任何 Cookie**（公开音频直链）。仅支持单集链接，不支持主播主页/列表页。
+- 纯音频输入时流水线自动跳过压缩与抽帧/VLM，**报告为纯文字（无关键帧配图）**，速度更快。
+- 播客单集通常较长（60 分钟以上常见），处理前注意 `process` 的超时设置（见第 6 节）。
+
+### 4d. 腾讯会议（短链 / 会议号 / meeting_id）
+
+把腾讯会议录制转写成图文报告（tmeet 拉云录制转写 → 报告管线，**无媒体下载、纯文字报告**）。
+用户说"整理一下这场会议""把会议纪要做成报告"时使用。
+
+```bash
+# 前置：tmeet CLI 安装并授权（OAuth，RefreshToken 30 天自动续期；TMEET_CLI_PATH 可覆盖路径）
+npm install -g @tencentcloud/tmeet && tmeet auth login
+# 检查安装与授权状态（首次使用先跑这个）
+python3 <skill目录>/scripts/devour.py meeting --check
+# 查看某场会议的转写概况（标题/发言人/时长/段数，仅取数不走 LLM）
+python3 <skill目录>/scripts/devour.py meeting "https://meeting.tencent.com/crm/xxxxx"
+# 一键生成图文报告（三种输入形态均可）
+python3 <skill目录>/scripts/devour.py process "https://meeting.tencent.com/crm/xxxxx" --level 大学
+python3 <skill目录>/scripts/devour.py process 931123456 --level 大学
+# 秒级文字速记（不走报告管线）
+python3 <skill目录>/scripts/devour.py notes "https://meeting.tencent.com/cw/xxxxx"
+```
+
+- 输入三形态：`meeting.tencent.com/crm|cw/...` 短链（crm 页是 JS 壳，内部自动走 cw 数据）、
+  9-12 位会议号、19 位 meeting_id；`info` 也支持
+- 只能取到**自己有权限**的云录制；转写还在生成中会明确报错，稍后重试即可
+- 报告无关键帧（无画面），封面导出/公众号发布会自动生成标题封面
+- 2 小时会议的详细报告逐章生成约 15 分钟以上（体量决定），注意超时设置
+- `meeting` 子命令仅取转写概况；要报告用 `process`，要速记用 `notes`
+
+### 5. 字幕速记（B站/YouTube/腾讯会议，秒级纯文本笔记）
+
+不下载视频、不走 ASR：直接读取平台已有内容（B站 AI 字幕轨 / YouTube 手动或自动字幕 /
+腾讯会议云录制转写），LLM 整理为纯文本要点笔记。适合"只要文字内容、要快"的场景。
 
 ```bash
 python3 <skill目录>/scripts/devour.py notes "https://www.bilibili.com/video/BV..." --level 高中
 ```
 
 输出 JSON：`notes` 为 Markdown 笔记全文（含 ` ```mermaid ` 概念关系图）、
-`file`（.txt 纯文本）/ `md_file`（.md 含关系图）落盘路径。注意：视频没有字幕轨时
-报错并建议改走 `process` 完整流程；YouTube 无 cookies 或被 bot 检查拦截时提示配置
-「YouTube cookies」（设置控制台，可一键读取浏览器 Cookie）。
+`file`（.txt 纯文本）/ `md_file`（.md 含关系图）落盘路径。注意：
+- **B站 AI 字幕轨仅对登录态可见**：需要在设置页填「B站 SESSDATA」（或环境变量
+  `BILIBILI_SESSDATA`），未配置时多数视频拿不到字幕轨
+- 视频没有字幕轨时报错并建议改走 `process` 完整流程；YouTube 无 cookies 或被
+  bot 检查拦截时提示配置「YouTube cookies」（设置控制台，可一键读取浏览器 Cookie）
 
 ### 6. 一键处理（核心流程）
 
 ```bash
 python3 <skill目录>/scripts/devour.py process "https://www.bilibili.com/video/BV..." --level 高中
-# 或抖音 / 视频号 / 本地文件：
+# 或抖音 / 视频号 / X / 小宇宙播客 / 腾讯会议 / 本地文件：
 python3 <skill目录>/scripts/devour.py process "https://www.douyin.com/video/..." --level 高中
+python3 <skill目录>/scripts/devour.py process "https://www.xiaoyuzhoufm.com/episode/..." --level 大学
+python3 <skill目录>/scripts/devour.py process 931123456 --level 大学          # 腾讯会议号
 python3 <skill目录>/scripts/devour.py process /path/to/video.mp4 --level 初中
+# 不确定本地有哪些待处理视频时，列出视频存储目录（downloads/uploads）里的文件
+python3 <skill目录>/scripts/devour.py list
 ```
 
 - 命令是同步阻塞的，**bash 超时请设为 600000ms（10分钟）以上**；10 分钟内的视频一般 2-5 分钟完成
@@ -163,38 +211,45 @@ python3 <skill目录>/scripts/devour.py process /path/to/video.mp4 --level 初�
   可调），再由 VLM 评分挑选每章最佳一张——不随视频长短暴增候选帧
 - **思维导图/知识图谱/学习卡片默认不生成**（为不需要的用户节省时间）。用户明确需要时，
   加 `--extras "mindmap,graph,card"`（可任选其一或多个，逗号分隔）在报告完成后一次生成；
-  也可事后用 `mindmap` / `graph` 子命令单独生成。**不要在用户未要求时主动生成**
+  也可事后用 `mindmap` / `graph` / `card` 子命令单独生成。**不要在用户未要求时主动生成**
 
-### 7. 生成思维导图与知识图谱（仅用户需要时）
+### 7. 生成思维导图 / 知识图谱 / 学习卡片（仅用户需要时）
 
-基于任务报告生成两种知识可视化（LLM 生成、浏览器渲染的交互页面）：
+基于任务报告生成三种学习可视化（LLM 生成、浏览器渲染的交互页面，结果缓存）：
 
 ```bash
 # 思维导图：三层分支结构（markmap 渲染，可缩放/折叠）
 python3 <skill目录>/scripts/devour.py mindmap --latest --open
 # 知识图谱：概念关系力导向网络（节点按类别着色、关系标注）
 python3 <skill目录>/scripts/devour.py graph --latest --open
+# 学习卡片：手机尺寸 Bento Grid 卡片（图片 base64 内嵌，单文件可分享）
+python3 <skill目录>/scripts/devour.py card --latest --open
 # 也可用 --dir 指定任务输出目录、--level 指定学习阶段
 ```
 
 输出 JSON `{"html": "<输出目录>/mindmap.html", ...}`，将 html 路径呈现给用户（浏览器打开即用）。
 若在 `process` 时已用 `--extras` 生成过，直接使用输出 JSON 中 extras 里的路径，无需重复生成。
 
-### 8. 衍生文体：量子速读 / 公众号文章 / 小红书笔记（仅用户需要时）
+### 8. 衍生文体：HTML 速读页 / 量子速读 / 公众号文章 / 小红书笔记（仅用户需要时）
 
 把已有报告改写成可直接发布的成品文案（**不是分析报告**，基于精简报告改写，事实不跑偏）。
 **不在处理流程里预生成**，按需生成并落盘缓存，重复调用直接复用。
 
 ```bash
 S=<skill目录>/scripts/devour.py
-# 三种全部生成（默认）
+# 四种全部生成（默认）
 python3 $S styles --latest
 # 只生成某一种
 python3 $S styles --latest --kind xiaohongshu
 # 指定任务目录
 python3 $S styles --dir "<输出目录>" --kind quantum,wechat
+# HTML 速读页专用命令：生成 + 可选导出 PNG/PDF + 浏览器打开
+python3 $S speedread --latest --png --pdf --open
 ```
 
+- `html` HTML 速读页：一页式速读页（版式规范 answer-me-with-html），单文件
+  可传播（关键帧 base64 内嵌、亮暗双主题）；`--png` 导出全页长图、`--pdf` 导出 A4，
+  需本机有 Chrome/Chromium/Edge（`VIDEO_DEVOUR_BROWSER` 可指定路径）
 - `quantum` 量子速读：30 秒看懂大意 + 一句可直接发朋友圈的话
 - `wechat` 公众号文章：图文成稿（保留关键帧配图），可直接发布
 - `xiaohongshu` 小红书笔记：emoji 分点的图文笔记，含话题标签
@@ -213,6 +268,40 @@ python3 $S pdf --latest --out ~/Desktop/report.pdf   # 指定输出路径
 
 服务端用 reportlab 排版（**内置中文字体**，不依赖浏览器/pandoc），关键帧图片内嵌。
 输出 JSON `{"pdf": "...", "type": "...", "bytes": N}`。同样**按需使用**。
+
+### 9b. 导出 Markdown（仅用户需要时）
+
+与 WebUI 报告页「导出 Markdown」等价：文件名 = 内容标题_类型，默认写入任务目录。
+
+```bash
+python3 $S md --latest                          # 精简报告（默认，inline 单文件）
+python3 $S md --latest --type all               # 大纲+精简+详细 合并
+python3 $S md --latest --mode zip               # md（相对路径图片）+ keyframes 原图打包
+python3 $S md --latest --out ~/Desktop/x.md     # 指定输出路径
+```
+
+- `inline`（默认）：关键帧压缩后 base64 内嵌，**单文件任何 Markdown 查看器直接显示**
+  （单张图压到约 8KB 内，防单行超长被查看器截断）
+- `zip`：md 用相对路径引用图片，与 `keyframes/` 原图一起打包，**保留原图质量**
+- 输出 JSON `{"md": "...", "type": "...", "mode": "...", "bytes": N}`（zip 模式为 `zip`/`md_in_zip`）。
+
+### 9c. 发布微信公众号图文草稿（仅用户需要时）
+
+把任务报告一键发布为公众号**草稿**（不自动群发，用户在公众号后台预览确认后手动发布）。
+用户说"发到公众号""建个公众号草稿"时使用；**不要在用户未要求时主动发布**。
+
+```bash
+python3 $S mp --check                       # 凭据配置 + 接口连通性 + 草稿箱数量
+python3 $S mp --latest                      # 最新任务精简报告 → 图文草稿（默认）
+python3 $S mp --latest --type detailed      # 详细报告（注意正文约 2 万字符上限）
+python3 $S mp --dir "<输出目录>" --title "自定义标题" --digest "自定义摘要"
+```
+
+- 凭据在设置页「微信公众号发布」（AppID/AppSecret，存 settings.json）；`mp --check` 可验证
+- 封面自动选关键帧首图；纯文字报告（会议/音频）自动生成 900×383 标题封面
+- **常见坑**：公众号后台「IP 白名单」是硬门槛（报 40164 时按报错里的出口 IP 更新白名单，
+  家宽 IP 变动后需重新添加）；正文约 2 万字符上限，超限时改用精简报告
+- 输出 JSON 含 `media_id` 与提示语；成功后告知用户去公众号后台「草稿箱」操作
 
 ### 10. 读取报告
 
@@ -246,7 +335,7 @@ python3 $S library export-all --out ~/Desktop
 ```
 
 - `scope` 取值：`all`（默认）/ `outline` 图文大纲 / `report` 精简报告 / `detailed` 详细报告 /
-  `quantum` 量子速读 / `wechat` 公众号文章 / `xiaohongshu` 小红书笔记
+  `html` HTML 速读页 / `quantum` 量子速读 / `wechat` 公众号文章 / `xiaohongshu` 小红书笔记
 - 检索结果含 `doc_id`、`run_id`、`scope`、`label`、`version_label`（同一视频多版本）、
   `source_url`（原视频链接）、`score`、`snippet`；取全文时把 `doc_id` + `scope`（多版本再加
   `run_id`）传给 `library get` 即可。
@@ -316,9 +405,12 @@ python3 $S library search "用户的关键词" --top 5   # 命中 → library ge
 
 ```bash
 S=<skill目录>/scripts/devour.py
+python3 $S speedread --latest --png                # HTML 速读页 + 全页长图（传播用）
 python3 $S styles --latest --kind quantum          # 量子速读（速览 + 朋友圈文案）
 python3 $S styles --latest --kind wechat           # 公众号图文
 python3 $S pdf --latest --type detailed            # 导出 PDF
+python3 $S md --latest --type all                  # 导出单文件 Markdown（可移植）
+python3 $S mp --latest                             # 一键发布公众号图文草稿
 ```
 
 **全套学习材料（仅当用户明确需要导图/图谱/卡片时）**：
@@ -361,4 +453,6 @@ python3 $S quiz grade --answers '...' --latest   # 判题 + 评估，必要时�
 - 项目目录/venv 不存在且用户不愿安装 → 停止并说明依赖
 - LLM/VLM key 未配置且用户不提供 → 停止（无法生成大纲与报告）
 - 抖音/视频号下载所需的登录 Cookie 未配置，且用户无法提供 → 停止并说明配置方法
+- 腾讯会议 tmeet 未安装/未授权（`meeting --check` 不通过）且用户不愿配置 → 停止并说明
+- 公众号凭据未配置或 IP 白名单报错（40164）且用户不愿处理 → 停止（无法建草稿）
 - 视频时长超过 60 分钟 → 先向用户确认再处理

@@ -48,3 +48,6 @@ tqdm
 
 # --- 报告导出 PDF（内置 CID 中文字体，无需外部字体/浏览器）---
 reportlab>=4.0.0
+
+# --- 公众号图文草稿：Markdown -> 内联样式 HTML（wechat_mp.py 函数内导入，须显式声明）---
+markdown>=3.5

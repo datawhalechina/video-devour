@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""按需生成的衍生文体：量子速读 / 公众号文章 / 小红书笔记。
+"""按需生成的衍生文体：量子速读 / 公众号文章 / 小红书笔记 / HTML 速读页。
 
 这些不是分析报告，而是「以视频内容为素材的成稿」——共同点是把已有报告
 转成特定风格的成品文案，因此统一基于信息密度最高的精简报告（final_report.md）
@@ -7,6 +7,7 @@
 """
 import logging
 import re
+from datetime import datetime
 from pathlib import Path
 
 from backend.algorithm.llm_handler import LLMHandler
@@ -16,6 +17,8 @@ STYLE_TYPES = {
     "quantum": ("quantum_read.md", "量子速读", False),
     "wechat": ("wechat_article.md", "公众号文章", True),
     "xiaohongshu": ("xiaohongshu_article.md", "小红书笔记", True),
+    # HTML 速读页：单文件一页 HTML（版式规范 answer-me-with-html），可导出 PNG/PDF
+    "html": ("speedread.html", "HTML 速读页", True),
 }
 
 _BASE_FILES = ("final_report.md", "detailed_outline.md")
@@ -98,6 +101,57 @@ def _read_base_report(output_dir) -> str:
     raise ValueError("任务还没有可改写的报告")
 
 
+def _task_head_meta(output_dir) -> dict:
+    """HTML 速读页页头元信息：来自任务元数据（平台/来源），缺省保底。"""
+    meta = {}
+    try:
+        from backend.algorithm.document_library import _load_task_meta
+        doc_id = Path(output_dir).name.split("_")[1] if "_" in Path(output_dir).name else ""
+        task = _load_task_meta(doc_id) if doc_id else {}
+        source_url = task.get("source_url") or ""
+        if source_url:
+            meta["来源"] = source_url
+    except Exception:
+        pass
+    meta["生成"] = datetime.now().strftime("%Y-%m-%d")
+    return meta
+
+
+def generate_speedread_html(output_dir, education_level: str = None,
+                            force: bool = False) -> Path:
+    """
+    生成 HTML 速读页：LLM 写扩展 Markdown 内容稿 → 渲染为单文件 speedread.html。
+
+    草稿同时落盘 speedread_draft.md（便于排查与重新渲染）；关键帧压缩后
+    base64 内嵌，HTML 可单文件传播。
+    """
+    from backend.devour.html_speedread import SPEEDREAD_PROMPT, render_sheet
+
+    out_path = Path(output_dir) / STYLE_TYPES["html"][0]
+    if not force and out_path.exists() and out_path.stat().st_size > 0:
+        return out_path
+
+    report = _read_base_report(output_dir)
+    prompt = SPEEDREAD_PROMPT + _FACT_RULES.replace("__REPORT__", report)
+
+    llm = LLMHandler(education_level=education_level)
+    draft = llm.get_response(prompt, system_message=_STYLE_SYSTEM).strip()
+    # 只剥「整个输出被一对 ``` 包住」的外壳；草稿内部的组件围栏（```callout 等）必须保留
+    fence_m = re.match(r"^```[\w-]*[ \t]*\n(.*)\n```\s*$", draft, re.DOTALL)
+    if fence_m:
+        draft = fence_m.group(1).strip()
+    # 与其他文体同一防线：草稿里的图片必须是报告真实存在的关键帧
+    draft = _keep_only_report_images(report, draft)
+    if "##" not in draft:
+        raise ValueError("HTML 速读页内容稿缺少面板（## 小节），请重试生成")
+
+    (Path(output_dir) / "speedread_draft.md").write_text(draft, encoding="utf-8")
+    html = render_sheet(draft, output_dir=output_dir, meta=_task_head_meta(output_dir))
+    out_path.write_text(html, encoding="utf-8")
+    logging.info(f"HTML 速读页已生成: {out_path}")
+    return out_path
+
+
 def _doc_title(report: str, fallback: str = "视频速读") -> str:
     m = re.search(r"^#\s+(.+)$", report, re.MULTILINE)
     return m.group(1).strip() if m else fallback
@@ -127,6 +181,10 @@ def generate_style(output_dir, scope: str, education_level: str = None, force: b
     out_path = Path(output_dir) / filename
     if not force and out_path.exists() and out_path.stat().st_size > 0:
         return out_path
+
+    if scope == "html":
+        # HTML 速读页：内容稿 → 单文件渲染（组件排版在 html_speedread 内完成）
+        return generate_speedread_html(output_dir, education_level, force)
 
     report = _read_base_report(output_dir)
     title = _doc_title(report)
